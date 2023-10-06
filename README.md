@@ -10,13 +10,6 @@
 conda create -yn gspl python=3.9 pip
 conda activate gspl
 
-# set environment variables
-export CUDA_VERSION="11.8"  # CHANGE IT
-export MAKEFLAGS="-j$(nproc)"
-export PATH="/usr/local/cuda-${CUDA_VERSION}/bin:${PATH}"
-export LD_LIBRARY_PATH="/usr/local/cuda-${CUDA_VERSION}/lib64:/usr/lib/wsl/lib/:${LD_LIBRARY_PATH}"
-export LIBRARY_PATH="${LD_LIBRARY_PATH}:${LIBRARY_PATH}"
-
 # install requirements
 pip install -r requirements-first.txt
 pip install -r requirements-second.txt
