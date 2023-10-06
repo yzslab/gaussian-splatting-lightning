@@ -49,7 +49,7 @@ python main.py fit \
 ### Multi-GPU training
 ```bash
 python main.py fit \
+    --config configs/blender.yaml \
     --trainer configs/ddp.yaml \
-    --data.path DATASET_PATH \
-    --trainer.devices 2
+    --data.path DATASET_PATH
 ```
