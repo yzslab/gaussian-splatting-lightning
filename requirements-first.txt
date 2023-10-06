@@ -1,0 +1,9 @@
+torch==2.0.1
+torchvision==0.15.2
+torchaudio==2.0.2
+lightning==2.0.9.post0
+lightning[pytorch-extra]
+plyfile==0.8.1
+tensorboard
+wandb
+tqdm
