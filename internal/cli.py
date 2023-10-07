@@ -46,9 +46,10 @@ class CLI(LightningCLI):
         os.makedirs(output_path, exist_ok=True)
         print("output path: {}".format(output_path))
         config.model.output_path = output_path
-        assert os.path.exists(
-            os.path.join(output_path, "point_cloud")
-        ) is False, "point cloud output already exists in {}".format(output_path)
+        if self.config.subcommand == "fit":
+            assert os.path.exists(
+                os.path.join(output_path, "point_cloud")
+            ) is False, "point cloud output already exists in {}".format(output_path)
 
         # build logger
         logger_config = Namespace(

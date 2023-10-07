@@ -25,6 +25,8 @@ class GaussianSplatting(LightningModule):
             enable_appearance_model: bool = False,
             background_color: Tuple[float, float, float] = (0., 0., 0.),
             output_path: str = None,
+            save_val_output: bool = True,
+            max_save_val_output: int = -1,
     ) -> None:
         super().__init__()
         self.automatic_optimization = False
@@ -68,9 +70,26 @@ class GaussianSplatting(LightningModule):
             bg_color=self.background_color.to(camera.R.device)
         )
 
+    def forward_with_loss_calculation(self, camera, image_info):
+        image_name, gt_image, masked_pixels = image_info
+
+        # forward
+        outputs = self(camera)
+
+        image = outputs["render"]
+
+        # calculate loss
+        if masked_pixels is not None:
+            gt_image[masked_pixels] = image.detach()[masked_pixels]  # copy masked pixels from prediction to G.T.
+        l1_loss = torch.abs(outputs["render"] - gt_image).mean()
+        ssim_metric = ssim(outputs["render"], gt_image)
+        loss = (1.0 - self.lambda_dssim) * l1_loss + self.lambda_dssim * (1. - ssim_metric)
+
+        return outputs, loss, l1_loss, ssim_metric
+
     def training_step(self, batch, batch_idx):
         camera, image_info = batch
-        image_name, gt_image, masked_pixels = image_info
+        # image_name, gt_image, masked_pixels = image_info
 
         global_step = self.trainer.global_step + 1  # must start from 1 to prevent densify at the beginning
 
@@ -91,16 +110,16 @@ class GaussianSplatting(LightningModule):
             self.gaussian_model.oneupSHdegree()
 
         # forward
-        outputs = self(camera)
+        outputs, loss, l1_loss, ssim_metric = self.forward_with_loss_calculation(camera, image_info)
         image, viewspace_point_tensor, visibility_filter, radii = outputs["render"], outputs["viewspace_points"], \
             outputs["visibility_filter"], outputs["radii"]
 
         # calculate loss
-        if masked_pixels is not None:
-            gt_image[masked_pixels] = image.detach()[masked_pixels]  # copy masked pixels from prediction to G.T.
-        l1_loss = torch.abs(outputs["render"] - gt_image).mean()
-        ssim_metric = ssim(outputs["render"], gt_image)
-        loss = (1.0 - self.lambda_dssim) * l1_loss + self.lambda_dssim * (1. - ssim_metric)
+        # if masked_pixels is not None:
+        #     gt_image[masked_pixels] = image.detach()[masked_pixels]  # copy masked pixels from prediction to G.T.
+        # l1_loss = torch.abs(outputs["render"] - gt_image).mean()
+        # ssim_metric = ssim(outputs["render"], gt_image)
+        # loss = (1.0 - self.lambda_dssim) * l1_loss + self.lambda_dssim * (1. - ssim_metric)
 
         self.log("train/loss_l1", l1_loss, on_step=True, on_epoch=False, prog_bar=False, batch_size=self.batch_size)
         self.log("train/ssim", ssim_metric, on_step=True, on_epoch=False, prog_bar=False, batch_size=self.batch_size)
@@ -173,12 +192,12 @@ class GaussianSplatting(LightningModule):
         gt_image = image_info[1]
 
         # forward
-        outputs = self(camera)
+        outputs, loss, l1_loss, ssim_metric = self.forward_with_loss_calculation(camera, image_info)
 
         # calculate loss
-        l1_loss = torch.abs(outputs["render"] - gt_image).mean()
-        ssim_metric = ssim(outputs["render"], gt_image)
-        loss = (1.0 - self.lambda_dssim) * l1_loss + self.lambda_dssim * (1. - ssim_metric)
+        # l1_loss = torch.abs(outputs["render"] - gt_image).mean()
+        # ssim_metric = ssim(outputs["render"], gt_image)
+        # loss = (1.0 - self.lambda_dssim) * l1_loss + self.lambda_dssim * (1. - ssim_metric)
 
         self.log("val/loss_l1", l1_loss, on_epoch=True, prog_bar=False, batch_size=self.batch_size)
         self.log("val/ssim", ssim_metric, on_epoch=True, prog_bar=False, batch_size=self.batch_size)
@@ -186,18 +205,27 @@ class GaussianSplatting(LightningModule):
         self.log("val/psnr", self.psnr(outputs["render"], gt_image), on_epoch=True, prog_bar=True,
                  batch_size=self.batch_size)
 
-        # if batch_idx < 2:
-        #     grid = torchvision.utils.make_grid(torch.concat([outputs["render"], gt_image], dim=-1))
-        #     self.logger.experiment.add_image(
-        #         "val_images/{}".format(image_info[0].replace("/", "_")),
-        #         grid,
-        #         self.trainer.global_step,
-        #     )
+        if self.trainer.global_rank == 0 and self.hparams["save_val_output"] is True and (
+                self.hparams["max_save_val_output"] < 0 or batch_idx < self.hparams["max_save_val_output"]
+        ):
+            # grid = torchvision.utils.make_grid(torch.concat([outputs["render"], gt_image], dim=-1))
+            # self.logger.experiment.add_image(
+            #     "val_images/{}".format(image_info[0].replace("/", "_")),
+            #     grid,
+            #     self.trainer.global_step,
+            # )
 
-        # torchvision.utils.save_image(outputs["render"], os.path.join(self.logger.log_dir, "epoch_{}_{}.png".format(
-        #     self.trainer.current_epoch,
-        #     batch_idx,
-        # )))
+            image_output_path = os.path.join(
+                self.hparams["output_path"],
+                "val",
+                "epoch_{}".format(self.trainer.current_epoch),
+                "{}.png".format(image_info[0].replace("/", "_"))
+            )
+            os.makedirs(os.path.dirname(image_output_path), exist_ok=True)
+            torchvision.utils.save_image(
+                torch.concat([outputs["render"], gt_image], dim=-1),
+                image_output_path,
+            )
 
     def test_step(self, batch, batch_idx):
         return self.validation_step(batch, batch_idx)
@@ -212,7 +240,8 @@ class GaussianSplatting(LightningModule):
         )
         appearance_scheduler = torch.optim.lr_scheduler.LambdaLR(
             optimizer=appearance_optimizer,
-            lr_lambda=lambda iter: 0.01 ** min(iter / self.hparams["gaussian"].optimization.position_lr_max_steps, 1),
+            lr_lambda=lambda iter: 0.01 ** min(iter / self.hparams["gaussian"].optimization.position_lr_max_steps,
+                                               1),
             verbose=False,
         )
 
