@@ -31,7 +31,7 @@ python main.py fit \
 ```
 --data.params.train_max_num_images_to_cache 1024
 ```
-* Enable appearance model to training on appearance variation images
+* Enable appearance model to train on appearance variation images
 ```
 --model.enable_appearance_model True
 ```
