@@ -31,6 +31,10 @@ python main.py fit \
 ```
 --data.params.train_max_num_images_to_cache 1024
 ```
+* Enable appearance model to training on appearance variation images
+```
+--model.enable_appearance_model True
+```
 ### Blender Dataset
 <b>[IMPORTANT]</b> Use config file `configs/blender.yaml` when training on blender dataset.
 ```bash

@@ -22,7 +22,7 @@ class GaussianSplatting(LightningModule):
             gaussian: ModelParams,
             appearance: AppearanceModelParams,
             save_iterations: List[int],
-            enable_appearance_model: bool = True,
+            enable_appearance_model: bool = False,
             background_color: Tuple[float, float, float] = (0., 0., 0.),
             output_path: str = None,
     ) -> None:
