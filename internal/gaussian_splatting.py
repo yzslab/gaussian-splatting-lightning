@@ -249,13 +249,14 @@ class GaussianSplatting(LightningModule):
             [appearance_scheduler]
 
     def save_gaussian_to_ply(self):
+        filename = "point_cloud.ply"
         if self.trainer.global_rank != 0:
-            return
+            filename = "point_cloud_{}.ply".format(self.trainer.global_rank)
         with torch.no_grad():
             output_dir = os.path.join(self.hparams["output_path"], "point_cloud",
                                       "iteration_{}".format(self.trainer.global_step))
             os.makedirs(output_dir, exist_ok=True)
-            output_path = os.path.join(output_dir, "point_cloud.ply")
+            output_path = os.path.join(output_dir, filename)
             self.gaussian_model.save_ply(output_path + ".tmp")
             os.rename(output_path + ".tmp", output_path)
 
