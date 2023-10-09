@@ -1,5 +1,6 @@
 import concurrent.futures
 import json
+import math
 import os.path
 import shutil
 from concurrent.futures import ThreadPoolExecutor
@@ -66,6 +67,9 @@ class CacheDataLoader(torch.utils.data.DataLoader):
             max_cache_num: int,
             shuffle: bool,
             seed: int = -1,
+            distributed: bool = False,
+            world_size: int = -1,
+            global_rank: int = -1,
             **kwargs,
     ):
         assert kwargs.get("batch_size", 1) == 1, "only batch_size=1 is supported"
@@ -77,18 +81,30 @@ class CacheDataLoader(torch.utils.data.DataLoader):
         self.shuffle = shuffle
         self.max_cache_num = max_cache_num
 
+        # image indices to use
+        self.indices = list(range(len(self.dataset)))
+        if distributed is True and self.max_cache_num != 0:
+            assert world_size > 0
+            assert global_rank >= 0
+            image_num_to_use = math.ceil(len(self.indices) / world_size)
+            start = global_rank * image_num_to_use
+            end = start + image_num_to_use
+            indices = self.indices[start:end]
+            indices += self.indices[:image_num_to_use - len(indices)]
+            self.indices = indices
+
+            print("#{} distributed indices (total: {}): {}".format(os.getpid(), len(self.indices), self.indices))
+
         # cache all images if max_cache_num > len(dataset)
-        if self.max_cache_num >= len(self.dataset):
+        if self.max_cache_num >= len(self.indices):
             self.max_cache_num = -1
 
         self.num_workers = kwargs.get("num_workers", 0)
 
-        self.indices = list(range(len(self.dataset)))
-
         if self.max_cache_num < 0:
             # cache all data
             print("cache all images")
-            self.cached = self._cache_data(range(len(self.dataset)))
+            self.cached = self._cache_data(self.indices)
 
         # use dedicated random number generator foreach dataloader
         if self.shuffle is True:
@@ -114,21 +130,32 @@ class CacheDataLoader(torch.utils.data.DataLoader):
 
         return cached
 
+    def __len__(self) -> int:
+        return len(self.indices)
+
     def __getitem__(self, idx):
         return self.dataset.__getitem__(idx)
 
     def __iter__(self):
         # TODO: support batching
-        if self.shuffle is True:
-            indices = torch.randperm(len(self.dataset), generator=self.generator).tolist()  # shuffle for each epoch
-            # print("#{} 1st index: {}".format(os.getpid(), indices[0]))
-        else:
-            indices = self.indices.copy()
-
         if self.max_cache_num < 0:
+            if self.shuffle is True:
+                indices = torch.randperm(len(self.cached), generator=self.generator).tolist()  # shuffle for each epoch
+                # print("#{} 1st index: {}".format(os.getpid(), indices[0]))
+            else:
+                indices = list(range(len(self.cached)))
+
             for i in indices:
                 yield self.cached[i]
         else:
+            if self.shuffle is True:
+                indices = torch.randperm(len(self.indices), generator=self.generator).tolist()  # shuffle for each epoch
+                # print("#{} 1st index: {}".format(os.getpid(), indices[0]))
+            else:
+                indices = self.indices.copy()
+
+            # print("#{} self.max_cache_num={}, indices: {}".format(os.getpid(), self.max_cache_num, indices))
+
             if self.max_cache_num == 0:
                 # no cache
                 for i in indices:
@@ -151,15 +178,19 @@ class CacheDataLoader(torch.utils.data.DataLoader):
 
 
 class DataModule(LightningDataModule):
-    def __init__(self, path: str, params: DatasetParams, type: Literal["colmap", "blender"] = None) -> None:
+    def __init__(
+            self,
+            path: str,
+            params: DatasetParams,
+            type: Literal["colmap", "blender"] = None,
+            distributed: bool = False,
+    ) -> None:
         r"""Load dataset
 
             Args:
                 path: the path to the dataset
 
                 type: the dataset type
-
-                mask_path: image mask path
         """
 
         super().__init__()
@@ -237,12 +268,15 @@ class DataModule(LightningDataModule):
             shuffle=True,
             seed=torch.initial_seed() + self.global_rank,  # seed with global rank
             num_workers=self.hparams["params"].num_workers,
+            distributed=self.hparams["distributed"],
+            world_size=self.trainer.world_size,
+            global_rank=self.trainer.global_rank,
         )
 
     def test_dataloader(self) -> EVAL_DATALOADERS:
         return CacheDataLoader(
             Dataset(self.dataparser_outputs.val_set),
-            max_cache_num=0,
+            max_cache_num=self.hparams["params"].test_max_num_images_to_cache,
             shuffle=False,
             num_workers=0,
         )
@@ -250,7 +284,7 @@ class DataModule(LightningDataModule):
     def val_dataloader(self) -> EVAL_DATALOADERS:
         return CacheDataLoader(
             Dataset(self.dataparser_outputs.val_set),
-            max_cache_num=0,
+            max_cache_num=self.hparams["params"].val_max_num_images_to_cache,
             shuffle=False,
             num_workers=0,
         )

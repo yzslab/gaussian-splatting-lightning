@@ -49,4 +49,8 @@ class DatasetParams:
 
     train_max_num_images_to_cache: int = -1
 
+    val_max_num_images_to_cache: int = 0
+
+    test_max_num_images_to_cache: int = 0
+
     num_workers: int = 8

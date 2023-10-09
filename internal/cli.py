@@ -49,7 +49,8 @@ class CLI(LightningCLI):
         if self.config.subcommand == "fit":
             assert os.path.exists(
                 os.path.join(output_path, "point_cloud")
-            ) is False, "point cloud output already exists in {}".format(output_path)
+            ) is False, ("point cloud output already exists in {}, \n"
+                         "please specific a different experiment name (-n) or version (-v)").format(output_path)
 
         # build logger
         logger_config = Namespace(

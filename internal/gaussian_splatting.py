@@ -25,7 +25,7 @@ class GaussianSplatting(LightningModule):
             enable_appearance_model: bool = False,
             background_color: Tuple[float, float, float] = (0., 0., 0.),
             output_path: str = None,
-            save_val_output: bool = True,
+            save_val_output: bool = False,
             max_save_val_output: int = -1,
     ) -> None:
         super().__init__()

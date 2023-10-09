@@ -2,3 +2,7 @@ model:
   enable_appearance_model: false
 trainer:
   check_val_every_n_epoch: 10
+data:
+  params:
+    val_max_num_images_to_cache: -1
+    test_max_num_images_to_cache: -1
