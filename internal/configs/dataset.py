@@ -14,6 +14,8 @@ class ColmapParams:
             eval_step: -1: use all images as training set; > 1: pick an image for every eval_step
 
             reorient: whether reorient the scene
+
+            appearance_group: filename without extension
     """
 
     image_dir: str = None
@@ -25,6 +27,8 @@ class ColmapParams:
     scene_scale: float = 1.  # TODO
 
     reorient: bool = False  # TODO
+
+    appearance_groups: Optional[str] = None
 
 
 @dataclass

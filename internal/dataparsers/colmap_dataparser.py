@@ -1,4 +1,5 @@
 import os.path
+import json
 import time
 from typing import Tuple
 
@@ -78,6 +79,34 @@ class ColmapDataParser(DataParser):
 
         image_dir = self.get_image_dir()
 
+        # build appearance dict
+        if self.params.appearance_groups is None:
+            print("appearance group by camera id")
+            appearance_groups = {}
+            for i in images:
+                image_camera_id = images[i].camera_id
+                if image_camera_id not in appearance_groups:
+                    appearance_groups[image_camera_id] = []
+                appearance_groups[image_camera_id].append(images[i].name)
+        else:
+            appearance_group_file_path = os.path.join(self.path, self.params.appearance_groups)
+            print("loading appearance groups from {}".format(appearance_group_file_path))
+            with open("{}.json".format(appearance_group_file_path), "r") as f:
+                appearance_groups = json.load(f)
+        # assign normalized id to appearance groups
+        appearance_group_name_list = sorted(list(appearance_groups.keys()))
+        appearance_group_num = float(len(appearance_group_name_list))
+        appearance_group_name_to_normalized_id = {name: idx / appearance_group_num for idx, name in
+                                                  enumerate(appearance_group_name_list)}
+        # map from image name to normalized appearance id
+        image_name_to_appearance = {}
+        for appearance_group_name in appearance_groups:
+            image_name_list = appearance_groups[appearance_group_name]
+            for image_name in image_name_list:
+                image_name_to_appearance[image_name] = appearance_group_name_to_normalized_id[appearance_group_name]
+        # convert to list
+        image_appearances = [image_name_to_appearance[images[i].name] for i in images]
+
         # convert points3D to ply
         ply_path = os.path.join(sparse_model_dir, "points3D.ply")
         while os.path.exists(ply_path) is False:
@@ -103,7 +132,7 @@ class ColmapDataParser(DataParser):
         cy_list = []
         width_list = []
         height_list = []
-        appearance_embedding_list = []
+        appearance_embedding_list = image_appearances
         camera_type_list = []
         image_name_list = []
         image_path_list = []
@@ -156,7 +185,6 @@ class ColmapDataParser(DataParser):
             cy_list.append(cy)
             width_list.append(width)
             height_list.append(height)
-            appearance_embedding_list.append(extrinsics.camera_id)  # TODO: support custom appearance embedding value
             camera_type_list.append(0)
             image_name_list.append(extrinsics.name)
             image_path_list.append(os.path.join(image_dir, extrinsics.name))
@@ -178,9 +206,6 @@ class ColmapDataParser(DataParser):
         height = torch.tensor(height_list, dtype=torch.int16)
         appearance_embedding = torch.tensor(appearance_embedding_list, dtype=torch.float32)
         camera_type = torch.tensor(camera_type_list, dtype=torch.int8)
-
-        # normalize appearance embedding
-        appearance_embedding = appearance_embedding / torch.max(appearance_embedding)
 
         # TODO: reorient
 
@@ -228,4 +253,5 @@ class ColmapDataParser(DataParser):
             point_cloud=fetch_ply(ply_path),
             ply_path=ply_path,
             camera_extent=norm["radius"],
+            appearance_group_ids=appearance_group_name_to_normalized_id,
         )

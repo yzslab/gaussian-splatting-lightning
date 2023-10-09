@@ -33,7 +33,17 @@ python main.py fit \
 ```
 * Enable appearance model to train on appearance variation images
 ```
---model.enable_appearance_model True
+# 1. Generate appearance groups
+python generate_image_apperance_groups.py PATH_TO_DATASET \
+    --camera \
+    --name appearance_group_by_camera
+    
+# 2. Enable appearance model
+python main.py fit \
+    ... \
+    --model.enable_appearance_model True \
+    --data.params.colmap.appearance_groups appearance_group_by_camera \
+    ...
 ```
 ### Blender Dataset
 <b>[IMPORTANT]</b> Use config file `configs/blender.yaml` when training on blender dataset.

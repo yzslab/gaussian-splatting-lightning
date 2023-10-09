@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, Optional
 from dataclasses import dataclass
 from internal.cameras.cameras import Cameras
 from internal.utils.graphics_utils import BasicPointCloud
@@ -40,6 +40,8 @@ class DataParserOutputs:
     ply_path: str
 
     camera_extent: float
+
+    appearance_group_ids: Optional[dict]
 
 
 class DataParser:

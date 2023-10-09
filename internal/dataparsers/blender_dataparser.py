@@ -114,4 +114,5 @@ class BlenderDataParser(DataParser):
             point_cloud=pcd,
             ply_path=ply_path,
             camera_extent=norm["radius"],
+            appearance_group_ids=None,
         )

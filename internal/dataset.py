@@ -230,6 +230,15 @@ class DataModule(LightningDataModule):
 
         # write some files that SIBR_viewer required
         if self.global_rank == 0 and stage == "fit":
+            # write appearance group id
+            if self.dataparser_outputs.appearance_group_ids is not None:
+                torch.save(
+                    self.dataparser_outputs.appearance_group_ids,
+                    os.path.join(output_path, "appearance_group_ids.pth"),
+                )
+                with open(os.path.join(output_path, "appearance_group_ids.json"), "w") as f:
+                    json.dump(self.dataparser_outputs.appearance_group_ids, f, indent=4, ensure_ascii=False)
+
             # write cameras.json
             camera_to_world = torch.linalg.inv(
                 torch.transpose(self.dataparser_outputs.train_set.cameras.world_to_camera, 1, 2)
