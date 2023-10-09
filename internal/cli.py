@@ -2,7 +2,6 @@ import os.path
 from jsonargparse import Namespace
 from typing import Optional, Union, List, Literal
 from lightning.pytorch.cli import LightningCLI, LightningArgumentParser
-import lightning.pytorch.loggers
 
 
 class CLI(LightningCLI):

@@ -26,7 +26,8 @@ def cli_main():
             "callbacks": [
                 lazy_instance(SaveGaussianToPly),
             ],
-        }
+        },
+        save_config_kwargs={"overwrite": True},
     )
     # note: don't call fit!!
 

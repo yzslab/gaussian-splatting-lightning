@@ -3,9 +3,11 @@ from typing import Tuple, List
 
 import torch.optim
 import torchvision
+import wandb
 from torchmetrics.image import PeakSignalNoiseRatio
 from lightning.pytorch import LightningDataModule, LightningModule
 from lightning.pytorch.utilities.types import OptimizerLRScheduler
+import lightning.pytorch.loggers
 
 from internal.configs.model import ModelParams
 from internal.configs.appearance import AppearanceModelParams
@@ -61,6 +63,28 @@ class GaussianSplatting(LightningModule):
                 spatial_lr_scale=self.cameras_extent,
             )
             self.gaussian_model.training_setup(self.hparams["gaussian"].optimization)
+
+        self.log_image = None
+        if isinstance(self.logger, lightning.pytorch.loggers.TensorBoardLogger):
+            self.log_image = self.tensorboard_log_image
+        elif isinstance(self.logger, lightning.pytorch.loggers.WandbLogger):
+            self.log_image = self.wandb_log_image
+
+    def tensorboard_log_image(self, tag: str, image_tensor):
+        self.logger.experiment.add_image(
+            tag,
+            image_tensor,
+            self.trainer.global_step,
+        )
+
+    def wandb_log_image(self, tag: str, image_tensor):
+        image_dict = {
+            tag: wandb.Image(image_tensor),
+        }
+        self.logger.experiment.log(
+            image_dict,
+            step=self.trainer.global_step,
+        )
 
     def forward(self, camera):
         return render(
@@ -208,12 +232,12 @@ class GaussianSplatting(LightningModule):
         if self.trainer.global_rank == 0 and self.hparams["save_val_output"] is True and (
                 self.hparams["max_save_val_output"] < 0 or batch_idx < self.hparams["max_save_val_output"]
         ):
-            # grid = torchvision.utils.make_grid(torch.concat([outputs["render"], gt_image], dim=-1))
-            # self.logger.experiment.add_image(
-            #     "val_images/{}".format(image_info[0].replace("/", "_")),
-            #     grid,
-            #     self.trainer.global_step,
-            # )
+            if self.log_image is not None:
+                grid = torchvision.utils.make_grid(torch.concat([outputs["render"], gt_image], dim=-1))
+                self.log_image(
+                    tag="val_images/{}".format(image_info[0].replace("/", "_")),
+                    image_tensor=grid,
+                )
 
             image_output_path = os.path.join(
                 self.hparams["output_path"],
