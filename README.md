@@ -1,6 +1,10 @@
 # Gaussian Splatting PyTorch Lightning Implementation
+## Known issues
+* Multi-GPU training not work correctly
+  * GPUs do not have a consistent gaussian model after densification
+  * Slower than single GPU
 ## Features
-* Multi-GPU/Node training
+* <del>Multi-GPU/Node training</del>
 * Dynamic object mask
 * Appearance variation support
 * Load arbitrary number of images without OOM
