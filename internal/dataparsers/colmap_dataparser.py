@@ -1,4 +1,5 @@
 import os.path
+import math
 import json
 import time
 from typing import Tuple
@@ -121,6 +122,7 @@ class ColmapDataParser(DataParser):
                 print("#{} waiting for {}".format(os.getpid(), ply_path))
                 time.sleep(1)
 
+        loaded_mask_count = 0
         # initialize lists
         R_list = []
         T_list = []
@@ -171,7 +173,9 @@ class ColmapDataParser(DataParser):
             mask_path = None
             if self.params.mask_dir is not None:
                 mask_path = os.path.join(self.params.mask_dir, "{}.png".format(extrinsics.name))
-                if os.path.exists(mask_path) is False:
+                if os.path.exists(mask_path) is True:
+                    loaded_mask_count += 1
+                else:
                     mask_path = None
 
             # append data to list
@@ -189,6 +193,13 @@ class ColmapDataParser(DataParser):
             image_name_list.append(extrinsics.name)
             image_path_list.append(os.path.join(image_dir, extrinsics.name))
             mask_path_list.append(mask_path)
+
+        # loaded mask must not be zero if self.params.mask_dir provided
+        if self.params.mask_dir is not None and loaded_mask_count == 0:
+            raise RuntimeError("not a mask was loaded from {}, "
+                               "please remove the mask_dir parameter if this is a expected result".format(
+                self.params.mask_dir
+            ))
 
         # calculate norm
         norm = getNerfppNorm(R_list, T_list)
@@ -210,17 +221,25 @@ class ColmapDataParser(DataParser):
         # TODO: reorient
 
         # build split indices
-        if self.params.eval_step > 1:
+        assert self.params.eval_step > 1, "eval_step must > 1"
+        eval_step = self.params.eval_step
+        if self.params.eval_image_select_mode == "ratio":
+            eval_image_num = max(math.ceil(self.params.eval_ratio * len(image_name_list)), 1)
+            eval_step = len(image_name_list) // eval_image_num
+
+        if self.params.split_mode == "experiment":
+            # split train set and val set
             training_set_indices = []
             validation_set_indices = []
             for i in range(len(image_name_list)):
-                if i % self.params.eval_step == 0:
+                if i % eval_step == 0:
                     validation_set_indices.append(i)
                 else:
                     training_set_indices.append(i)
         else:
+            # train set contains val set
             training_set_indices = list(range(len(image_name_list)))
-            validation_set_indices = [0]
+            validation_set_indices = training_set_indices[::eval_step]
 
         # split
         image_set = []
@@ -245,6 +264,13 @@ class ColmapDataParser(DataParser):
                 mask_paths=[mask_path_list[i] for i in index_list],
                 cameras=cameras
             ))
+
+        # print information
+        print("[colmap dataparser] train set images: {}, val set images: {}, loaded mask: {}".format(
+            len(image_set[0]),
+            len(image_set[1]),
+            loaded_mask_count,
+        ))
 
         return DataParserOutputs(
             train_set=image_set[0],

@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Literal
 from dataclasses import dataclass
 
 
@@ -6,23 +6,33 @@ from dataclasses import dataclass
 class ColmapParams:
     """
         Args:
+            image_dir: the path to the directory that store images
+
             mask_dir:
                 the path to the directory store mask files;
                 the mask file of the image `a/image_name.jpg` is `a/image_name.jpg.png`;
                 single channel, 0 is the masked pixel;
 
+            split_mode: reconstruction: train model use all images; experiment: withholding a test set for evaluation
+
             eval_step: -1: use all images as training set; > 1: pick an image for every eval_step
 
             reorient: whether reorient the scene
 
-            appearance_group: filename without extension
+            appearance_groups: filename without extension
     """
 
     image_dir: str = None
 
     mask_dir: str = None
 
-    eval_step: int = -1
+    split_mode: Literal["reconstruction", "experiment"] = "reconstruction"
+
+    eval_image_select_mode: Literal["step", "ratio"] = "step"
+
+    eval_step: int = 8
+
+    eval_ratio: float = 0.01
 
     scene_scale: float = 1.  # TODO
 
