@@ -11,9 +11,9 @@ from plyfile import PlyData, PlyElement
 
 import internal.utils.colmap as colmap_utils
 from internal.cameras.cameras import Cameras
-from internal.dataparsers.dataparser import DataParser, ImageSet, DataParserOutputs
+from internal.dataparsers.dataparser import DataParser, ImageSet, PointCloud, DataParserOutputs
 from internal.configs.dataset import ColmapParams
-from internal.utils.graphics_utils import store_ply, fetch_ply, BasicPointCloud, getNerfppNorm
+from internal.utils.graphics_utils import getNerfppNorm
 
 
 class ColmapDataParser(DataParser):
@@ -35,7 +35,7 @@ class ColmapDataParser(DataParser):
         return os.path.join(self.path, self.params.image_dir)
 
     @staticmethod
-    def read_points3D_binary(path_to_model_file):
+    def read_points3D_binary(path_to_model_file, selected_image_ids: dict = None):
         """
         see: src/base/reconstruction.cc
             void Reconstruction::ReadPoints3DBinary(const std::string& path)
@@ -60,14 +60,23 @@ class ColmapDataParser(DataParser):
                 track_elems = colmap_utils.read_next_bytes(
                     fid, num_bytes=8 * track_length,
                     format_char_sequence="ii" * track_length)
+
+                # whether point belongs to selected images
+                if selected_image_ids is not None:
+                    image_ids = np.array(tuple(map(int, track_elems[0::2])))
+                    point_in_selected_image_count = 0
+                    for image_id in image_ids:
+                        if image_id in selected_image_ids:
+                            point_in_selected_image_count += 1
+                    if point_in_selected_image_count == 0:
+                        continue
+
+                # TODO: filter points in masked area
+
                 xyzs[p_id] = xyz
                 rgbs[p_id] = rgb
                 errors[p_id] = error
         return xyzs, rgbs, errors
-
-    @staticmethod
-    def convert_points_to_ply(path, xyz, rgb):
-        store_ply(path, xyz, rgb)
 
     def get_outputs(self) -> DataParserOutputs:
         # load colmap sparse model
@@ -77,6 +86,29 @@ class ColmapDataParser(DataParser):
 
         # sort images
         images = dict(sorted(images.items(), key=lambda item: item[0]))
+
+        # filter images
+        selected_image_ids = None
+        selected_image_names = None
+        if self.params.image_list is not None:
+            # load image list
+            selected_image_ids = {}
+            selected_image_names = {}
+            with open(self.params.image_list, "r") as f:
+                for image_name in f:
+                    image_name = image_name[:-1]
+                    selected_image_names[image_name] = True
+            # filter images by image list
+            new_images = {}
+            for i in images:
+                image = images[i]
+                if image.name in selected_image_names:
+                    selected_image_ids[image.id] = True
+                    new_images[i] = image
+            assert len(new_images) > 0, "no image left after filtering via {}".format(self.params.image_list)
+
+            # replace images with new_images
+            images = new_images
 
         image_dir = self.get_image_dir()
 
@@ -109,18 +141,23 @@ class ColmapDataParser(DataParser):
         image_appearances = [image_name_to_appearance[images[i].name] for i in images]
 
         # convert points3D to ply
-        ply_path = os.path.join(sparse_model_dir, "points3D.ply")
-        while os.path.exists(ply_path) is False:
-            if self.global_rank == 0:
-                print("converting points3D.bin to ply format")
-                xyz, rgb, _ = ColmapDataParser.read_points3D_binary(os.path.join(sparse_model_dir, "points3D.bin"))
-                ColmapDataParser.convert_points_to_ply(ply_path + ".tmp", xyz=xyz, rgb=rgb)
-                os.rename(ply_path + ".tmp", ply_path)
-                break
-            else:
-                # waiting ply
-                print("#{} waiting for {}".format(os.getpid(), ply_path))
-                time.sleep(1)
+        # ply_path = os.path.join(sparse_model_dir, "points3D.ply")
+        # while os.path.exists(ply_path) is False:
+        #     if self.global_rank == 0:
+        #         print("converting points3D.bin to ply format")
+        #         xyz, rgb, _ = ColmapDataParser.read_points3D_binary(os.path.join(sparse_model_dir, "points3D.bin"))
+        #         ColmapDataParser.convert_points_to_ply(ply_path + ".tmp", xyz=xyz, rgb=rgb)
+        #         os.rename(ply_path + ".tmp", ply_path)
+        #         break
+        #     else:
+        #         # waiting ply
+        #         print("#{} waiting for {}".format(os.getpid(), ply_path))
+        #         time.sleep(1)
+        print("loading colmap 3D points")
+        xyz, rgb, _ = ColmapDataParser.read_points3D_binary(
+            os.path.join(sparse_model_dir, "points3D.bin"),
+            selected_image_ids=selected_image_ids,
+        )
 
         loaded_mask_count = 0
         # initialize lists
@@ -276,8 +313,10 @@ class ColmapDataParser(DataParser):
             train_set=image_set[0],
             val_set=image_set[1],
             test_set=image_set[1],
-            point_cloud=fetch_ply(ply_path),
-            ply_path=ply_path,
+            point_cloud=PointCloud(
+                xyz=xyz,
+                rgb=rgb,
+            ),
             camera_extent=norm["radius"],
             appearance_group_ids=appearance_group_name_to_normalized_id,
         )

@@ -40,6 +40,8 @@ class ColmapParams:
 
     appearance_groups: Optional[str] = None
 
+    image_list: Optional[str] = None
+
 
 @dataclass
 class BlenderParams:

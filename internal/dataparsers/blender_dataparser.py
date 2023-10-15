@@ -6,11 +6,10 @@ import os.path
 
 import torch
 
-from .dataparser import ImageSet, DataParser, DataParserOutputs
+from .dataparser import ImageSet, PointCloud, DataParser, DataParserOutputs
 from internal.configs.dataset import BlenderParams
 from internal.cameras.cameras import Cameras
-from internal.utils.sh_utils import SH2RGB
-from internal.utils.graphics_utils import fov2focal, BasicPointCloud, store_ply, fetch_ply, getNerfppNorm
+from internal.utils.graphics_utils import fov2focal, getNerfppNorm
 
 
 class BlenderDataParser(DataParser):
@@ -77,26 +76,34 @@ class BlenderDataParser(DataParser):
         )
 
     def get_outputs(self) -> DataParserOutputs:
-        ply_path = os.path.join(self.path, "points3D.ply")
-        while os.path.exists(ply_path) is False:
-            if self.global_rank == 0:
-                # Since this data set has no colmap data, we start with random points
-                num_pts = 100_000
-                print(f"Generating random point cloud ({num_pts})...")
+        # ply_path = os.path.join(self.path, "points3D.ply")
+        # while os.path.exists(ply_path) is False:
+        #     if self.global_rank == 0:
+        #         # Since this data set has no colmap data, we start with random points
+        #         num_pts = 100_000
+        #         print(f"Generating random point cloud ({num_pts})...")
+        #
+        #         # We create random points inside the bounds of the synthetic Blender scenes
+        #         xyz = np.random.random((num_pts, 3)) * 2.6 - 1.3
+        #         shs = np.random.random((num_pts, 3)) / 255.0
+        #         # pcd = BasicPointCloud(points=xyz, colors=SH2RGB(shs), normals=np.zeros((num_pts, 3)))
+        #
+        #         store_ply(ply_path + ".tmp", xyz, SH2RGB(shs) * 255)
+        #         os.rename(ply_path + ".tmp", ply_path)
+        #         break
+        #     else:
+        #         # waiting ply
+        #         print("#{} waiting for {}".format(os.getpid(), ply_path))
+        #         time.sleep(1)
+        # pcd = fetch_ply(ply_path)
 
-                # We create random points inside the bounds of the synthetic Blender scenes
-                xyz = np.random.random((num_pts, 3)) * 2.6 - 1.3
-                shs = np.random.random((num_pts, 3)) / 255.0
-                # pcd = BasicPointCloud(points=xyz, colors=SH2RGB(shs), normals=np.zeros((num_pts, 3)))
+        # Since this data set has no colmap data, we start with random points
+        num_pts = 100_000
+        print(f"Generating random point cloud ({num_pts})...")
 
-                store_ply(ply_path + ".tmp", xyz, SH2RGB(shs) * 255)
-                os.rename(ply_path + ".tmp", ply_path)
-                break
-            else:
-                # waiting ply
-                print("#{} waiting for {}".format(os.getpid(), ply_path))
-                time.sleep(1)
-        pcd = fetch_ply(ply_path)
+        # We create random points inside the bounds of the synthetic Blender scenes
+        xyz = np.random.random((num_pts, 3)) * 2.6 - 1.3
+        rgb = np.asarray(np.random.random((num_pts, 3)) * 255, dtype=np.uint8)
 
         train_set = self._parse_transforms_json("train")
 
@@ -111,8 +118,10 @@ class BlenderDataParser(DataParser):
             train_set=train_set,
             val_set=self._parse_transforms_json("val"),
             test_set=self._parse_transforms_json("test"),
-            point_cloud=pcd,
-            ply_path=ply_path,
+            point_cloud=PointCloud(
+                xyz=xyz,
+                rgb=rgb,
+            ),
             camera_extent=norm["radius"],
             appearance_group_ids=None,
         )

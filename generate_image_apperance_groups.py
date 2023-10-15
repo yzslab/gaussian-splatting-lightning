@@ -5,6 +5,7 @@ For colmap dataset
 import os
 import json
 import argparse
+from tqdm import tqdm
 from internal.utils.colmap import read_images_binary
 
 parser = argparse.ArgumentParser()
@@ -23,9 +24,10 @@ images_bin_path = os.path.join(args.dir, "sparse", "images.bin")
 if os.path.exists(images_bin_path) is False:
     images_bin_path = os.path.join(args.dir, "sparse", "0", "images.bin")
 
+print("reading {}".format(images_bin_path))
 images = read_images_binary(images_bin_path)
 image_group = {}
-for i in images:
+for i in tqdm(images, desc="reading image information"):
     image = images[i]
 
     if args.dirname is True:

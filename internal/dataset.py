@@ -18,6 +18,7 @@ from internal.dataparsers import ImageSet
 from internal.configs.dataset import DatasetParams
 from internal.dataparsers.colmap_dataparser import ColmapDataParser
 from internal.dataparsers.blender_dataparser import BlenderDataParser
+from internal.utils.graphics_utils import store_ply, BasicPointCloud
 
 from tqdm import tqdm
 
@@ -228,6 +229,13 @@ class DataModule(LightningDataModule):
         # load dataset
         self.dataparser_outputs = dataparser.get_outputs()
 
+        # convert point cloud
+        self.point_cloud = BasicPointCloud(
+            points=self.dataparser_outputs.point_cloud.xyz,
+            colors=self.dataparser_outputs.point_cloud.rgb / 255.,
+            normals=np.zeros_like(self.dataparser_outputs.point_cloud.xyz),
+        )
+
         # write some files that SIBR_viewer required
         if self.global_rank == 0 and stage == "fit":
             # write appearance group id
@@ -259,8 +267,12 @@ class DataModule(LightningDataModule):
             with open(os.path.join(output_path, "cameras.json"), "w") as f:
                 json.dump(cameras, f, indent=4, ensure_ascii=False)
 
-            # copy input ply file to log dir
-            shutil.copyfile(self.dataparser_outputs.ply_path, os.path.join(output_path, "input.ply"))
+            # save input point cloud to ply file
+            store_ply(
+                os.path.join(output_path, "input.ply"),
+                xyz=self.dataparser_outputs.point_cloud.xyz,
+                rgb=self.dataparser_outputs.point_cloud.rgb,
+            )
 
             # write cfg_args
             with open(os.path.join(output_path, "cfg_args"), "w") as f:

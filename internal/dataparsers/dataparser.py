@@ -1,7 +1,9 @@
 from typing import Tuple, Optional
 from dataclasses import dataclass
+
+import numpy as np
+
 from internal.cameras.cameras import Cameras
-from internal.utils.graphics_utils import BasicPointCloud
 
 
 @dataclass
@@ -28,6 +30,13 @@ class ImageSet:
 
 
 @dataclass
+class PointCloud:
+    xyz: np.ndarray
+
+    rgb: np.ndarray
+
+
+@dataclass
 class DataParserOutputs:
     train_set: ImageSet
 
@@ -35,9 +44,9 @@ class DataParserOutputs:
 
     test_set: ImageSet
 
-    point_cloud: BasicPointCloud
+    point_cloud: PointCloud
 
-    ply_path: str
+    # ply_path: str
 
     camera_extent: float
 

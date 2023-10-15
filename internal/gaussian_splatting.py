@@ -59,7 +59,7 @@ class GaussianSplatting(LightningModule):
         if stage == "fit":
             self.cameras_extent = self.trainer.datamodule.dataparser_outputs.camera_extent
             self.gaussian_model.create_from_pcd(
-                self.trainer.datamodule.dataparser_outputs.point_cloud,
+                self.trainer.datamodule.point_cloud,
                 spatial_lr_scale=self.cameras_extent,
             )
             self.gaussian_model.training_setup(self.hparams["gaussian"].optimization)
