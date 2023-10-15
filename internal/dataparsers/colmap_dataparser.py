@@ -49,6 +49,7 @@ class ColmapDataParser(DataParser):
             rgbs = np.empty((num_points, 3))
             errors = np.empty((num_points, 1))
 
+            point_count = 0
             for p_id in range(num_points):
                 binary_point_line_properties = colmap_utils.read_next_bytes(
                     fid, num_bytes=43, format_char_sequence="QdddBBBd")
@@ -76,7 +77,8 @@ class ColmapDataParser(DataParser):
                 xyzs[p_id] = xyz
                 rgbs[p_id] = rgb
                 errors[p_id] = error
-        return xyzs, rgbs, errors
+                point_count += 1
+        return xyzs[:point_count], rgbs[:point_count], errors[:point_count]
 
     def get_outputs(self) -> DataParserOutputs:
         # load colmap sparse model
