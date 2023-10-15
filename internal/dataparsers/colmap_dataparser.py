@@ -45,11 +45,10 @@ class ColmapDataParser(DataParser):
         with open(path_to_model_file, "rb") as fid:
             num_points = colmap_utils.read_next_bytes(fid, 8, "Q")[0]
 
-            xyzs = np.empty((num_points, 3))
-            rgbs = np.empty((num_points, 3))
-            errors = np.empty((num_points, 1))
+            xyzs = []
+            rgbs = []
+            errors = []
 
-            point_count = 0
             for p_id in range(num_points):
                 binary_point_line_properties = colmap_utils.read_next_bytes(
                     fid, num_bytes=43, format_char_sequence="QdddBBBd")
@@ -74,11 +73,10 @@ class ColmapDataParser(DataParser):
 
                 # TODO: filter points in masked area
 
-                xyzs[p_id] = xyz
-                rgbs[p_id] = rgb
-                errors[p_id] = error
-                point_count += 1
-        return xyzs[:point_count], rgbs[:point_count], errors[:point_count]
+                xyzs.append(xyz)
+                rgbs.append(rgb)
+                errors.append(error)
+        return np.asarray(xyzs), np.asarray(rgbs), np.asarray(errors)
 
     def get_outputs(self) -> DataParserOutputs:
         # load colmap sparse model
