@@ -70,3 +70,9 @@ class DatasetParams:
     test_max_num_images_to_cache: int = 0
 
     num_workers: int = 8
+
+    add_background_sphere: bool = False
+
+    background_sphere_distance: float = 10
+
+    background_sphere_points: int = 204_800

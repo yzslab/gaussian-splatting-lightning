@@ -229,6 +229,30 @@ class DataModule(LightningDataModule):
         # load dataset
         self.dataparser_outputs = dataparser.get_outputs()
 
+        # add background sphere: https://github.com/graphdeco-inria/gaussian-splatting/issues/300#issuecomment-1756073909
+        if self.hparams["params"].add_background_sphere is True:
+            # find the scene center and size
+            point_max_coordinate = np.max(self.dataparser_outputs.point_cloud.xyz, axis=0)
+            point_min_coordinate = np.min(self.dataparser_outputs.point_cloud.xyz, axis=0)
+            scene_center = (point_max_coordinate + point_min_coordinate) / 2
+            scene_size = np.max(point_max_coordinate - point_min_coordinate)
+            # build unit sphere points
+            n_points = self.hparams["params"].background_sphere_points
+            samples = np.arange(n_points)
+            y = 1 - (samples / float(n_points - 1)) * 2  # y goes from 1 to -1
+            radius = np.sqrt(1 - y * y)  # radius at y
+            phi = math.pi * (math.sqrt(5.) - 1.)  # golden angle in radians
+            theta = phi * samples  # golden angle increment
+            x = np.cos(theta) * radius
+            z = np.sin(theta) * radius
+            unit_sphere_points = np.concatenate([x[:, None], y[:, None], z[:, None]], axis=1)
+            # build background sphere
+            background_sphere_point_xyz = (unit_sphere_points * scene_size * self.hparams["params"].background_sphere_distance) + scene_center
+            background_sphere_point_rgb = np.asarray(np.random.random(background_sphere_point_xyz.shape) * 255, dtype=np.uint8)
+            # add background sphere to scene
+            self.dataparser_outputs.point_cloud.xyz = np.concatenate([self.dataparser_outputs.point_cloud.xyz, background_sphere_point_xyz], axis=0)
+            self.dataparser_outputs.point_cloud.rgb = np.concatenate([self.dataparser_outputs.point_cloud.rgb, background_sphere_point_rgb], axis=0)
+
         # convert point cloud
         self.point_cloud = BasicPointCloud(
             points=self.dataparser_outputs.point_cloud.xyz,
