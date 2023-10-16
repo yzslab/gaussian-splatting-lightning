@@ -265,8 +265,7 @@ class GaussianSplatting(LightningModule):
         )
         appearance_scheduler = torch.optim.lr_scheduler.LambdaLR(
             optimizer=appearance_optimizer,
-            lr_lambda=lambda iter: 0.01 ** min(iter / self.hparams["gaussian"].optimization.position_lr_max_steps,
-                                               1),
+            lr_lambda=lambda iter: self.hparams["appearance"].optimization.gamma ** min(iter / self.hparams["appearance"].optimization.max_steps, 1),
             verbose=False,
         )
 
