@@ -5,6 +5,8 @@ from dataclasses import dataclass
 class AppearanceModelOptimizationParams:
     lr: float = 1e-3
     eps: float = 1e-15
+    gamma: float = 1
+    max_steps: int = 30_000
 
 
 @dataclass
