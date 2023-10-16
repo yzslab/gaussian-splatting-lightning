@@ -73,6 +73,6 @@ class DatasetParams:
 
     add_background_sphere: bool = False
 
-    background_sphere_distance: float = 10
+    background_sphere_distance: float = 2.2
 
     background_sphere_points: int = 204_800

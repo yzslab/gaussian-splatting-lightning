@@ -229,6 +229,7 @@ class DataModule(LightningDataModule):
         # load dataset
         self.dataparser_outputs = dataparser.get_outputs()
 
+        self.prune_extent = self.dataparser_outputs.camera_extent
         # add background sphere: https://github.com/graphdeco-inria/gaussian-splatting/issues/300#issuecomment-1756073909
         if self.hparams["params"].add_background_sphere is True:
             # find the scene center and size
@@ -236,6 +237,7 @@ class DataModule(LightningDataModule):
             point_min_coordinate = np.min(self.dataparser_outputs.point_cloud.xyz, axis=0)
             scene_center = (point_max_coordinate + point_min_coordinate) / 2
             scene_size = np.max(point_max_coordinate - point_min_coordinate)
+            scene_radius = scene_size / 2.
             # build unit sphere points
             n_points = self.hparams["params"].background_sphere_points
             samples = np.arange(n_points)
@@ -247,11 +249,15 @@ class DataModule(LightningDataModule):
             z = np.sin(theta) * radius
             unit_sphere_points = np.concatenate([x[:, None], y[:, None], z[:, None]], axis=1)
             # build background sphere
-            background_sphere_point_xyz = (unit_sphere_points * scene_size * self.hparams["params"].background_sphere_distance) + scene_center
+            background_sphere_point_xyz = (unit_sphere_points * scene_radius * self.hparams["params"].background_sphere_distance) + scene_center
             background_sphere_point_rgb = np.asarray(np.random.random(background_sphere_point_xyz.shape) * 255, dtype=np.uint8)
             # add background sphere to scene
             self.dataparser_outputs.point_cloud.xyz = np.concatenate([self.dataparser_outputs.point_cloud.xyz, background_sphere_point_xyz], axis=0)
             self.dataparser_outputs.point_cloud.rgb = np.concatenate([self.dataparser_outputs.point_cloud.rgb, background_sphere_point_rgb], axis=0)
+            # increase prune extent
+            self.prune_extent = scene_radius * self.hparams["params"].background_sphere_distance * 1.0001
+
+            print("added {} background sphere points, rescale prune extent from {} to {}".format(n_points, self.dataparser_outputs.camera_extent, self.prune_extent))
 
         # convert point cloud
         self.point_cloud = BasicPointCloud(

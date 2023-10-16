@@ -47,6 +47,8 @@ class GaussianSplatting(LightningModule):
             gamma_activation=appearance.gamma_activation,
         )
 
+        self.optimization_hparams = self.hparams["gaussian"].optimization
+
         # metrics
         self.lambda_dssim = gaussian.optimization.lambda_dssim
         self.psnr = PeakSignalNoiseRatio()
@@ -58,6 +60,7 @@ class GaussianSplatting(LightningModule):
     def setup(self, stage: str):
         if stage == "fit":
             self.cameras_extent = self.trainer.datamodule.dataparser_outputs.camera_extent
+            self.prune_extent = self.trainer.datamodule.prune_extent
             self.gaussian_model.create_from_pcd(
                 self.trainer.datamodule.point_cloud,
                 spatial_lr_scale=self.cameras_extent,
@@ -184,16 +187,14 @@ class GaussianSplatting(LightningModule):
                 )
                 gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
-                if global_step > self.hparams["gaussian"].optimization.densify_from_iter and \
-                        global_step % self.hparams["gaussian"].optimization.densification_interval == 0:
-                    size_threshold = 20 \
-                        if global_step > self.hparams["gaussian"].optimization.opacity_reset_interval \
-                        else None
+                if global_step > self.optimization_hparams.densify_from_iter and global_step % self.optimization_hparams.densification_interval == 0:
+                    size_threshold = 20 if global_step > self.optimization_hparams.opacity_reset_interval else None
                     gaussians.densify_and_prune(
                         self.hparams["gaussian"].optimization.densify_grad_threshold,
                         0.005,
-                        self.cameras_extent,
-                        size_threshold,
+                        extent=self.cameras_extent,
+                        prune_extent=self.prune_extent,
+                        max_screen_size=size_threshold,
                     )
 
                 if global_step % self.hparams["gaussian"].optimization.opacity_reset_interval == 0 or \
