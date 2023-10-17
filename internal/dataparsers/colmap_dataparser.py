@@ -255,6 +255,30 @@ class ColmapDataParser(DataParser):
         appearance_embedding = torch.tensor(appearance_embedding_list, dtype=torch.float32)
         camera_type = torch.tensor(camera_type_list, dtype=torch.int8)
 
+        # rescale scene size
+        if self.params.scene_scale != 1.0:
+            print("rescal scene with factor {}".format(self.params.scene_scale))
+
+            # rescale camera poses
+            # build world-to-camera transform matrix
+            w2c = torch.zeros(size=(R.shape[0], 4, 4))
+            w2c[:, :3, :3] = R
+            w2c[:, :3, 3] = T
+            w2c[:, 3, 3] = 1.
+            # convert to camera-to-world transform matrix
+            c2w = torch.linalg.inv(w2c)
+            c2w[:, :3, 3] *= self.params.scene_scale
+            # convert back to world-to-camera
+            w2c = torch.linalg.inv(c2w)
+            R = w2c[:, :3, :3]
+            T = w2c[:, :3, 3]
+
+            # rescale point cloud
+            xyz *= self.params.scene_scale
+
+            # rescale scene extent
+            norm["radius"] *= self.params.scene_scale
+
         # TODO: reorient
 
         # build split indices

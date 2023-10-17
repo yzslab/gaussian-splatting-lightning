@@ -34,7 +34,7 @@ class ColmapParams:
 
     eval_ratio: float = 0.01
 
-    scene_scale: float = 1.  # TODO
+    scene_scale: float = 1.
 
     reorient: bool = False  # TODO
 
