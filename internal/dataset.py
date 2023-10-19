@@ -255,6 +255,7 @@ class DataModule(LightningDataModule):
             self.dataparser_outputs.point_cloud.xyz = np.concatenate([self.dataparser_outputs.point_cloud.xyz, background_sphere_point_xyz], axis=0)
             self.dataparser_outputs.point_cloud.rgb = np.concatenate([self.dataparser_outputs.point_cloud.rgb, background_sphere_point_rgb], axis=0)
             # increase prune extent
+            # TODO: resize scene_extent without changing lr
             self.prune_extent = scene_radius * self.hparams["params"].background_sphere_distance * 1.0001
 
             print("added {} background sphere points, rescale prune extent from {} to {}".format(n_points, self.dataparser_outputs.camera_extent, self.prune_extent))
