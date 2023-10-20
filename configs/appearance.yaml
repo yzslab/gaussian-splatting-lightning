@@ -1,2 +1,2 @@
 model:
-  enable_appearance_model: true
+  renderer: AppearanceMLPRenderer

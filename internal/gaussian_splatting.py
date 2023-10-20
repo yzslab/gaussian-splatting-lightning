@@ -1,34 +1,36 @@
 import os.path
-from typing import Tuple, List
+from typing import Tuple, List, Union
 
 import torch.optim
 import torchvision
 import wandb
+from lightning.pytorch.core.module import MODULE_OPTIMIZERS
 from torchmetrics.image import PeakSignalNoiseRatio
 from lightning.pytorch import LightningDataModule, LightningModule
-from lightning.pytorch.utilities.types import OptimizerLRScheduler
+from lightning.pytorch.utilities.types import OptimizerLRScheduler, LRSchedulerPLType
 import lightning.pytorch.loggers
 
 from internal.configs.model import ModelParams
-from internal.configs.appearance import AppearanceModelParams
+# from internal.configs.appearance import AppearanceModelParams
 
 from internal.models.gaussian_model import GaussianModel
-from internal.models.appearance_model import AppearanceModel
-from internal.render import render
+# from internal.models.appearance_model import AppearanceModel
+from internal.renderers import Renderer, VanillaRenderer
 from internal.utils.ssim import ssim
+from jsonargparse import lazy_instance
 
 
 class GaussianSplatting(LightningModule):
     def __init__(
             self,
             gaussian: ModelParams,
-            appearance: AppearanceModelParams,
             save_iterations: List[int],
-            enable_appearance_model: bool = False,
+            # enable_appearance_model: bool = False,
             background_color: Tuple[float, float, float] = (0., 0., 0.),
             output_path: str = None,
             save_val_output: bool = False,
             max_save_val_output: int = -1,
+            renderer: Renderer = lazy_instance(VanillaRenderer),
     ) -> None:
         super().__init__()
         self.automatic_optimization = False
@@ -36,18 +38,20 @@ class GaussianSplatting(LightningModule):
 
         # setup models
         self.gaussian_model = GaussianModel(sh_degree=gaussian.sh_degree)
-        self.appearance_model = None if enable_appearance_model is False else AppearanceModel(
-            n_input_dims=1,
-            n_grayscale_factors=appearance.n_grayscale_factors,
-            n_gammas=appearance.n_gammas,
-            n_neurons=appearance.n_neurons,
-            n_hidden_layers=appearance.n_hidden_layers,
-            n_frequencies=appearance.n_frequencies,
-            grayscale_factors_activation=appearance.grayscale_factors_activation,
-            gamma_activation=appearance.gamma_activation,
-        )
+        # self.appearance_model = None if enable_appearance_model is False else AppearanceModel(
+        #     n_input_dims=1,
+        #     n_grayscale_factors=appearance.n_grayscale_factors,
+        #     n_gammas=appearance.n_gammas,
+        #     n_neurons=appearance.n_neurons,
+        #     n_hidden_layers=appearance.n_hidden_layers,
+        #     n_frequencies=appearance.n_frequencies,
+        #     grayscale_factors_activation=appearance.grayscale_factors_activation,
+        #     gamma_activation=appearance.gamma_activation,
+        # )
 
         self.optimization_hparams = self.hparams["gaussian"].optimization
+
+        self.renderer = renderer
 
         # metrics
         self.lambda_dssim = gaussian.optimization.lambda_dssim
@@ -66,6 +70,8 @@ class GaussianSplatting(LightningModule):
                 spatial_lr_scale=self.cameras_extent,
             )
             self.gaussian_model.training_setup(self.hparams["gaussian"].optimization)
+
+        self.renderer.setup(stage)
 
         self.log_image = None
         if isinstance(self.logger, lightning.pytorch.loggers.TensorBoardLogger):
@@ -90,10 +96,10 @@ class GaussianSplatting(LightningModule):
         )
 
     def forward(self, camera):
-        return render(
+        return self.renderer(
             camera,
             self.gaussian_model,
-            self.appearance_model,
+            # self.appearance_model,
             bg_color=self.background_color.to(camera.R.device)
         )
 
@@ -114,6 +120,36 @@ class GaussianSplatting(LightningModule):
 
         return outputs, loss, l1_loss, ssim_metric
 
+    def optimizers(self, use_pl_optimizer: bool = True):
+        optimizers = super().optimizers(use_pl_optimizer=use_pl_optimizer)
+
+        if isinstance(optimizers, list) is False:
+            return [optimizers]
+
+        """
+        IMPORTANCE: the global_step will be increased on every step() call of all the optimizers,
+        issue https://github.com/Lightning-AI/lightning/issues/17958,
+        here change _on_before_step and _on_after_step to override this behavior.
+        """
+        for idx, optimizer in enumerate(optimizers):
+            if idx == 0:
+                continue
+            optimizer._on_before_step = lambda: self.trainer.profiler.start("optimizer_step")
+            optimizer._on_after_step = lambda: self.trainer.profiler.stop("optimizer_step")
+
+        return optimizers
+
+    def lr_schedulers(self) -> Union[None, List[LRSchedulerPLType], LRSchedulerPLType]:
+        schedulers = super().lr_schedulers()
+
+        if schedulers is None:
+            return []
+
+        if isinstance(schedulers, list) is False:
+            return [schedulers]
+
+        return schedulers
+
     def training_step(self, batch, batch_idx):
         camera, image_info = batch
         # image_name, gt_image, masked_pixels = image_info
@@ -121,16 +157,9 @@ class GaussianSplatting(LightningModule):
         global_step = self.trainer.global_step + 1  # must start from 1 to prevent densify at the beginning
 
         # get optimizers and schedulers
-        gaussian_optimizer, appearance_optimizer = self.optimizers()
-        """
-        IMPORTANCE: the global_step will be increased on every step() call of all the optimizers,
-        issue https://github.com/Lightning-AI/lightning/issues/17958,
-        here change _on_before_step and _on_after_step to override this behavior.
-        """
-        appearance_optimizer._on_before_step = lambda: self.trainer.profiler.start("optimizer_step")
-        appearance_optimizer._on_after_step = lambda: self.trainer.profiler.stop("optimizer_step")
+        optimizers = self.optimizers()
 
-        appearance_scheduler = self.lr_schedulers()
+        schedulers = self.lr_schedulers()
 
         # Every 1000 its we increase the levels of SH up to a maximum degree
         if global_step % 1000 == 0:
@@ -155,20 +184,20 @@ class GaussianSplatting(LightningModule):
         # log learning rate
         if (global_step - 1) % 100 == 0:
             metrics_to_log = {}
-            for opt_name, opt in {"gaussian": gaussian_optimizer, "appearance": appearance_optimizer}.items():
+            for opt_idx, opt in enumerate(optimizers):
                 if opt is None:
                     continue
                 for idx, param_group in enumerate(opt.param_groups):
                     param_group_name = param_group["name"] if "name" in param_group else str(idx)
-                    metrics_to_log["lr/{}_{}".format(opt_name, param_group_name)] = param_group["lr"]
+                    metrics_to_log["lr/{}_{}".format(opt_idx, param_group_name)] = param_group["lr"]
             self.logger.log_metrics(
                 metrics_to_log,
                 step=global_step - 1,
             )
 
         # backward
-        gaussian_optimizer.zero_grad(set_to_none=True)
-        appearance_optimizer.zero_grad(set_to_none=True)
+        for optimizer in optimizers:
+            optimizer.zero_grad(set_to_none=True)
         self.manual_backward(loss)
 
         # save before densification
@@ -205,12 +234,13 @@ class GaussianSplatting(LightningModule):
                     gaussians.reset_opacity()
 
         # optimize
-        gaussian_optimizer.step()
-        appearance_optimizer.step()
+        for optimizer in optimizers:
+            optimizer.step()
 
         # schedule lr
         self.gaussian_model.update_learning_rate(global_step)
-        appearance_scheduler.step()
+        for scheduler in schedulers:
+            scheduler.step()
 
     def validation_step(self, batch, batch_idx):
         camera, image_info = batch
@@ -256,21 +286,37 @@ class GaussianSplatting(LightningModule):
         return self.validation_step(batch, batch_idx)
 
     def configure_optimizers(self):
-        appearance_optimizer = torch.optim.Adam(
-            list(self.appearance_model.parameters()) if self.hparams["enable_appearance_model"] is True else [
-                torch.nn.Parameter(torch.empty(0))
-            ],
-            lr=self.hparams["appearance"].optimization.lr,
-            eps=self.hparams["appearance"].optimization.eps,
-        )
-        appearance_scheduler = torch.optim.lr_scheduler.LambdaLR(
-            optimizer=appearance_optimizer,
-            lr_lambda=lambda iter: self.hparams["appearance"].optimization.gamma ** min(iter / self.hparams["appearance"].optimization.max_steps, 1),
-            verbose=False,
-        )
+        optimizers = [
+            self.gaussian_model.optimizer,
+        ]
+        schedulers = []
 
-        return [self.gaussian_model.optimizer, appearance_optimizer], \
-            [appearance_scheduler]
+        # appearance model
+        # if self.hparams["enable_appearance_model"] is True:
+        #     appearance_optimizer = torch.optim.Adam(
+        #         [
+        #             {"params": list(self.appearance_model.parameters()), "name": "appearance"}
+        #         ],
+        #         lr=self.hparams["appearance"].optimization.lr,
+        #         eps=self.hparams["appearance"].optimization.eps,
+        #     )
+        #     appearance_scheduler = torch.optim.lr_scheduler.LambdaLR(
+        #         optimizer=appearance_optimizer,
+        #         lr_lambda=lambda iter: self.hparams["appearance"].optimization.gamma ** min(iter / self.hparams["appearance"].optimization.max_steps, 1),
+        #         verbose=False,
+        #     )
+        #
+        #     optimizers.append(appearance_optimizer)
+        #     schedulers.append(appearance_scheduler)
+
+        # renderer
+        renderer_optimizer, renderer_scheduler = self.renderer.training_setup()
+        if renderer_optimizer is not None:
+            optimizers.append(renderer_optimizer)
+        if renderer_scheduler is not None:
+            schedulers.append(renderer_scheduler)
+
+        return optimizers, schedulers
 
     def save_gaussian_to_ply(self):
         filename = "point_cloud.ply"

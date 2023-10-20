@@ -1,5 +1,3 @@
-model:
-  enable_appearance_model: false
 trainer:
   check_val_every_n_epoch: 10
 data:

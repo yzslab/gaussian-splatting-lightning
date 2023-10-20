@@ -45,7 +45,7 @@ python generate_image_apperance_groups.py PATH_TO_DATASET \
 # 2. Enable appearance model
 python main.py fit \
     ... \
-    --model.enable_appearance_model True \
+    --model.renderer AppearanceMLPRenderer \
     --data.params.colmap.appearance_groups appearance_group_by_camera \
     ...
 ```
