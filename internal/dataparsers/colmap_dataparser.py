@@ -35,6 +35,34 @@ class ColmapDataParser(DataParser):
         return os.path.join(self.path, self.params.image_dir)
 
     @staticmethod
+    def rotation_matrix(a, b):
+        """Compute the rotation matrix that rotates vector a to vector b.
+
+        Args:
+            a: The vector to rotate.
+            b: The vector to rotate to.
+        Returns:
+            The rotation matrix.
+        """
+        a = a / torch.linalg.norm(a)
+        b = b / torch.linalg.norm(b)
+        v = torch.cross(a, b)
+        c = torch.dot(a, b)
+        # If vectors are exactly opposite, we add a little noise to one of them
+        if c < -1 + 1e-8:
+            eps = (torch.rand(3) - 0.5) * 0.01
+            return ColmapDataParser.rotation_matrix(a + eps, b)
+        s = torch.linalg.norm(v)
+        skew_sym_mat = torch.Tensor(
+            [
+                [0, -v[2], v[1]],
+                [v[2], 0, -v[0]],
+                [-v[1], v[0], 0],
+            ]
+        )
+        return torch.eye(3) + skew_sym_mat + skew_sym_mat @ skew_sym_mat * ((1 - c) / (s ** 2 + 1e-8))
+
+    @staticmethod
     def read_points3D_binary(path_to_model_file, selected_image_ids: dict = None):
         """
         see: src/base/reconstruction.cc
@@ -255,11 +283,8 @@ class ColmapDataParser(DataParser):
         appearance_embedding = torch.tensor(appearance_embedding_list, dtype=torch.float32)
         camera_type = torch.tensor(camera_type_list, dtype=torch.int8)
 
-        # rescale scene size
-        if self.params.scene_scale != 1.0:
-            print("rescal scene with factor {}".format(self.params.scene_scale))
-
-            # rescale camera poses
+        is_w2c_required = self.params.scene_scale != 1.0 or self.params.reorient is True
+        if is_w2c_required:
             # build world-to-camera transform matrix
             w2c = torch.zeros(size=(R.shape[0], 4, 4))
             w2c[:, :3, :3] = R
@@ -267,19 +292,44 @@ class ColmapDataParser(DataParser):
             w2c[:, 3, 3] = 1.
             # convert to camera-to-world transform matrix
             c2w = torch.linalg.inv(w2c)
-            c2w[:, :3, 3] *= self.params.scene_scale
+
+            # reorient
+            if self.params.reorient is True:
+                print("reorient scene")
+
+                # calculate rotation transform matrix
+                up = -torch.mean(c2w[:, :3, 1], dim=0)
+                up = up / torch.linalg.norm(up)
+
+                print("up vector = {}".format(up.numpy()))
+
+                rotation = self.rotation_matrix(up, torch.Tensor([0, 0, 1]))
+                rotation_transform = torch.eye(4)
+                rotation_transform[:3, :3] = rotation
+
+                # reorient cameras
+                print("reorienting cameras...")
+                c2w = torch.matmul(rotation_transform, c2w)
+                # reorient points
+                print("reorienting points...")
+                xyz = np.matmul(xyz, rotation.numpy().T)
+
+            # rescale scene size
+            if self.params.scene_scale != 1.0:
+                print("rescal scene with factor {}".format(self.params.scene_scale))
+
+                # rescale camera poses
+                c2w[:, :3, 3] *= self.params.scene_scale
+                # rescale point cloud
+                xyz *= self.params.scene_scale
+
+                # rescale scene extent
+                norm["radius"] *= self.params.scene_scale
+
             # convert back to world-to-camera
             w2c = torch.linalg.inv(c2w)
             R = w2c[:, :3, :3]
             T = w2c[:, :3, 3]
-
-            # rescale point cloud
-            xyz *= self.params.scene_scale
-
-            # rescale scene extent
-            norm["radius"] *= self.params.scene_scale
-
-        # TODO: reorient
 
         # build split indices
         assert self.params.eval_step > 1, "eval_step must > 1"
