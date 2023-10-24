@@ -135,9 +135,9 @@ class VanillaRenderer(Renderer):
         # They will be excluded from value updates used in the splitting criteria.
         return {
             "render": rendered_image,
-            # "viewspace_points": screenspace_points,
-            # "visibility_filter": radii > 0,
-            # "radii": radii,
+            "viewspace_points": screenspace_points,
+            "visibility_filter": radii > 0,
+            "radii": radii,
         }
 
 

@@ -1,5 +1,5 @@
 import os.path
-from typing import Tuple, List, Union, Dict, Any
+from typing import Tuple, List, Union
 
 import torch.optim
 import torchvision
@@ -78,9 +78,6 @@ class GaussianSplatting(LightningModule):
             self.log_image = self.tensorboard_log_image
         elif isinstance(self.logger, lightning.pytorch.loggers.WandbLogger):
             self.log_image = self.wandb_log_image
-
-    def on_load_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
-        super().on_load_checkpoint(checkpoint)
 
     def tensorboard_log_image(self, tag: str, image_tensor):
         self.logger.experiment.add_image(
