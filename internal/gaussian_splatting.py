@@ -331,3 +331,12 @@ class GaussianSplatting(LightningModule):
             os.rename(output_path + ".tmp", output_path)
 
         print("Gaussians saved to {}".format(output_path))
+
+        checkpoint_path = os.path.join(
+            self.hparams["output_path"],
+            "checkpoints",
+            "epoch={}-step={}.ckpt".format(self.trainer.current_epoch, self.trainer.global_step),
+        )
+        os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
+        self.trainer.save_checkpoint(checkpoint_path)
+        print("checkpoint save to {}".format(checkpoint_path))

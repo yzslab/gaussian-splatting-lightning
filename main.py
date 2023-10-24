@@ -4,7 +4,7 @@ from jsonargparse import lazy_instance
 
 from internal.gaussian_splatting import GaussianSplatting
 from internal.dataset import DataModule
-from internal.callbacks import SaveGaussianToPly
+from internal.callbacks import SaveGaussian
 import lightning.pytorch.loggers
 
 
@@ -23,8 +23,9 @@ def cli_main():
             # "max_epochs": -1,
             "max_steps": 30_000,
             "use_distributed_sampler": False,  # use custom ddp sampler
+            "enable_checkpointing": False,
             "callbacks": [
-                lazy_instance(SaveGaussianToPly),
+                lazy_instance(SaveGaussian),
             ],
         },
         save_config_kwargs={"overwrite": True},
