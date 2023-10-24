@@ -15,8 +15,6 @@ from internal.cameras.cameras import Cameras
 from internal.utils.graphics_utils import fov2focal
 import internal.renderers as renderers
 
-VISER_SCALE_RATIO: float = 10.0
-
 
 class Renderer:
     def __init__(
@@ -73,7 +71,7 @@ class Client(threading.Thread):
         R = vtf.SO3(wxyz=self.client.camera.wxyz)
         R = R @ vtf.SO3.from_x_radians(np.pi)
         R = torch.tensor(R.as_matrix())
-        pos = torch.tensor(self.client.camera.position, dtype=torch.float64) / VISER_SCALE_RATIO
+        pos = torch.tensor(self.client.camera.position, dtype=torch.float64)
         c2w = torch.eye(4)
         c2w[:3, :3] = R
         c2w[:3, 3] = pos
