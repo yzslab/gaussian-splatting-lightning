@@ -4,6 +4,7 @@ import traceback
 import threading
 import numpy as np
 import time
+import json
 from typing import Tuple, Literal
 from jsonargparse import CLI
 import viser
@@ -76,6 +77,8 @@ class Client(threading.Thread):
         c2w = torch.eye(4)
         c2w[:3, :3] = R
         c2w[:3, 3] = pos
+
+        c2w = torch.matmul(self.viewer.camera_transform, c2w)
 
         # change from OpenGL/Blender camera axes (Y up, Z back) to COLMAP (Y down, Z forward)
         c2w[:3, 1:3] *= -1
@@ -174,6 +177,7 @@ class Viewer:
             port: int = 8080,
             background_color: Tuple = (0, 0, 0),
             image_format: Literal["jpeg", "png"] = "jpeg",
+            reorient: Literal["auto", "enable", "disable"] = "auto",
     ):
         self.device = torch.device("cuda")
 
@@ -198,6 +202,8 @@ class Viewer:
         self.ckpt = torch.load(ckpt_path)
         self._initialize_models()
 
+        self.camera_transform = self._reorient(ckpt_path, mode=reorient)
+
         # create renderer
         self.renderer = Renderer(
             self.model,
@@ -206,6 +212,69 @@ class Viewer:
         )
 
         self.clients = {}
+
+    def _reorient(self, ckpt_path: str, mode: str):
+        transform = torch.eye(4, dtype=torch.float)
+
+        if mode == "disable":
+            return transform
+
+        # detect whether cameras.json exists
+        cameras_json_path = os.path.join(os.path.dirname(os.path.dirname(ckpt_path)), "cameras.json")
+        is_cameras_json_exists = os.path.exists(cameras_json_path)
+
+        if is_cameras_json_exists is False:
+            if mode == "enable":
+                raise RuntimeError("{} not exists".format(cameras_json_path))
+            else:
+                return transform
+
+        # skip reorient if dataset type is blender
+        if self.ckpt["datamodule_hyper_parameters"]["type"] == "blender" and mode == "auto":
+            print("skip reorient for blender dataset")
+            return transform
+
+        with open(cameras_json_path, "r") as f:
+            cameras = json.load(f)
+        up = torch.zeros(3)
+        for i in cameras:
+            up += torch.tensor(i["rotation"])[:3, 1]
+        up = -up / torch.linalg.norm(up)
+
+        print("up vector = {}".format(up))
+
+        def rotation_matrix(a, b):
+            """Compute the rotation matrix that rotates vector a to vector b.
+
+            Args:
+                a: The vector to rotate.
+                b: The vector to rotate to.
+            Returns:
+                The rotation matrix.
+            """
+            a = a / torch.linalg.norm(a)
+            b = b / torch.linalg.norm(b)
+            v = torch.cross(a, b)
+            c = torch.dot(a, b)
+            # If vectors are exactly opposite, we add a little noise to one of them
+            if c < -1 + 1e-8:
+                eps = (torch.rand(3) - 0.5) * 0.01
+                return rotation_matrix(a + eps, b)
+            s = torch.linalg.norm(v)
+            skew_sym_mat = torch.Tensor(
+                [
+                    [0, -v[2], v[1]],
+                    [v[2], 0, -v[0]],
+                    [-v[1], v[0], 0],
+                ]
+            )
+            return torch.eye(3) + skew_sym_mat + skew_sym_mat @ skew_sym_mat * ((1 - c) / (s ** 2 + 1e-8))
+
+        rotation = rotation_matrix(up, torch.Tensor([0, 0, 1]))
+        transform[:3, :3] = rotation
+        transform = torch.linalg.inv(transform)
+
+        return transform
 
     def _initialize_models(self):
         self.hparams = self.ckpt["hyper_parameters"]
