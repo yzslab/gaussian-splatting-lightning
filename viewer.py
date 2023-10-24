@@ -30,11 +30,12 @@ class Renderer:
         self.renderer = renderer
         self.background_color = background_color
 
-    def get_outputs(self, camera):
+    def get_outputs(self, camera, scaling_modifier: float = 1.):
         return self.renderer(
             camera,
             self.gaussian_model,
             self.background_color,
+            scaling_modifier=scaling_modifier,
         )["render"]
 
 
@@ -110,7 +111,7 @@ class Client(threading.Thread):
         )[0].to_device(self.viewer.device)
 
         with torch.no_grad():
-            image = self.renderer.get_outputs(camera)
+            image = self.renderer.get_outputs(camera, scaling_modifier=self.viewer.scaling_modifier.value)
             image = torch.clamp(image, max=1.)
             image = torch.permute(image, (1, 2, 0))
             self.client.set_background_image(
@@ -237,6 +238,7 @@ class Viewer:
                 step=128,
                 initial_value=1920,
             )
+            self.max_res_when_static.on_update(self._handle_option_updated)
             self.jpeg_quality_when_static = server.add_gui_slider(
                 "JPEG Quality",
                 min=0,
@@ -244,6 +246,8 @@ class Viewer:
                 step=1,
                 initial_value=100,
             )
+            self.jpeg_quality_when_static.on_update(self._handle_option_updated)
+
             self.max_res_when_moving = server.add_gui_slider(
                 "Max Res when Moving",
                 min=128,
@@ -259,8 +263,26 @@ class Viewer:
                 initial_value=60,
             )
 
+        with server.add_gui_folder("Model"):
+            self.scaling_modifier = server.add_gui_slider(
+                "Scaling Modifier",
+                min=0.,
+                max=1.,
+                step=0.1,
+                initial_value=1.,
+            )
+        self.scaling_modifier.on_update(self._handle_option_updated)
+
         while True:
             time.sleep(999)
+
+    def _handle_option_updated(self, _):
+        for i in self.clients:
+            try:
+                self.clients[i].state = "low"
+                self.clients[i].render_trigger.set()
+            except:
+                pass
 
     def _handle_new_client(self, client: viser.ClientHandle) -> None:
         # create client thread
