@@ -8,6 +8,7 @@
 * Dynamic object mask
 * Appearance variation support
 * Load arbitrary number of images without OOM
+* Interactive web viewer
 ## Installation
 ```bash
 # create virtual environment
@@ -63,6 +64,13 @@ python main.py fit \
     --config configs/blender.yaml \
     --trainer configs/ddp.yaml \
     --data.path DATASET_PATH
+```
+
+## Web Viewer
+```bash
+# replace CEHCKPOINT_PATH to your ckpt file path
+python viewer.py CEHCKPOINT_PATH start
+# e.g.: python viewer.py outputs/lego/lightning_logs/version_0/checkpoints/epoch=299-step=30000.ckpt start
 ```
 
 # License

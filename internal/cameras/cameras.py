@@ -26,6 +26,14 @@ class Camera:
     full_projection: Tensor
     camera_center: Tensor
 
+    def to_device(self, device):
+        for field in Camera.__dataclass_fields__:
+            value = getattr(self, field)
+            if isinstance(value, torch.Tensor):
+                setattr(self, field, value.to(device))
+
+        return self
+
 
 @dataclass
 class Cameras:
