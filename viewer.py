@@ -1,4 +1,5 @@
 import os
+import glob
 import traceback
 import threading
 import numpy as np
@@ -167,7 +168,7 @@ class Client(threading.Thread):
 class Viewer:
     def __init__(
             self,
-            ckpt: str,
+            model_path: str,
             host: str = "0.0.0.0",
             port: int = 8080,
             background_color: Tuple = (0, 0, 0),
@@ -180,7 +181,20 @@ class Viewer:
         self.image_format = image_format
 
         # load checkpoint and create models
-        self.ckpt = torch.load(ckpt)
+        ckpt_path = model_path
+        if ckpt_path.endswith(".ckpt") is False:
+            # find checkpoint with max iterations
+            checkpoint_dir = os.path.join(ckpt_path, "checkpoints")
+
+            previous_checkpoint_iteration = -1
+            for i in glob.glob(os.path.join(checkpoint_dir, "*.ckpt")):
+                checkpoint_iteration = int(i[i.rfind("=") + 1:i.rfind(".")])
+                if checkpoint_iteration > previous_checkpoint_iteration:
+                    previous_checkpoint_iteration = checkpoint_iteration
+                    ckpt_path = i
+            print("auto select checkpoint {}".format(ckpt_path))
+
+        self.ckpt = torch.load(ckpt_path)
         self._initialize_models()
 
         # create renderer
@@ -211,8 +225,8 @@ class Viewer:
         # create viser server
         server = viser.ViserServer(host=self.host, port=self.port)
         # register hooks
-        server.on_client_connect(self.handle_new_client)
-        server.on_client_disconnect(self.handle_client_disconnect)
+        server.on_client_connect(self._handle_new_client)
+        server.on_client_disconnect(self._handle_client_disconnect)
 
         # add render options
         with server.add_gui_folder("Render"):
@@ -248,14 +262,14 @@ class Viewer:
         while True:
             time.sleep(999)
 
-    def handle_new_client(self, client: viser.ClientHandle) -> None:
+    def _handle_new_client(self, client: viser.ClientHandle) -> None:
         # create client thread
         client_thread = Client(self, self.renderer, client)
         client_thread.start()
         # store this thread
         self.clients[client.client_id] = client_thread
 
-    def handle_client_disconnect(self, client: viser.ClientHandle):
+    def _handle_client_disconnect(self, client: viser.ClientHandle):
         try:
             self.clients[client.client_id].stop()
             del self.clients[client.client_id]
@@ -264,4 +278,6 @@ class Viewer:
 
 
 if __name__ == "__main__":
-    CLI(Viewer)
+    CLI(Viewer, set_defaults={
+        "subcommand": "start",
+    })
