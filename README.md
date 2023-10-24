@@ -68,7 +68,7 @@ python main.py fit \
 
 ## Web Viewer
 ```bash
-# replace CEHCKPOINT_PATH to your ckpt file path
+# replace CEHCKPOINT_PATH with your ckpt file path
 python viewer.py CEHCKPOINT_PATH start
 # e.g.: python viewer.py outputs/lego/lightning_logs/version_0/checkpoints/epoch=299-step=30000.ckpt start
 ```
