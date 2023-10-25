@@ -1,170 +1,14 @@
 import os
 import glob
-import traceback
-import threading
-import numpy as np
 import time
 import json
 from typing import Tuple, Literal
 from jsonargparse import CLI
 import viser
-import viser.transforms as vtf
 import torch
+from internal.renderers import VanillaRenderer
 from internal.models.gaussian_model_simplified import GaussianModelSimplified
-from internal.cameras.cameras import Cameras
-from internal.utils.graphics_utils import fov2focal
-import internal.renderers as renderers
-
-
-class Renderer:
-    def __init__(
-            self,
-            gaussian_model: GaussianModelSimplified,
-            renderer: renderers.Renderer,
-            background_color,
-    ):
-        super().__init__()
-
-        self.gaussian_model = gaussian_model
-        self.renderer = renderer
-        self.background_color = background_color
-
-    def get_outputs(self, camera, scaling_modifier: float = 1.):
-        return self.renderer(
-            camera,
-            self.gaussian_model,
-            self.background_color,
-            scaling_modifier=scaling_modifier,
-        )["render"]
-
-
-class Client(threading.Thread):
-    def __init__(self, viewer, renderer, client: viser.ClientHandle):
-        super().__init__()
-        self.viewer = viewer
-        self.renderer = renderer
-        self.client = client
-
-        self.render_trigger = threading.Event()
-
-        self.last_move_time = 0
-
-        self.last_camera = None  # store camera information
-
-        self.state = "low"  # low or high render resolution
-
-        self.stop_client = False  # whether stop this thread
-
-        @client.camera.on_update
-        def _(cam: viser.CameraHandle) -> None:
-            with self.client.atomic():
-                self.last_camera = cam
-                self.state = "low"  # switch to low resolution mode when a new camera received
-                self.render_trigger.set()
-
-    def render_and_send(self):
-        cam = self.last_camera
-
-        self.last_move_time = time.time()
-
-        # get camera pose
-        R = vtf.SO3(wxyz=self.client.camera.wxyz)
-        R = R @ vtf.SO3.from_x_radians(np.pi)
-        R = torch.tensor(R.as_matrix())
-        pos = torch.tensor(self.client.camera.position, dtype=torch.float64)
-        c2w = torch.eye(4)
-        c2w[:3, :3] = R
-        c2w[:3, 3] = pos
-
-        c2w = torch.matmul(self.viewer.camera_transform, c2w)
-
-        # change from OpenGL/Blender camera axes (Y up, Z back) to COLMAP (Y down, Z forward)
-        c2w[:3, 1:3] *= -1
-
-        # get the world-to-camera transform and set R, T
-        w2c = torch.linalg.inv(c2w)
-        R = w2c[:3, :3]
-        T = w2c[:3, 3]
-
-        # calculate resolution
-        aspect_ratio = cam.aspect
-        max_res, jpeg_quality = self.get_render_options()
-        image_height = max_res
-        image_width = int(image_height * aspect_ratio)
-        if image_width > max_res:
-            image_width = max_res
-            image_height = int(image_width / aspect_ratio)
-
-        # construct camera
-        fx = torch.tensor([fov2focal(cam.fov, image_width)], dtype=torch.float)
-        camera = Cameras(
-            R=R.unsqueeze(0),
-            T=T.unsqueeze(0),
-            fx=fx,
-            fy=fx,
-            cx=torch.tensor([(image_width // 2)], dtype=torch.int),
-            cy=torch.tensor([(image_height // 2)], dtype=torch.int),
-            width=torch.tensor([image_width], dtype=torch.int),
-            height=torch.tensor([image_height], dtype=torch.int),
-            appearance_embedding=torch.tensor([0]),
-            distortion_params=None,
-            camera_type=torch.tensor([0], dtype=torch.int),
-        )[0].to_device(self.viewer.device)
-
-        with torch.no_grad():
-            image = self.renderer.get_outputs(camera, scaling_modifier=self.viewer.scaling_modifier.value)
-            image = torch.clamp(image, max=1.)
-            image = torch.permute(image, (1, 2, 0))
-            self.client.set_background_image(
-                image.cpu().numpy(),
-                format=self.viewer.image_format,
-                jpeg_quality=jpeg_quality,
-            )
-
-    def run(self):
-        while True:
-            trigger_wait_return = self.render_trigger.wait(0.2)
-            # stop client thread?
-            if self.stop_client is True:
-                break
-            if not trigger_wait_return:  # TODO: avoid wasting CPU
-                # if we haven't received a trigger in a while, switch to high resolution
-
-                # skip if camera is none
-                if self.last_camera is None:
-                    continue
-
-                if self.state == "low":
-                    self.state = "high"  # switch to high resolution mode
-                else:
-                    continue  # skip if already in high resolution mode
-
-            self.render_trigger.clear()
-
-            try:
-                self.render_and_send()
-            except Exception as err:
-                print("error occurred when rendering for client")
-                traceback.print_exc()
-                break
-
-        self._destroy()
-
-    def get_render_options(self):
-        if self.state == "low":
-            return self.viewer.max_res_when_moving.value, int(self.viewer.jpeg_quality_when_moving.value)
-        return self.viewer.max_res_when_static.value, int(self.viewer.jpeg_quality_when_static.value)
-
-    def stop(self):
-        self.stop_client = True
-        # self.render_trigger.set()  # TODO: potential thread leakage?
-
-    def _destroy(self):
-        print("client thread #{} destroyed".format(self.client.client_id))
-        self.viewer = None
-        self.renderer = None
-        self.client = None
-        self.last_camera = None
+from internal.viewer import ClientThread, ViewerRenderer
 
 
 class Viewer:
@@ -176,6 +20,7 @@ class Viewer:
             background_color: Tuple = (0, 0, 0),
             image_format: Literal["jpeg", "png"] = "jpeg",
             reorient: Literal["auto", "enable", "disable"] = "auto",
+            sh_degree: int = 3,
     ):
         self.device = torch.device("cuda")
 
@@ -183,42 +28,72 @@ class Viewer:
         self.port = port
         self.image_format = image_format
 
-        # load checkpoint and create models
-        ckpt_path = model_path
-        if ckpt_path.endswith(".ckpt") is False:
-            # find checkpoint with max iterations
-            checkpoint_dir = os.path.join(ckpt_path, "checkpoints")
+        self.sh_degree = sh_degree
 
+        load_from = model_path
+        # if a directory path is provided, auto search checkpoint or ply
+        if os.path.isdir(model_path):
+            # search checkpoint
+            checkpoint_dir = os.path.join(model_path, "checkpoints")
+            # find checkpoint with max iterations
+            load_from = None
             previous_checkpoint_iteration = -1
             for i in glob.glob(os.path.join(checkpoint_dir, "*.ckpt")):
-                checkpoint_iteration = int(i[i.rfind("=") + 1:i.rfind(".")])
+                try:
+                    checkpoint_iteration = int(i[i.rfind("=") + 1:i.rfind(".")])
+                except Exception as err:
+                    print("error occurred when parsing iteration from {}: {}".format(i, err))
+                    continue
                 if checkpoint_iteration > previous_checkpoint_iteration:
                     previous_checkpoint_iteration = checkpoint_iteration
-                    ckpt_path = i
-            print("auto select checkpoint {}".format(ckpt_path))
+                    load_from = i
 
-        self.ckpt = torch.load(ckpt_path)
-        self._initialize_models()
+            # not a checkpoint can be found, search point cloud
+            if load_from is None:
+                previous_point_cloud_iteration = -1
+                for i in glob.glob(os.path.join(model_path, "point_cloud", "iteration_*")):
+                    try:
+                        point_cloud_iteration = int(os.path.basename(i).replace("iteration_", ""))
+                    except Exception as err:
+                        print("error occurred when parsing iteration from {}: {}".format(i, err))
+                        continue
 
-        self.camera_transform = self._reorient(ckpt_path, mode=reorient)
+                    if point_cloud_iteration > previous_point_cloud_iteration:
+                        load_from = os.path.join(i, "point_cloud.ply")
+
+            assert load_from is not None, "not a checkpoint or point cloud can be found"
+
+        # load and create models
+        print("load model from {}".format(load_from))
+        dataset_type = None
+        if load_from.endswith(".ckpt") is True:
+            model, renderer, checkpoint = self._initialize_models_from_checkpoint(load_from)
+            cameras_json_path = os.path.join(os.path.dirname(os.path.dirname(load_from)), "cameras.json")
+            dataset_type = checkpoint["datamodule_hyper_parameters"]["type"]
+        elif load_from.endswith(".ply") is True:
+            model, renderer = self._initialize_models_from_point_cloud(load_from)
+            cameras_json_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(load_from))), "cameras.json")
+        else:
+            raise ValueError("unsupported file {}".format(load_from))
+
+        self.camera_transform = self._reorient(cameras_json_path, mode=reorient, dataset_type=dataset_type)
 
         # create renderer
-        self.renderer = Renderer(
-            self.model,
-            self.renderer,
+        self.viewer_renderer = ViewerRenderer(
+            model,
+            renderer,
             torch.tensor(background_color, dtype=torch.float, device=self.device),
         )
 
         self.clients = {}
 
-    def _reorient(self, ckpt_path: str, mode: str):
+    def _reorient(self, cameras_json_path: str, mode: str, dataset_type: str = None):
         transform = torch.eye(4, dtype=torch.float)
 
         if mode == "disable":
             return transform
 
         # detect whether cameras.json exists
-        cameras_json_path = os.path.join(os.path.dirname(os.path.dirname(ckpt_path)), "cameras.json")
         is_cameras_json_exists = os.path.exists(cameras_json_path)
 
         if is_cameras_json_exists is False:
@@ -228,7 +103,7 @@ class Viewer:
                 return transform
 
         # skip reorient if dataset type is blender
-        if self.ckpt["datamodule_hyper_parameters"]["type"] == "blender" and mode == "auto":
+        if dataset_type == "blender" and mode == "auto":
             print("skip reorient for blender dataset")
             return transform
 
@@ -274,20 +149,31 @@ class Viewer:
 
         return transform
 
-    def _initialize_models(self):
-        self.hparams = self.ckpt["hyper_parameters"]
+    def _initialize_models_from_checkpoint(self, checkpoint_path: str):
+        checkpoint = torch.load(checkpoint_path)
+        hparams = checkpoint["hyper_parameters"]
 
         # initialize gaussian and renderer model
-        self.model = GaussianModelSimplified.construct_from_state_dict(self.ckpt["state_dict"], 3, self.device)
+        model = GaussianModelSimplified.construct_from_state_dict(checkpoint["state_dict"], self.sh_degree, self.device)
         # extract state dict of renderer
-        self.renderer = self.hparams["renderer"]
+        renderer = hparams["renderer"]
         renderer_state_dict = {}
-        for i in self.ckpt["state_dict"]:
+        for i in checkpoint["state_dict"]:
             if i.startswith("renderer."):
-                renderer_state_dict[i[len("renderer."):]] = self.ckpt["state_dict"][i]
+                renderer_state_dict[i[len("renderer."):]] = checkpoint["state_dict"][i]
         # load state dict of renderer
-        self.renderer.load_state_dict(renderer_state_dict)
-        self.renderer = self.renderer.to(self.device)
+        renderer.load_state_dict(renderer_state_dict)
+        renderer = renderer.to(self.device)
+
+        return model, renderer, checkpoint
+
+    def _initialize_models_from_point_cloud(self, point_cloud_path: str):
+        model = GaussianModelSimplified.construct_from_ply(ply_path=point_cloud_path, active_sh_degree=self.sh_degree, device=self.device)
+        renderer = VanillaRenderer()
+        renderer.setup(stage="val")
+        renderer = renderer.to(self.device)
+
+        return model, renderer
 
     def start(self):
         # create viser server
@@ -353,7 +239,7 @@ class Viewer:
 
     def _handle_new_client(self, client: viser.ClientHandle) -> None:
         # create client thread
-        client_thread = Client(self, self.renderer, client)
+        client_thread = ClientThread(self, self.viewer_renderer, client)
         client_thread.start()
         # store this thread
         self.clients[client.client_id] = client_thread

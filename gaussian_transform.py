@@ -4,21 +4,13 @@ import numpy as np
 import torch
 from scipy.spatial.transform import Rotation as R
 from dataclasses import dataclass
-from plyfile import PlyData, PlyElement
 from internal.utils.colmap import rotmat2qvec, qvec2rotmat
 from internal.utils.general_utils import build_rotation
+import internal.utils.gaussian_utils
 
 
 @dataclass
-class Gaussian:
-    sh_degrees: int
-    xyz: np.ndarray  # [n, 3]
-    opacities: np.ndarray  # [n, 1]
-    features_dc: np.ndarray  # [n, 3, 1]
-    features_extra: np.ndarray  # [n, 3, 15]
-    scales: np.ndarray  # [n, 3]
-    rotations: np.ndarray  # [n, 4]
-
+class Gaussian(internal.utils.gaussian_utils.Gaussian):
     @staticmethod
     def rx(theta):
         return np.matrix([[1, 0, 0],
@@ -124,91 +116,6 @@ def parse_args():
     return args
 
 
-def load_ply(path: str, sh_degrees: int) -> Gaussian:
-    plydata = PlyData.read(path)
-
-    xyz = np.stack((
-        np.asarray(plydata.elements[0]["x"]),
-        np.asarray(plydata.elements[0]["y"]),
-        np.asarray(plydata.elements[0]["z"]),
-    ), axis=1)
-    opacities = np.asarray(plydata.elements[0]["opacity"])[..., np.newaxis]
-
-    features_dc = np.zeros((xyz.shape[0], 3, 1))
-    features_dc[:, 0, 0] = np.asarray(plydata.elements[0]["f_dc_0"])
-    features_dc[:, 1, 0] = np.asarray(plydata.elements[0]["f_dc_1"])
-    features_dc[:, 2, 0] = np.asarray(plydata.elements[0]["f_dc_2"])
-
-    extra_f_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("f_rest_")]
-    extra_f_names = sorted(extra_f_names, key=lambda x: int(x.split('_')[-1]))
-    assert len(extra_f_names) == 3 * (sh_degrees + 1) ** 2 - 3
-    features_extra = np.zeros((xyz.shape[0], len(extra_f_names)))
-    for idx, attr_name in enumerate(extra_f_names):
-        features_extra[:, idx] = np.asarray(plydata.elements[0][attr_name])
-    # Reshape (P,F*SH_coeffs) to (P, F, SH_coeffs except DC)
-    features_extra = features_extra.reshape((features_extra.shape[0], 3, (sh_degrees + 1) ** 2 - 1))
-
-    scale_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("scale_")]
-    scale_names = sorted(scale_names, key=lambda x: int(x.split('_')[-1]))
-    scales = np.zeros((xyz.shape[0], len(scale_names)))
-    for idx, attr_name in enumerate(scale_names):
-        scales[:, idx] = np.asarray(plydata.elements[0][attr_name])
-
-    rot_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("rot")]
-    rot_names = sorted(rot_names, key=lambda x: int(x.split('_')[-1]))
-    rots = np.zeros((xyz.shape[0], len(rot_names)))
-    for idx, attr_name in enumerate(rot_names):
-        rots[:, idx] = np.asarray(plydata.elements[0][attr_name])
-
-    return Gaussian(
-        sh_degrees=sh_degrees,
-        xyz=xyz,
-        opacities=opacities,
-        features_dc=features_dc,
-        features_extra=features_extra,
-        scales=scales,
-        rotations=rots,
-    )
-
-
-def save_ply(gaussian: Gaussian, path: str):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-
-    xyz = gaussian.xyz
-    normals = np.zeros_like(xyz)
-    f_dc = gaussian.features_dc.reshape((gaussian.features_dc.shape[0], -1))
-    if gaussian.sh_degrees > 0:
-        f_rest = gaussian.features_extra.reshape((gaussian.features_extra.shape[0], -1))
-    else:
-        f_rest = np.zeros((f_dc.shape[0], 0))
-    opacities = gaussian.opacities
-    scale = gaussian.scales
-    rotation = gaussian.rotations
-
-    def construct_list_of_attributes():
-        l = ['x', 'y', 'z', 'nx', 'ny', 'nz']
-        # All channels except the 3 DC
-        for i in range(gaussian.features_dc.shape[1] * gaussian.features_dc.shape[2]):
-            l.append('f_dc_{}'.format(i))
-        if gaussian.sh_degrees > 0:
-            for i in range(gaussian.features_extra.shape[1] * gaussian.features_extra.shape[2]):
-                l.append('f_rest_{}'.format(i))
-        l.append('opacity')
-        for i in range(gaussian.scales.shape[1]):
-            l.append('scale_{}'.format(i))
-        for i in range(gaussian.rotations.shape[1]):
-            l.append('rot_{}'.format(i))
-        return l
-
-    dtype_full = [(attribute, 'f4') for attribute in construct_list_of_attributes()]
-
-    elements = np.empty(xyz.shape[0], dtype=dtype_full)
-    attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
-    elements[:] = list(map(tuple, attributes))
-    el = PlyElement.describe(elements, 'vertex')
-    PlyData([el]).write(path)
-
-
 def main():
     args = parse_args()
     assert args.input != args.output
@@ -216,16 +123,16 @@ def main():
     assert args.scale > 0
     assert os.path.exists(args.input)
 
-    gaussian = load_ply(args.input, args.sh_degrees)
+    gaussian = Gaussian.load_from_ply(args.input, args.sh_degrees)
 
     if args.new_sh_degrees >= 0:
         gaussian.sh_degrees = args.new_sh_degrees
 
-    gaussian.translation(args.tx, args.ty, args.tz)
-    gaussian.rotate(args.rx, args.ry, args.rz)
     gaussian.rescale(args.scale)
+    gaussian.rotate(args.rx, args.ry, args.rz)
+    gaussian.translation(args.tx, args.ty, args.tz)
 
-    save_ply(gaussian, args.output)
+    gaussian.save_to_ply(args.output)
 
     print(args.output)
 

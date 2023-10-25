@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+import internal.utils.gaussian_utils as gaussian_utils
 
 
 class GaussianModelSimplified(nn.Module):
@@ -38,6 +39,20 @@ class GaussianModelSimplified(nn.Module):
                 continue
             init_args[i[len("gaussian_model._"):]] = state_dict[i]
         return cls(**init_args)
+
+    @classmethod
+    def construct_from_ply(cls, ply_path: str, active_sh_degree, device):
+        gaussians = gaussian_utils.Gaussian.load_from_ply(ply_path, active_sh_degree).to_parameter_structure()
+        return cls(
+            active_sh_degree=active_sh_degree,
+            device=device,
+            xyz=gaussians.xyz,
+            opacity=gaussians.opacities,
+            features_dc=gaussians.features_dc,
+            features_rest=gaussians.features_extra,
+            scaling=gaussians.scales,
+            rotation=gaussians.rotations,
+        )
 
     @property
     def get_scaling(self):
