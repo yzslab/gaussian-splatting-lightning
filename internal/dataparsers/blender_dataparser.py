@@ -10,6 +10,7 @@ from .dataparser import ImageSet, PointCloud, DataParser, DataParserOutputs
 from internal.configs.dataset import BlenderParams
 from internal.cameras.cameras import Cameras
 from internal.utils.graphics_utils import fov2focal, getNerfppNorm
+from internal.utils.sh_utils import SH2RGB
 
 
 class BlenderDataParser(DataParser):
@@ -103,7 +104,9 @@ class BlenderDataParser(DataParser):
 
         # We create random points inside the bounds of the synthetic Blender scenes
         xyz = np.random.random((num_pts, 3)) * 2.6 - 1.3
-        rgb = np.asarray(np.random.random((num_pts, 3)) * 255, dtype=np.uint8)
+        # rgb = np.asarray(np.random.random((num_pts, 3)) * 255, dtype=np.uint8)  # random rgb color will produce artifacts
+        shs = np.random.random((num_pts, 3)) / 255.0
+        rgb = np.asarray(SH2RGB(shs) * 255, dtype=np.uint8)
 
         train_set = self._parse_transforms_json("train")
 
