@@ -72,7 +72,7 @@ python viewer.py TRAINING_OUTPUT_PATH
 # e.g.: 
 #   python viewer.py outputs/lego/
 #   python viewer.py outputs/lego/checkpoints/epoch=300-step=30000.ckpt
-#   python viewer.py outputs/lego/lightning_logs/version_0/checkpoints/epoch=299-step=30000.ckpt
+#   python viewer.py outputs/lego/baseline/point_cloud/iteration_30000/point_cloud.ply  # only works with VanillaRenderer
 ```
 
 # License
