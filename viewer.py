@@ -11,6 +11,8 @@ from internal.models.gaussian_model_simplified import GaussianModelSimplified
 from internal.viewer import ClientThread, ViewerRenderer
 from internal.utils.rotation import rotation_matrix
 
+DROPDOWN_USE_DIRECT_APPEARANCE_EMBEDDING_VALUE = "@Direct"
+
 
 class Viewer:
     def __init__(
@@ -88,7 +90,7 @@ class Viewer:
             with open(appearance_group_filename, "r") as f:
                 self.available_appearance_options = json.load(f)
 
-        self.available_appearance_options["@Direct"] = None
+        self.available_appearance_options[DROPDOWN_USE_DIRECT_APPEARANCE_EMBEDDING_VALUE] = None
         # self.available_appearance_options["@Disabled"] = None
 
         # create renderer
@@ -221,7 +223,7 @@ class Viewer:
             self.appearance_embedding_dropdown = server.add_gui_dropdown(
                 "Appearance Group",
                 options=appearance_options,
-                initial_value=appearance_options[1] if len(appearance_options) > 0 else appearance_options[0],
+                initial_value=appearance_options[0],
             )
             self.scaling_modifier.on_update(self._handle_option_updated)
             self.appearance_embedding.on_update(self._handle_appearance_embedding_slider_updated)
@@ -231,12 +233,12 @@ class Viewer:
             time.sleep(999)
 
     def _handle_appearance_embedding_slider_updated(self, _):
-        self.appearance_embedding_dropdown.value = "@Direct"
+        self.appearance_embedding_dropdown.value = DROPDOWN_USE_DIRECT_APPEARANCE_EMBEDDING_VALUE
         self._handle_option_updated(_)
 
     def get_appearance_embedding_value(self):
         name = self.appearance_embedding_dropdown.value
-        if name == "@Direct" or name not in self.available_appearance_options:
+        if name == DROPDOWN_USE_DIRECT_APPEARANCE_EMBEDDING_VALUE or name not in self.available_appearance_options:
             return self.appearance_embedding.value
         return self.available_appearance_options[name]
 
