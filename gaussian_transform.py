@@ -1,11 +1,13 @@
 import os
 import argparse
+import json
 import numpy as np
 import torch
 from scipy.spatial.transform import Rotation as R
 from dataclasses import dataclass
 from internal.utils.colmap import rotmat2qvec, qvec2rotmat
 from internal.utils.general_utils import build_rotation
+from internal.utils.rotation import rotation_matrix
 import internal.utils.gaussian_utils
 
 
@@ -46,6 +48,9 @@ class Gaussian(internal.utils.gaussian_utils.Gaussian):
 
         rotation_matrix = np.asarray(self.rx(x) @ self.ry(y) @ self.rz(z), dtype=np.float32)
 
+        return self.rotate_by_matrix(rotation_matrix)
+
+    def rotate_by_matrix(self, rotation_matrix, keep_sh_degree: bool = True):
         # rotate xyz
         self.xyz = np.asarray(np.matmul(self.xyz, rotation_matrix.T))
 
@@ -76,8 +81,9 @@ class Gaussian(internal.utils.gaussian_utils.Gaussian):
         self.rotations = rotations_from_matrix
 
         # TODO: rotate shs
-        print("set sh_degree=0 when rotation transform enabled")
-        self.sh_degrees = 0
+        if keep_sh_degree is False:
+            print("set sh_degree=0 when rotation transform enabled")
+            self.sh_degrees = 0
 
     def translation(self, x: float, y: float, z: float):
         if x == 0. and y == 0. and z == 0.:
@@ -109,6 +115,9 @@ def parse_args():
     # scale
     parser.add_argument("--scale", type=float, default=1)
 
+    # auto reorient
+    parser.add_argument("--auto-reorient", action="store_true", default=False)
+
     args = parser.parse_args()
     args.input = os.path.expanduser(args.input)
     args.output = os.path.expanduser(args.output)
@@ -125,12 +134,27 @@ def main():
 
     gaussian = Gaussian.load_from_ply(args.input, args.sh_degrees)
 
-    if args.new_sh_degrees >= 0:
-        gaussian.sh_degrees = args.new_sh_degrees
+    if args.auto_reorient is True:
+        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(args.input))), "cameras.json"), "r") as f:
+            cameras = json.load(f)
+        up = np.zeros(3)
+        for i in cameras:
+            up += np.asarray(i["rotation"])[:3, 1]
+        up = -up / np.linalg.norm(up)
+        print("up vector = {}".format(up))
 
-    gaussian.rescale(args.scale)
-    gaussian.rotate(args.rx, args.ry, args.rz)
-    gaussian.translation(args.tx, args.ty, args.tz)
+        rotation = rotation_matrix(torch.tensor(up, dtype=torch.float), torch.Tensor([0, 0, 1])).numpy()
+
+        print("rotation matrix = {}".format(rotation))
+
+        gaussian.rotate_by_matrix(rotation)
+    else:
+        if args.new_sh_degrees >= 0:
+            gaussian.sh_degrees = args.new_sh_degrees
+
+        gaussian.rescale(args.scale)
+        gaussian.rotate(args.rx, args.ry, args.rz)
+        gaussian.translation(args.tx, args.ty, args.tz)
 
     gaussian.save_to_ply(args.output)
 
