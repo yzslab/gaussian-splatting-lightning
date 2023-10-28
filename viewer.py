@@ -69,15 +69,27 @@ class Viewer:
         dataset_type = None
         if load_from.endswith(".ckpt") is True:
             model, renderer, checkpoint = self._initialize_models_from_checkpoint(load_from)
-            cameras_json_path = os.path.join(os.path.dirname(os.path.dirname(load_from)), "cameras.json")
+            training_output_base_dir = os.path.dirname(os.path.dirname(load_from))
             dataset_type = checkpoint["datamodule_hyper_parameters"]["type"]
         elif load_from.endswith(".ply") is True:
             model, renderer = self._initialize_models_from_point_cloud(load_from)
-            cameras_json_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(load_from))), "cameras.json")
+            training_output_base_dir = os.path.dirname(os.path.dirname(os.path.dirname(load_from)))
         else:
             raise ValueError("unsupported file {}".format(load_from))
 
+        # reorient the scene
+        cameras_json_path = os.path.join(training_output_base_dir, "cameras.json")
         self.camera_transform = self._reorient(cameras_json_path, mode=reorient, dataset_type=dataset_type)
+
+        # load appearance groups
+        self.available_appearance_options = {}
+        appearance_group_filename = os.path.join(training_output_base_dir, "appearance_group_ids.json")
+        if os.path.exists(appearance_group_filename) is True:
+            with open(appearance_group_filename, "r") as f:
+                self.available_appearance_options = json.load(f)
+
+        self.available_appearance_options["@Direct"] = None
+        # self.available_appearance_options["@Disabled"] = None
 
         # create renderer
         self.viewer_renderer = ViewerRenderer(
@@ -198,10 +210,35 @@ class Viewer:
                 step=0.1,
                 initial_value=1.,
             )
-        self.scaling_modifier.on_update(self._handle_option_updated)
+            self.appearance_embedding = server.add_gui_slider(
+                "Appearance Direct",
+                min=0.,
+                max=1.,
+                step=0.01,
+                initial_value=0.,
+            )
+            appearance_options = list(self.available_appearance_options.keys())
+            self.appearance_embedding_dropdown = server.add_gui_dropdown(
+                "Appearance Group",
+                options=appearance_options,
+                initial_value=appearance_options[1] if len(appearance_options) > 0 else appearance_options[0],
+            )
+            self.scaling_modifier.on_update(self._handle_option_updated)
+            self.appearance_embedding.on_update(self._handle_appearance_embedding_slider_updated)
+            self.appearance_embedding_dropdown.on_update(self._handle_option_updated)
 
         while True:
             time.sleep(999)
+
+    def _handle_appearance_embedding_slider_updated(self, _):
+        self.appearance_embedding_dropdown.value = "@Direct"
+        self._handle_option_updated(_)
+
+    def get_appearance_embedding_value(self):
+        name = self.appearance_embedding_dropdown.value
+        if name == "@Direct" or name not in self.available_appearance_options:
+            return self.appearance_embedding.value
+        return self.available_appearance_options[name]
 
     def _handle_option_updated(self, _):
         for i in self.clients:

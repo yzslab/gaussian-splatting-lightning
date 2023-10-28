@@ -78,7 +78,7 @@ class ClientThread(threading.Thread):
                 cy=torch.tensor([(image_height // 2)], dtype=torch.int),
                 width=torch.tensor([image_width], dtype=torch.int),
                 height=torch.tensor([image_height], dtype=torch.int),
-                appearance_embedding=torch.tensor([0]),
+                appearance_embedding=torch.tensor([self.viewer.get_appearance_embedding_value()]),
                 distortion_params=None,
                 camera_type=torch.tensor([0], dtype=torch.int),
             )[0].to_device(self.viewer.device)
