@@ -47,6 +47,15 @@ class ColmapParams:
 class BlenderParams:
     white_background: bool = False
 
+    random_point_color: bool = False
+
+    split_mode: Literal["reconstruction", "experiment"] = "experiment"
+
+
+@dataclass
+class NSVFParams(BlenderParams):
+    pass
+
 
 @dataclass
 class DatasetParams:
@@ -60,6 +69,8 @@ class DatasetParams:
     colmap: ColmapParams
 
     blender: BlenderParams
+
+    nsvf: NSVFParams
 
     image_scale_factor: float = 1.  # TODO
 

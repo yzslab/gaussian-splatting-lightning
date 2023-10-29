@@ -118,8 +118,8 @@ class Viewer:
                 return transform
 
         # skip reorient if dataset type is blender
-        if dataset_type == "blender" and mode == "auto":
-            print("skip reorient for blender dataset")
+        if dataset_type in ["blender", "nsvf"] and mode == "auto":
+            print("skip reorient for {} dataset".format(dataset_type))
             return transform
 
         with open(cameras_json_path, "r") as f:

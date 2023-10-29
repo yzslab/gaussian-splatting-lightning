@@ -18,6 +18,7 @@ from internal.dataparsers import ImageSet
 from internal.configs.dataset import DatasetParams
 from internal.dataparsers.colmap_dataparser import ColmapDataParser
 from internal.dataparsers.blender_dataparser import BlenderDataParser
+from internal.dataparsers.nsvf_dataparser import NSVFDataParser
 from internal.utils.graphics_utils import store_ply, BasicPointCloud
 
 from tqdm import tqdm
@@ -183,7 +184,7 @@ class DataModule(LightningDataModule):
             self,
             path: str,
             params: DatasetParams,
-            type: Literal["colmap", "blender"] = None,
+            type: Literal["colmap", "blender", "nsvf"] = None,
             distributed: bool = False,
     ) -> None:
         r"""Load dataset
@@ -209,8 +210,10 @@ class DataModule(LightningDataModule):
         if self.hparams["type"] is None:
             if os.path.isdir(os.path.join(self.hparams["path"], "sparse")) is True:
                 self.hparams["type"] = "colmap"
-            else:
+            elif os.path.exists(os.path.join(self.hparams["path"], "transforms_train.json")):
                 self.hparams["type"] = "blender"
+            else:
+                self.hparams["type"] = "nsvf"
 
         # build dataparser params
         dataparser_params = {
@@ -223,6 +226,8 @@ class DataModule(LightningDataModule):
             dataparser = ColmapDataParser(params=self.hparams["params"].colmap, **dataparser_params)
         elif self.hparams["type"] == "blender":
             dataparser = BlenderDataParser(params=self.hparams["params"].blender, **dataparser_params)
+        elif self.hparams["type"] == "nsvf":
+            dataparser = NSVFDataParser(params=self.hparams["params"].nsvf, **dataparser_params)
         else:
             raise ValueError("unsupported dataset type {}".format(self.hparams["type"]))
 

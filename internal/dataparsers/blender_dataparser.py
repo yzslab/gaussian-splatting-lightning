@@ -25,6 +25,12 @@ class BlenderDataParser(DataParser):
         with open(os.path.join(self.path, "transforms_{}.json".format(split)), "r") as f:
             transforms = json.load(f)
 
+        # if in reconstruction mode, merge val and test into train set
+        if split == "train" and self.params.split_mode == "reconstruction":
+            for i in ["val", "test"]:
+                with open(os.path.join(self.path, "transforms_{}.json".format(i)), "r") as f:
+                    transforms["frames"] += json.load(f)["frames"]
+
         # TODO: auto detect image size
         width = 800
 
@@ -104,9 +110,12 @@ class BlenderDataParser(DataParser):
 
         # We create random points inside the bounds of the synthetic Blender scenes
         xyz = np.random.random((num_pts, 3)) * 2.6 - 1.3
-        # rgb = np.asarray(np.random.random((num_pts, 3)) * 255, dtype=np.uint8)  # random rgb color will produce artifacts
-        shs = np.random.random((num_pts, 3)) / 255.0
-        rgb = np.asarray(SH2RGB(shs) * 255, dtype=np.uint8)
+        # shs = np.random.random((num_pts, 3)) / 255.0
+        # rgb = np.asarray(SH2RGB(shs) * 255, dtype=np.uint8)
+        if self.params.random_point_color is True:
+            rgb = np.asarray(np.random.random((num_pts, 3)) * 255, dtype=np.uint8)  # random rgb color will produce artifacts
+        else:
+            rgb = np.ones((num_pts, 3), dtype=np.uint8) * 127
 
         train_set = self._parse_transforms_json("train")
 

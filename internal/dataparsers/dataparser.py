@@ -13,7 +13,7 @@ class ImageSet:
     image_paths: list
     """ Full path to the image file """
 
-    mask_paths: list
+    mask_paths: Optional[list]
     """ Full path to the mask file """
 
     cameras: Cameras
@@ -27,6 +27,10 @@ class ImageSet:
     def __iter__(self):
         for i in range(len(self)):
             yield self[i]
+
+    def __post_init__(self):
+        if self.mask_paths is None:
+            self.mask_paths = [None for _ in range(len(self.image_paths))]
 
 
 @dataclass

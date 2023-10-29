@@ -37,6 +37,11 @@ class Camera:
 
 @dataclass
 class Cameras:
+    """
+    Y down, Z forward
+    world-to-camera
+    """
+
     R: Tensor  # [n_cameras, 3, 3]
     T: Tensor  # [n_cameras, 3]
     fx: Tensor  # [n_cameras]
