@@ -1,11 +1,10 @@
-from internal.models.gaussian_model_simplified import GaussianModelSimplified
 import internal.renderers as renderers
 
 
 class ViewerRenderer:
     def __init__(
             self,
-            gaussian_model: GaussianModelSimplified,
+            gaussian_model,
             renderer: renderers.Renderer,
             background_color,
     ):

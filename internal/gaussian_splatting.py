@@ -25,6 +25,7 @@ class GaussianSplatting(LightningModule):
             self,
             gaussian: ModelParams,
             save_iterations: List[int],
+            camera_extent_factor: float = 1.,
             # enable_appearance_model: bool = False,
             background_color: Tuple[float, float, float] = (0., 0., 0.),
             output_path: str = None,
@@ -70,6 +71,10 @@ class GaussianSplatting(LightningModule):
                 spatial_lr_scale=self.cameras_extent,
             )
             self.gaussian_model.training_setup(self.hparams["gaussian"].optimization)
+
+            # scale after create_from_pcd(), avoid lr scaling
+            self.cameras_extent *= self.hparams["camera_extent_factor"]
+            self.prune_extent *= self.hparams["camera_extent_factor"]
 
         self.renderer.setup(stage, lightning_module=self)
 

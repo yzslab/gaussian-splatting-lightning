@@ -1,6 +1,8 @@
 import os
 import numpy as np
 import torch
+from scipy.spatial.transform import Rotation as R
+from internal.utils.general_utils import build_rotation
 from typing import Union
 from dataclasses import dataclass
 from plyfile import PlyData, PlyElement
@@ -113,3 +115,73 @@ class Gaussian:
         elements[:] = list(map(tuple, attributes))
         el = PlyElement.describe(elements, 'vertex')
         PlyData([el]).write(path)
+
+
+class GaussianTransformUtils:
+    @staticmethod
+    def translation(xyz, x: float, y: float, z: float):
+        if x == 0. and y == 0. and z == 0.:
+            return
+
+        return xyz + torch.tensor([[x, y, z]], device=xyz.device)
+
+    @staticmethod
+    def rescale(xyz, scaling, factor: float):
+        return xyz * factor, scaling * factor
+
+    @staticmethod
+    def rx(theta):
+        theta = torch.tensor(theta)
+        return torch.tensor([[1, 0, 0],
+                             [0, torch.cos(theta), -torch.sin(theta)],
+                             [0, torch.sin(theta), torch.cos(theta)]], dtype=torch.float)
+
+    @staticmethod
+    def ry(theta):
+        theta = torch.tensor(theta)
+        return torch.tensor([[torch.cos(theta), 0, torch.sin(theta)],
+                             [0, 1, 0],
+                             [-torch.sin(theta), 0, torch.cos(theta)]], dtype=torch.float)
+
+    @staticmethod
+    def rz(theta):
+        theta = torch.tensor(theta)
+        return torch.tensor([[torch.cos(theta), -torch.sin(theta), 0],
+                             [torch.sin(theta), torch.cos(theta), 0],
+                             [0, 0, 1]], dtype=torch.float)
+
+    @classmethod
+    def rotate(cls, xyz, rotation, x: float, y: float, z: float):
+        """
+        rotate in z-y-x order, radians as unit
+        """
+
+        if x == 0. and y == 0. and z == 0.:
+            return
+
+        # rotate
+        rotation_matrix = cls.rx(x) @ cls.ry(y) @ cls.rz(z)
+        xyz, rotation = cls.rotate_by_matrix(
+            xyz,
+            rotation,
+            rotation_matrix.to(xyz),
+        )
+
+        return xyz, rotation
+
+    @staticmethod
+    def rotate_by_matrix(xyz, rotations, rotation_matrix):
+        # rotate xyz
+        xyz = torch.matmul(xyz, rotation_matrix.T)
+
+        # rotate via rotation matrix
+        gaussian_rotation = build_rotation(rotations).to(xyz.device)
+        gaussian_rotation = rotation_matrix @ gaussian_rotation
+        xyzw_quaternions = R.from_matrix(gaussian_rotation.cpu().numpy()).as_quat(canonical=False)
+        wxyz_quaternions = xyzw_quaternions
+        wxyz_quaternions[:, [0, 1, 2, 3]] = wxyz_quaternions[:, [3, 0, 1, 2]]
+        rotations_from_matrix = wxyz_quaternions
+
+        # TODO: rotate shs
+
+        return xyz, torch.tensor(rotations_from_matrix).to(xyz)
