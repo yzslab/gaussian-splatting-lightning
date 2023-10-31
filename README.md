@@ -11,6 +11,14 @@
 * Interactive web viewer
 ## Installation
 ```bash
+# clone repository
+git clone --recursive https://github.com/yzslab/gaussian-splatting-lightning.git
+# if you forgot the `--recursive` options, you can run below git commands after cloning:
+#   git submodule sync --recursive
+#   git submodule update --init --recursive --force
+cd gaussian-splatting-lightning
+
+
 # create virtual environment
 conda create -yn gspl python=3.9 pip
 conda activate gspl
