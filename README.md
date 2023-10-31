@@ -67,6 +67,10 @@ python main.py fit \
 ```
 
 ## Web Viewer
+
+<video width="50%" src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/b0c1478c-31fc-498c-a7b2-9a2440598916"></video>
+
+* Base
 ```bash
 python viewer.py TRAINING_OUTPUT_PATH
 # e.g.: 
@@ -74,7 +78,14 @@ python viewer.py TRAINING_OUTPUT_PATH
 #   python viewer.py outputs/lego/checkpoints/epoch=300-step=30000.ckpt
 #   python viewer.py outputs/lego/baseline/point_cloud/iteration_30000/point_cloud.ply  # only works with VanillaRenderer
 ```
-
+* Load multiple models and enable transform options
+```bash
+python viewer.py \
+    outputs/garden \
+    outputs/lego \
+    outputs/Synthetic_NSVF/Palace/point_cloud/iteration_30000/point_cloud.ply \
+    --enable_transform
+```
 # License
 This repository is licensed under MIT license. Except some thirdparty dependencies (e.g. files in `submodules` directory), files and codes copied from other repositories, which are separately licensed.
 ```text
