@@ -68,7 +68,8 @@ class NSVFDataParser(DataParser):
             cy=cy,
             width=width,
             height=height,
-            appearance_embedding=torch.zeros_like(width),
+            appearance_id=torch.zeros_like(width),
+            normalized_appearance_id=torch.zeros_like(width),
             distortion_params=None,
             camera_type=torch.zeros_like(width),
         )

@@ -17,7 +17,8 @@ class Camera:
     cy: Tensor
     width: Tensor
     height: Tensor
-    appearance_embedding: Tensor
+    appearance_id: Tensor
+    normalized_appearance_id: Tensor
     distortion_params: Optional[Tensor]  # [6]
     camera_type: Tensor
 
@@ -52,7 +53,8 @@ class Cameras:
     cy: Tensor  # [n_cameras]
     width: Tensor  # [n_cameras]
     height: Tensor  # [n_cameras]
-    appearance_embedding: Tensor  # [n_cameras]
+    appearance_id: Tensor  # [n_cameras]
+    normalized_appearance_id: Optional[Tensor]  # [n_cameras]
     distortion_params: Optional[Tensor]  # [n_cameras, 6]
     camera_type: Tensor  # Int[n_cameras]
 
@@ -134,7 +136,8 @@ class Cameras:
             cy=self.cy[index],
             width=self.width[index],
             height=self.height[index],
-            appearance_embedding=self.appearance_embedding[index],
+            appearance_id=self.appearance_id[index],
+            normalized_appearance_id=self.normalized_appearance_id[index],
             distortion_params=self.distortion_params[index],
             camera_type=self.camera_type[index],
             world_to_camera=self.world_to_camera[index],

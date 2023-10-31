@@ -71,7 +71,7 @@ class GaussianSplatting(LightningModule):
             )
             self.gaussian_model.training_setup(self.hparams["gaussian"].optimization)
 
-        self.renderer.setup(stage)
+        self.renderer.setup(stage, lightning_module=self)
 
         self.log_image = None
         if isinstance(self.logger, lightning.pytorch.loggers.TensorBoardLogger):

@@ -68,6 +68,7 @@ class ClientThread(threading.Thread):
                 image_height = int(image_width / aspect_ratio)
 
             # construct camera
+            appearance_id = self.viewer.get_appearance_id_value()
             fx = torch.tensor([fov2focal(cam.fov, image_width)], dtype=torch.float)
             camera = Cameras(
                 R=R.unsqueeze(0),
@@ -78,7 +79,8 @@ class ClientThread(threading.Thread):
                 cy=torch.tensor([(image_height // 2)], dtype=torch.int),
                 width=torch.tensor([image_width], dtype=torch.int),
                 height=torch.tensor([image_height], dtype=torch.int),
-                appearance_embedding=torch.tensor([self.viewer.get_appearance_embedding_value()]),
+                appearance_id=torch.tensor([appearance_id[0]], dtype=torch.int),
+                normalized_appearance_id=torch.tensor([appearance_id[1]], dtype=torch.float),
                 distortion_params=None,
                 camera_type=torch.tensor([0], dtype=torch.int),
             )[0].to_device(self.viewer.device)

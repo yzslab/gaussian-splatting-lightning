@@ -4,20 +4,24 @@ from internal.configs.appearance import AppearanceModelParams
 from internal.cameras.cameras import Camera
 from internal.models.gaussian_model import GaussianModel
 from internal.models.appearance_model import AppearanceModel
+from internal.utils.sh_utils import eval_sh
 from .vanilla_renderer import VanillaRenderer
 
 
 class AppearanceMLPRenderer(VanillaRenderer):
+    apply_on_gaussian: bool = False
 
     def __init__(
             self,
             appearance: AppearanceModelParams,
+            apply_on_gaussian: bool = False,
             compute_cov3D_python: bool = False,
             convert_SHs_python: bool = False,
     ):
         super().__init__(compute_cov3D_python, convert_SHs_python)
 
         self.appearance_config = appearance
+        self.apply_on_gaussian = apply_on_gaussian
 
     def forward(
             self,
@@ -28,21 +32,34 @@ class AppearanceMLPRenderer(VanillaRenderer):
             override_color=None,
             appearance: Tuple = None,
     ):
-        outputs = super().forward(viewpoint_camera, pc, bg_color, scaling_modifier, override_color)
-        rendered_image = outputs["render"]
-
-        # appearance embedding
+        # appearance
         if appearance is not None:
             grayscale_factors, gamma = appearance
         else:
-            grayscale_factors, gamma = self.appearance_model.get_appearance(viewpoint_camera.appearance_embedding)
+            grayscale_factors, gamma = self.appearance_model.get_appearance(viewpoint_camera.normalized_appearance_id)
 
-        # apply appearance transform
-        rendered_image = torch.pow(rendered_image, gamma)
-        rendered_image = rendered_image * grayscale_factors
+        if self.apply_on_gaussian is True:
+            shs_view = pc.get_features.transpose(1, 2).view(-1, 3, (pc.max_sh_degree + 1) ** 2)
+            with torch.no_grad():
+                dir_pp = (pc.get_xyz - viewpoint_camera.camera_center.repeat(pc.get_features.shape[0], 1))
+                dir_pp_normalized = dir_pp / dir_pp.norm(dim=1, keepdim=True)
+            sh2rgb = eval_sh(pc.active_sh_degree, shs_view, dir_pp_normalized)
+            override_color = torch.clamp_min(sh2rgb + 0.5, 0.0)
+            grayscale_factors = grayscale_factors.reshape((1, -1))
+            gamma = gamma.reshape((1, -1))
+            override_color = torch.pow(override_color + 1e-5, gamma)  # +1e-5 to avoid NaN
+            override_color = override_color * grayscale_factors
+            outputs = super().forward(viewpoint_camera, pc, bg_color, scaling_modifier, override_color)
+        else:
+            outputs = super().forward(viewpoint_camera, pc, bg_color, scaling_modifier, override_color)
+            rendered_image = outputs["render"]
 
-        # store transformed result
-        outputs["render"] = rendered_image
+            # apply appearance transform
+            rendered_image = torch.pow(rendered_image, gamma)
+            rendered_image = rendered_image * grayscale_factors
+
+            # store transformed result
+            outputs["render"] = rendered_image
 
         return outputs
 

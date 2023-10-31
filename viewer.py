@@ -84,13 +84,12 @@ class Viewer:
         self.camera_transform = self._reorient(cameras_json_path, mode=reorient, dataset_type=dataset_type)
 
         # load appearance groups
-        self.available_appearance_options = {}
         appearance_group_filename = os.path.join(training_output_base_dir, "appearance_group_ids.json")
         if os.path.exists(appearance_group_filename) is True:
             with open(appearance_group_filename, "r") as f:
                 self.available_appearance_options = json.load(f)
-
-        self.available_appearance_options[DROPDOWN_USE_DIRECT_APPEARANCE_EMBEDDING_VALUE] = None
+        else:
+            self.available_appearance_options = None
         # self.available_appearance_options["@Disabled"] = None
 
         # create renderer
@@ -212,34 +211,62 @@ class Viewer:
                 step=0.1,
                 initial_value=1.,
             )
-            self.appearance_embedding = server.add_gui_slider(
-                "Appearance Direct",
-                min=0.,
-                max=1.,
-                step=0.01,
-                initial_value=0.,
-            )
-            appearance_options = list(self.available_appearance_options.keys())
-            self.appearance_embedding_dropdown = server.add_gui_dropdown(
-                "Appearance Group",
-                options=appearance_options,
-                initial_value=appearance_options[0],
-            )
-            self.scaling_modifier.on_update(self._handle_option_updated)
-            self.appearance_embedding.on_update(self._handle_appearance_embedding_slider_updated)
-            self.appearance_embedding_dropdown.on_update(self._handle_option_updated)
+            if self.available_appearance_options is not None:
+                # find max appearance id
+                max_input_id = 0
+                available_option_values = list(self.available_appearance_options.values())
+                if isinstance(available_option_values[0], list) or isinstance(available_option_values[0], tuple):
+                    for i in available_option_values:
+                        if i[0] > max_input_id:
+                            max_input_id = i[0]
+                else:
+                    # convert to tuple, compatible with previous version
+                    for i in self.available_appearance_options:
+                        self.available_appearance_options[i] = (0, self.available_appearance_options[i])
+                self.available_appearance_options[DROPDOWN_USE_DIRECT_APPEARANCE_EMBEDDING_VALUE] = None
+
+                self.appearance_id = server.add_gui_slider(
+                    "Appearance Direct",
+                    min=0,
+                    max=max_input_id,
+                    step=1,
+                    initial_value=0,
+                    visible=max_input_id > 0
+                )
+
+                self.normalized_appearance_id = server.add_gui_slider(
+                    "Normalized Appearance Direct",
+                    min=0.,
+                    max=1.,
+                    step=0.01,
+                    initial_value=0.,
+                )
+
+                appearance_options = list(self.available_appearance_options.keys())
+
+                self.appearance_group_dropdown = server.add_gui_dropdown(
+                    "Appearance Group",
+                    options=appearance_options,
+                    initial_value=appearance_options[0],
+                )
+                self.scaling_modifier.on_update(self._handle_option_updated)
+                self.appearance_id.on_update(self._handle_appearance_embedding_slider_updated)
+                self.normalized_appearance_id.on_update(self._handle_appearance_embedding_slider_updated)
+                self.appearance_group_dropdown.on_update(self._handle_option_updated)
 
         while True:
             time.sleep(999)
 
     def _handle_appearance_embedding_slider_updated(self, _):
-        self.appearance_embedding_dropdown.value = DROPDOWN_USE_DIRECT_APPEARANCE_EMBEDDING_VALUE
+        self.appearance_group_dropdown.value = DROPDOWN_USE_DIRECT_APPEARANCE_EMBEDDING_VALUE
         self._handle_option_updated(_)
 
-    def get_appearance_embedding_value(self):
-        name = self.appearance_embedding_dropdown.value
+    def get_appearance_id_value(self):
+        if self.available_appearance_options is None:
+            return (0, 0.)
+        name = self.appearance_group_dropdown.value
         if name == DROPDOWN_USE_DIRECT_APPEARANCE_EMBEDDING_VALUE or name not in self.available_appearance_options:
-            return self.appearance_embedding.value
+            return (self.appearance_id.value, self.normalized_appearance_id.value)
         return self.available_appearance_options[name]
 
     def _handle_option_updated(self, _):

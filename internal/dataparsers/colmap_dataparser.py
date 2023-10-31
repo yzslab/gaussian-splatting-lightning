@@ -140,7 +140,7 @@ class ColmapDataParser(DataParser):
 
         image_dir = self.get_image_dir()
 
-        # build appearance dict
+        # build appearance dict: group name -> image name list
         if self.params.appearance_groups is None:
             print("appearance group by camera id")
             appearance_groups = {}
@@ -154,19 +154,29 @@ class ColmapDataParser(DataParser):
             print("loading appearance groups from {}".format(appearance_group_file_path))
             with open("{}.json".format(appearance_group_file_path), "r") as f:
                 appearance_groups = json.load(f)
-        # assign normalized id to appearance groups
+
+        # sort the appearance group name list
         appearance_group_name_list = sorted(list(appearance_groups.keys()))
         appearance_group_num = float(len(appearance_group_name_list))
-        appearance_group_name_to_normalized_id = {name: idx / appearance_group_num for idx, name in
-                                                  enumerate(appearance_group_name_list)}
-        # map from image name to normalized appearance id
-        image_name_to_appearance = {}
-        for appearance_group_name in appearance_groups:
-            image_name_list = appearance_groups[appearance_group_name]
-            for image_name in image_name_list:
-                image_name_to_appearance[image_name] = appearance_group_name_to_normalized_id[appearance_group_name]
-        # convert to list
-        image_appearances = [image_name_to_appearance[images[i].name] for i in images]
+
+        # use order as the appearance id of the group
+        # map from image name to appearance id
+        image_name_to_appearance_id = {}
+        image_name_to_normalized_appearance_id = {}
+        appearance_group_name_to_appearance_id = {}  # tuple(id, normalized id)
+        for idx, appearance_group_name in enumerate(appearance_group_name_list):
+            normalized_idx = idx / appearance_group_num
+            appearance_group_name_to_appearance_id[appearance_group_name] = (idx, normalized_idx)
+            for image_name in appearance_groups[appearance_group_name]:
+                image_name_to_appearance_id[image_name] = idx
+                image_name_to_normalized_appearance_id[image_name] = normalized_idx
+
+        # convert appearance id dict to list, which use the same order as the colmap images
+        image_appearance_id = []
+        image_normalized_appearance_id = []
+        for i in images:
+            image_appearance_id.append(image_name_to_appearance_id[images[i].name])
+            image_normalized_appearance_id.append(image_name_to_normalized_appearance_id[images[i].name])
 
         # convert points3D to ply
         # ply_path = os.path.join(sparse_model_dir, "points3D.ply")
@@ -199,7 +209,8 @@ class ColmapDataParser(DataParser):
         cy_list = []
         width_list = []
         height_list = []
-        appearance_embedding_list = image_appearances
+        appearance_id_list = image_appearance_id
+        normalized_appearance_id_list = image_normalized_appearance_id
         camera_type_list = []
         image_name_list = []
         image_path_list = []
@@ -280,7 +291,8 @@ class ColmapDataParser(DataParser):
         cy = torch.tensor(cy_list, dtype=torch.float32)
         width = torch.tensor(width_list, dtype=torch.int16)
         height = torch.tensor(height_list, dtype=torch.int16)
-        appearance_embedding = torch.tensor(appearance_embedding_list, dtype=torch.float32)
+        appearance_id = torch.tensor(appearance_id_list, dtype=torch.int)
+        normalized_appearance_id = torch.tensor(normalized_appearance_id_list, dtype=torch.float32)
         camera_type = torch.tensor(camera_type_list, dtype=torch.int8)
 
         is_w2c_required = self.params.scene_scale != 1.0 or self.params.reorient is True
@@ -365,7 +377,8 @@ class ColmapDataParser(DataParser):
                 cy=cy[indices],
                 width=width[indices],
                 height=height[indices],
-                appearance_embedding=appearance_embedding[indices],
+                appearance_id=appearance_id[indices],
+                normalized_appearance_id=normalized_appearance_id[indices],
                 distortion_params=None,
                 camera_type=camera_type[indices],
             )
@@ -392,5 +405,5 @@ class ColmapDataParser(DataParser):
                 rgb=rgb,
             ),
             camera_extent=norm["radius"],
-            appearance_group_ids=appearance_group_name_to_normalized_id,
+            appearance_group_ids=appearance_group_name_to_appearance_id,
         )

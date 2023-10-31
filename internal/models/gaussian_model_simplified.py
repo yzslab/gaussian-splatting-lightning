@@ -73,3 +73,7 @@ class GaussianModelSimplified(nn.Module):
     @property
     def get_opacity(self):
         return self._opacity
+
+    @property
+    def max_sh_degree(self):
+        return self.active_sh_degree
