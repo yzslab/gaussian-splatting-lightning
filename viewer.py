@@ -211,6 +211,8 @@ class Viewer:
                 step=0.1,
                 initial_value=1.,
             )
+            self.scaling_modifier.on_update(self._handle_option_updated)
+
             if self.available_appearance_options is not None:
                 # find max appearance id
                 max_input_id = 0
@@ -249,7 +251,6 @@ class Viewer:
                     options=appearance_options,
                     initial_value=appearance_options[0],
                 )
-                self.scaling_modifier.on_update(self._handle_option_updated)
                 self.appearance_id.on_update(self._handle_appearance_embedding_slider_updated)
                 self.normalized_appearance_id.on_update(self._handle_appearance_embedding_slider_updated)
                 self.appearance_group_dropdown.on_update(self._handle_option_updated)
