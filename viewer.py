@@ -5,7 +5,10 @@ import time
 import json
 import argparse
 from typing import Tuple, Literal, List
+
+import numpy as np
 import viser
+import viser.transforms as vtf
 import torch
 from internal.renderers import VanillaRenderer
 from internal.models.gaussian_model_simplified import GaussianModelSimplified
@@ -27,6 +30,7 @@ class Viewer:
             reorient: Literal["auto", "enable", "disable"] = "auto",
             sh_degree: int = 3,
             enable_transform: bool = False,
+            show_cameras: bool = False,
     ):
         self.device = torch.device("cuda")
 
@@ -38,6 +42,8 @@ class Viewer:
 
         self.enable_transform = enable_transform
 
+        self.show_cameras = show_cameras
+
         load_from = self._search_load_file(model_paths[0])
 
         # TODO: load multiple models more elegantly
@@ -47,6 +53,8 @@ class Viewer:
         # reorient the scene
         cameras_json_path = os.path.join(training_output_base_dir, "cameras.json")
         self.camera_transform = self._reorient(cameras_json_path, mode=reorient, dataset_type=dataset_type)
+        # load camera poses
+        self.camera_poses = self.load_camera_poses(cameras_json_path)
 
         self.available_appearance_options = None
 
@@ -163,6 +171,77 @@ class Viewer:
 
         return transform
 
+    def load_camera_poses(self, cameras_json_path: str):
+        if os.path.exists(cameras_json_path) is False:
+            return []
+        with open(cameras_json_path, "r") as f:
+            return json.load(f)
+
+    def add_cameras_to_scene(self, viser_server):
+        if len(self.camera_poses) == 0:
+            return
+
+        self.camera_handles = []
+
+        camera_pose_transform = np.linalg.inv(self.camera_transform.cpu().numpy())
+        for camera in self.camera_poses:
+            name = camera["img_name"]
+            c2w = np.eye(4)
+            c2w[:3, :3] = np.asarray(camera["rotation"])
+            c2w[:3, 3] = np.asarray(camera["position"])
+            c2w[:3, 1:3] *= -1
+            c2w = np.matmul(camera_pose_transform, c2w)
+
+            R = vtf.SO3.from_matrix(c2w[:3, :3])
+            R = R @ vtf.SO3.from_x_radians(np.pi)
+
+            cx = camera["width"] // 2
+            cy = camera["height"] // 2
+            fx = camera["fx"]
+
+            camera_handle = viser_server.add_camera_frustum(
+                name="cameras/{}".format(name),
+                fov=float(2 * np.arctan(cx / fx)),
+                scale=0.1,
+                aspect=float(cx / cy),
+                wxyz=R.wxyz,
+                position=c2w[:3, 3],
+                color=(205, 25, 0),
+            )
+
+            @camera_handle.on_click
+            def _(event: viser.SceneNodePointerEvent[viser.CameraFrustumHandle]) -> None:
+                with event.client.atomic():
+                    event.client.camera.position = event.target.position
+                    event.client.camera.wxyz = event.target.wxyz
+
+            self.camera_handles.append(camera_handle)
+
+        self.camera_visible = True
+
+        def toggle_camera_visibility(_):
+            with viser_server.atomic():
+                self.camera_visible = not self.camera_visible
+                for i in self.camera_handles:
+                    i.visible = self.camera_visible
+
+        # def update_camera_scale(_):
+        #     with viser_server.atomic():
+        #         for i in self.camera_handles:
+        #             i.scale = self.camera_scale_slider.value
+
+        with viser_server.add_gui_folder("Cameras"):
+            self.toggle_camera_button = viser_server.add_gui_button("Toggle Camera Visibility")
+            # self.camera_scale_slider = viser_server.add_gui_slider(
+            #     "Camera Scale",
+            #     min=0.,
+            #     max=1.,
+            #     step=0.01,
+            #     initial_value=0.1,
+            # )
+        self.toggle_camera_button.on_click(toggle_camera_visibility)
+        # self.camera_scale_slider.on_update(update_camera_scale)
+
     @staticmethod
     def _do_initialize_models_from_checkpoint(checkpoint_path: str, sh_degree, device):
         checkpoint = torch.load(checkpoint_path)
@@ -218,6 +297,10 @@ class Viewer:
         # register hooks
         server.on_client_connect(self._handle_new_client)
         server.on_client_disconnect(self._handle_client_disconnect)
+
+        # add cameras
+        if self.show_cameras is True:
+            self.add_cameras_to_scene(server)
 
         # add render options
         with server.add_gui_folder("Render"):
@@ -316,17 +399,18 @@ class Viewer:
                 tz,
         ):
             def do_transform(_):
-                self.viewer_renderer.gaussian_model.transform(
-                    idx,
-                    scale.value,
-                    math.radians(rx.value),
-                    math.radians(ry.value),
-                    math.radians(rz.value),
-                    tx.value,
-                    ty.value,
-                    tz.value,
-                )
-                self._handle_option_updated(_)
+                with server.atomic():
+                    self.viewer_renderer.gaussian_model.transform(
+                        idx,
+                        scale.value,
+                        math.radians(rx.value),
+                        math.radians(ry.value),
+                        math.radians(rz.value),
+                        tx.value,
+                        ty.value,
+                        tz.value,
+                    )
+                    self._handle_option_updated(_)
 
             scale.on_update(do_transform)
             rx.on_update(do_transform)
@@ -448,13 +532,15 @@ if __name__ == "__main__":
                         type=str, nargs="+", default="black",
                         help="e.g.: white, black, 0 0 0, 1 1 1")
     parser.add_argument("--image_format", "--image-format", "-f", type=str, default="jpeg")
-    parser.add_argument("--reorient", "-r", action="store_true", default=False,
-                        help="auto reorient scene")
+    parser.add_argument("--reorient", "-r", type=str, default="auto",
+                        help="whether reorient the scene, available values: auto, enable, disable")
     parser.add_argument("--sh_degree", "--sh-degree", "--sh",
                         type=int, default=3)
     parser.add_argument("--enable_transform", "--enable-transform",
                         action="store_true", default=False,
                         help="Enable transform options on Web UI. May consume more memory")
+    parser.add_argument("--show_cameras", "--show-cameras",
+                        action="store_true")
     args = parser.parse_args()
 
     # arguments post process
