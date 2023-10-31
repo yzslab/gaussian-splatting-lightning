@@ -31,7 +31,10 @@ class ColmapDataParser(DataParser):
 
     def get_image_dir(self) -> str:
         if self.params.image_dir is None:
-            return os.path.join(self.path, "images")
+            image_dir = os.path.join(self.path, "images")
+            if self.params.down_sample_factor > 1:
+                image_dir = image_dir + "_{}".format(self.params.down_sample_factor)
+            return image_dir
         return os.path.join(self.path, self.params.image_dir)
 
     @staticmethod
@@ -294,6 +297,22 @@ class ColmapDataParser(DataParser):
         appearance_id = torch.tensor(appearance_id_list, dtype=torch.int)
         normalized_appearance_id = torch.tensor(normalized_appearance_id_list, dtype=torch.float32)
         camera_type = torch.tensor(camera_type_list, dtype=torch.int8)
+
+        # recalculate intrinsics if down sample enabled
+        if self.params.down_sample_factor != 1:
+            down_sampled_width = torch.round(width.to(torch.float) / self.params.down_sample_factor)
+            down_sampled_height = torch.round(height.to(torch.float) / self.params.down_sample_factor)
+            width_scale_factor = down_sampled_width / width
+            height_scale_factor = down_sampled_height / height
+            fx *= width_scale_factor
+            fy *= height_scale_factor
+            cx *= width_scale_factor
+            cy *= height_scale_factor
+
+            width = down_sampled_width.to(torch.int16)
+            height = down_sampled_height.to(torch.int16)
+
+            print("down sample enabled")
 
         is_w2c_required = self.params.scene_scale != 1.0 or self.params.reorient is True
         if is_w2c_required:

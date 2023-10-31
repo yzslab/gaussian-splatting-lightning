@@ -42,6 +42,8 @@ class ColmapParams:
 
     image_list: Optional[str] = None
 
+    down_sample_factor: int = 1.0
+
 
 @dataclass
 class BlenderParams:
