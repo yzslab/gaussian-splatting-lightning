@@ -3,10 +3,8 @@ import argparse
 import json
 import numpy as np
 import torch
-from scipy.spatial.transform import Rotation as R
 from dataclasses import dataclass
-from internal.utils.colmap import rotmat2qvec, qvec2rotmat
-from internal.utils.general_utils import build_rotation
+from internal.utils.colmap import rotmat2qvec
 from internal.utils.rotation import rotation_matrix
 import internal.utils.gaussian_utils
 
@@ -55,30 +53,29 @@ class Gaussian(internal.utils.gaussian_utils.Gaussian):
         self.xyz = np.asarray(np.matmul(self.xyz, rotation_matrix.T))
 
         # rotate gaussian
-        # rotate via quaternions, seems not work correctly
-        # def quat_multiply(quaternion0, quaternion1):
-        #     x0, y0, z0, w0 = np.split(quaternion0, 4, axis=-1)
-        #     x1, y1, z1, w1 = np.split(quaternion1, 4, axis=-1)
-        #     return np.concatenate(
-        #         (x1 * w0 + y1 * z0 - z1 * y0 + w1 * x0,
-        #          -x1 * z0 + y1 * w0 + z1 * x0 + w1 * y0,
-        #          x1 * y0 - y1 * x0 + z1 * w0 + w1 * z0,
-        #          -x1 * x0 - y1 * y0 - z1 * z0 + w1 * w0),
-        #         axis=-1)
-        #
-        # quaternions = rotmat2qvec(rotation_matrix)[np.newaxis, ...]
-        # rotations_from_quats = quat_multiply(quaternions, self.rotations)
-        # self.rotations = rotations_from_quats
+        # rotate via quaternions
+        def quat_multiply(quaternion0, quaternion1):
+            w0, x0, y0, z0 = np.split(quaternion0, 4, axis=-1)
+            w1, x1, y1, z1 = np.split(quaternion1, 4, axis=-1)
+            return np.concatenate((
+                -x1 * x0 - y1 * y0 - z1 * z0 + w1 * w0,
+                x1 * w0 + y1 * z0 - z1 * y0 + w1 * x0,
+                -x1 * z0 + y1 * w0 + z1 * x0 + w1 * y0,
+                x1 * y0 - y1 * x0 + z1 * w0 + w1 * z0,
+            ), axis=-1)
+
+        quaternions = rotmat2qvec(rotation_matrix)[np.newaxis, ...]
+        rotations_from_quats = quat_multiply(self.rotations, quaternions)
+        self.rotations = rotations_from_quats / np.linalg.norm(rotations_from_quats)
 
         # rotate via rotation matrix
-        gaussian_rotation = build_rotation(torch.from_numpy(self.rotations)).cpu()
-        gaussian_rotation = torch.from_numpy(rotation_matrix) @ gaussian_rotation
-        xyzw_quaternions = R.from_matrix(gaussian_rotation.numpy()).as_quat(canonical=False)
-        wxyz_quaternions = xyzw_quaternions
-        wxyz_quaternions[:, [0, 1, 2, 3]] = wxyz_quaternions[:, [3, 0, 1, 2]]
-        rotations_from_matrix = wxyz_quaternions
-        #
-        self.rotations = rotations_from_matrix
+        # gaussian_rotation = build_rotation(torch.from_numpy(self.rotations)).cpu()
+        # gaussian_rotation = torch.from_numpy(rotation_matrix) @ gaussian_rotation
+        # xyzw_quaternions = R.from_matrix(gaussian_rotation.numpy()).as_quat(canonical=False)
+        # wxyz_quaternions = xyzw_quaternions
+        # wxyz_quaternions[:, [0, 1, 2, 3]] = wxyz_quaternions[:, [3, 0, 1, 2]]
+        # rotations_from_matrix = wxyz_quaternions
+        # self.rotations = rotations_from_matrix
 
         # TODO: rotate shs
         if keep_sh_degree is False:
