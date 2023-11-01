@@ -294,108 +294,112 @@ class Viewer:
     def start(self):
         # create viser server
         server = viser.ViserServer(host=self.host, port=self.port)
+        server.configure_theme(control_layout="collapsible")
         # register hooks
         server.on_client_connect(self._handle_new_client)
         server.on_client_disconnect(self._handle_client_disconnect)
 
-        # add cameras
-        if self.show_cameras is True:
-            self.add_cameras_to_scene(server)
+        tabs = server.add_gui_tab_group()
 
-        # add render options
-        with server.add_gui_folder("Render"):
-            self.max_res_when_static = server.add_gui_slider(
-                "Max Res",
-                min=128,
-                max=3840,
-                step=128,
-                initial_value=1920,
-            )
-            self.max_res_when_static.on_update(self._handle_option_updated)
-            self.jpeg_quality_when_static = server.add_gui_slider(
-                "JPEG Quality",
-                min=0,
-                max=100,
-                step=1,
-                initial_value=100,
-            )
-            self.jpeg_quality_when_static.on_update(self._handle_option_updated)
+        with tabs.add_tab("General"):
+            # add cameras
+            if self.show_cameras is True:
+                self.add_cameras_to_scene(server)
 
-            self.max_res_when_moving = server.add_gui_slider(
-                "Max Res when Moving",
-                min=128,
-                max=3840,
-                step=128,
-                initial_value=1280,
-            )
-            self.jpeg_quality_when_moving = server.add_gui_slider(
-                "JPEG Quality when Moving",
-                min=0,
-                max=100,
-                step=1,
-                initial_value=60,
-            )
-
-        with server.add_gui_folder("Model"):
-            self.scaling_modifier = server.add_gui_slider(
-                "Scaling Modifier",
-                min=0.,
-                max=1.,
-                step=0.1,
-                initial_value=1.,
-            )
-            self.scaling_modifier.on_update(self._handle_option_updated)
-
-            self.active_sh_degree_slider = server.add_gui_slider(
-                "Active SH Degree",
-                min=0,
-                max=self.viewer_renderer.gaussian_model.max_sh_degree,
-                step=1,
-                initial_value=self.viewer_renderer.gaussian_model.max_sh_degree,
-            )
-            self.active_sh_degree_slider.on_update(self._handle_activate_sh_degree_slider_updated)
-
-            if self.available_appearance_options is not None:
-                # find max appearance id
-                max_input_id = 0
-                available_option_values = list(self.available_appearance_options.values())
-                if isinstance(available_option_values[0], list) or isinstance(available_option_values[0], tuple):
-                    for i in available_option_values:
-                        if i[0] > max_input_id:
-                            max_input_id = i[0]
-                else:
-                    # convert to tuple, compatible with previous version
-                    for i in self.available_appearance_options:
-                        self.available_appearance_options[i] = (0, self.available_appearance_options[i])
-                self.available_appearance_options[DROPDOWN_USE_DIRECT_APPEARANCE_EMBEDDING_VALUE] = None
-
-                self.appearance_id = server.add_gui_slider(
-                    "Appearance Direct",
+            # add render options
+            with server.add_gui_folder("Render"):
+                self.max_res_when_static = server.add_gui_slider(
+                    "Max Res",
+                    min=128,
+                    max=3840,
+                    step=128,
+                    initial_value=1920,
+                )
+                self.max_res_when_static.on_update(self._handle_option_updated)
+                self.jpeg_quality_when_static = server.add_gui_slider(
+                    "JPEG Quality",
                     min=0,
-                    max=max_input_id,
+                    max=100,
                     step=1,
-                    initial_value=0,
-                    visible=max_input_id > 0
+                    initial_value=100,
+                )
+                self.jpeg_quality_when_static.on_update(self._handle_option_updated)
+
+                self.max_res_when_moving = server.add_gui_slider(
+                    "Max Res when Moving",
+                    min=128,
+                    max=3840,
+                    step=128,
+                    initial_value=1280,
+                )
+                self.jpeg_quality_when_moving = server.add_gui_slider(
+                    "JPEG Quality when Moving",
+                    min=0,
+                    max=100,
+                    step=1,
+                    initial_value=60,
                 )
 
-                self.normalized_appearance_id = server.add_gui_slider(
-                    "Normalized Appearance Direct",
+            with server.add_gui_folder("Model"):
+                self.scaling_modifier = server.add_gui_slider(
+                    "Scaling Modifier",
                     min=0.,
                     max=1.,
-                    step=0.01,
-                    initial_value=0.,
+                    step=0.1,
+                    initial_value=1.,
                 )
+                self.scaling_modifier.on_update(self._handle_option_updated)
 
-                appearance_options = list(self.available_appearance_options.keys())
-
-                self.appearance_group_dropdown = server.add_gui_dropdown(
-                    "Appearance Group",
-                    options=appearance_options,
-                    initial_value=appearance_options[0],
+                self.active_sh_degree_slider = server.add_gui_slider(
+                    "Active SH Degree",
+                    min=0,
+                    max=self.viewer_renderer.gaussian_model.max_sh_degree,
+                    step=1,
+                    initial_value=self.viewer_renderer.gaussian_model.max_sh_degree,
                 )
-                self.appearance_id.on_update(self._handle_appearance_embedding_slider_updated)
-                self.normalized_appearance_id.on_update(self._handle_appearance_embedding_slider_updated)
-                self.appearance_group_dropdown.on_update(self._handle_option_updated)
+                self.active_sh_degree_slider.on_update(self._handle_activate_sh_degree_slider_updated)
+
+                if self.available_appearance_options is not None:
+                    # find max appearance id
+                    max_input_id = 0
+                    available_option_values = list(self.available_appearance_options.values())
+                    if isinstance(available_option_values[0], list) or isinstance(available_option_values[0], tuple):
+                        for i in available_option_values:
+                            if i[0] > max_input_id:
+                                max_input_id = i[0]
+                    else:
+                        # convert to tuple, compatible with previous version
+                        for i in self.available_appearance_options:
+                            self.available_appearance_options[i] = (0, self.available_appearance_options[i])
+                    self.available_appearance_options[DROPDOWN_USE_DIRECT_APPEARANCE_EMBEDDING_VALUE] = None
+
+                    self.appearance_id = server.add_gui_slider(
+                        "Appearance Direct",
+                        min=0,
+                        max=max_input_id,
+                        step=1,
+                        initial_value=0,
+                        visible=max_input_id > 0
+                    )
+
+                    self.normalized_appearance_id = server.add_gui_slider(
+                        "Normalized Appearance Direct",
+                        min=0.,
+                        max=1.,
+                        step=0.01,
+                        initial_value=0.,
+                    )
+
+                    appearance_options = list(self.available_appearance_options.keys())
+
+                    self.appearance_group_dropdown = server.add_gui_dropdown(
+                        "Appearance Group",
+                        options=appearance_options,
+                        initial_value=appearance_options[0],
+                    )
+                    self.appearance_id.on_update(self._handle_appearance_embedding_slider_updated)
+                    self.normalized_appearance_id.on_update(self._handle_appearance_embedding_slider_updated)
+                    self.appearance_group_dropdown.on_update(self._handle_option_updated)
 
         def setup_transform_callback(
                 idx: int,
@@ -430,68 +434,69 @@ class Viewer:
             tz.on_update(do_transform)
 
         if self.enable_transform is True:
-            for i in range(self.loaded_model_count):
-                with server.add_gui_folder("Model {} Transform".format(i)):
-                    scale_slider = server.add_gui_slider(
-                        "scale",
-                        min=0.,
-                        max=2.,
-                        step=0.01,
-                        initial_value=1.,
-                    )
-                    rx_slider = server.add_gui_slider(
-                        "rx",
-                        min=-180,
-                        max=180,
-                        step=1,
-                        initial_value=0,
-                    )
-                    ry_slider = server.add_gui_slider(
-                        "ry",
-                        min=-180,
-                        max=180,
-                        step=1,
-                        initial_value=0,
-                    )
-                    rz_slider = server.add_gui_slider(
-                        "rz",
-                        min=-180,
-                        max=180,
-                        step=1,
-                        initial_value=0,
-                    )
-                    tx_slider = server.add_gui_slider(
-                        "tx",
-                        min=-10.,
-                        max=10.,
-                        step=0.01,
-                        initial_value=0,
-                    )
-                    ty_slider = server.add_gui_slider(
-                        "ty",
-                        min=-10.,
-                        max=10.,
-                        step=0.01,
-                        initial_value=0,
-                    )
-                    tz_slider = server.add_gui_slider(
-                        "tz",
-                        min=-10.,
-                        max=10.,
-                        step=0.01,
-                        initial_value=0,
-                    )
+            with tabs.add_tab("Transform"):
+                for i in range(self.loaded_model_count):
+                    with server.add_gui_folder("Model {} Transform".format(i)):
+                        scale_slider = server.add_gui_slider(
+                            "scale",
+                            min=0.,
+                            max=2.,
+                            step=0.01,
+                            initial_value=1.,
+                        )
+                        rx_slider = server.add_gui_slider(
+                            "rx",
+                            min=-180,
+                            max=180,
+                            step=1,
+                            initial_value=0,
+                        )
+                        ry_slider = server.add_gui_slider(
+                            "ry",
+                            min=-180,
+                            max=180,
+                            step=1,
+                            initial_value=0,
+                        )
+                        rz_slider = server.add_gui_slider(
+                            "rz",
+                            min=-180,
+                            max=180,
+                            step=1,
+                            initial_value=0,
+                        )
+                        tx_slider = server.add_gui_slider(
+                            "tx",
+                            min=-10.,
+                            max=10.,
+                            step=0.01,
+                            initial_value=0,
+                        )
+                        ty_slider = server.add_gui_slider(
+                            "ty",
+                            min=-10.,
+                            max=10.,
+                            step=0.01,
+                            initial_value=0,
+                        )
+                        tz_slider = server.add_gui_slider(
+                            "tz",
+                            min=-10.,
+                            max=10.,
+                            step=0.01,
+                            initial_value=0,
+                        )
 
-                    setup_transform_callback(
-                        i,
-                        scale_slider,
-                        rx_slider,
-                        ry_slider,
-                        rz_slider,
-                        tx_slider,
-                        ty_slider,
-                        tz_slider,
-                    )
+                        setup_transform_callback(
+                            i,
+                            scale_slider,
+                            rx_slider,
+                            ry_slider,
+                            rz_slider,
+                            tx_slider,
+                            ty_slider,
+                            tz_slider,
+                        )
 
         while True:
             time.sleep(999)
