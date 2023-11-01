@@ -529,7 +529,7 @@ if __name__ == "__main__":
     parser.add_argument("--host", "-a", type=str, default="0.0.0.0")
     parser.add_argument("--port", "-p", type=int, default=8080)
     parser.add_argument("--background_color", "--background_color", "--bkg_color", "-b",
-                        type=str, nargs="+", default="black",
+                        type=str, nargs="+", default=["black"],
                         help="e.g.: white, black, 0 0 0, 1 1 1")
     parser.add_argument("--image_format", "--image-format", "-f", type=str, default="jpeg")
     parser.add_argument("--reorient", "-r", type=str, default="auto",
@@ -544,13 +544,13 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # arguments post process
-    if isinstance(args.background_color, str):
-        if args.background_color == "white":
+    if len(args.background_color) == 1 and isinstance(args.background_color[0], str):
+        if args.background_color[0] == "white":
             args.background_color = (1., 1., 1.)
         else:
             args.background_color = (0., 0., 0.)
     else:
-        args.background_color = tuple(args.background_color)
+        args.background_color = tuple([float(i) for i in args.background_color])
 
     # create viewer
     viewer_init_args = {key: getattr(args, key) for key in vars(args)}
