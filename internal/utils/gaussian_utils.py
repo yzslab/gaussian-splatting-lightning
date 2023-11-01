@@ -3,6 +3,7 @@ import numpy as np
 import torch
 from scipy.spatial.transform import Rotation as R
 from internal.utils.general_utils import build_rotation
+from internal.utils.colmap import rotmat2qvec
 from typing import Union
 from dataclasses import dataclass
 from plyfile import PlyData, PlyElement
@@ -161,7 +162,7 @@ class GaussianTransformUtils:
 
         # rotate
         rotation_matrix = cls.rx(x) @ cls.ry(y) @ cls.rz(z)
-        xyz, rotation = cls.rotate_by_matrix(
+        xyz, rotation = cls.rotate_by_quaternion(
             xyz,
             rotation,
             rotation_matrix.to(xyz),
@@ -185,3 +186,27 @@ class GaussianTransformUtils:
         # TODO: rotate shs
 
         return xyz, torch.tensor(rotations_from_matrix).to(xyz)
+
+    @staticmethod
+    def quat_multiply(quaternion0, quaternion1):
+        w0, x0, y0, z0 = torch.split(quaternion0, 1, dim=-1)
+        w1, x1, y1, z1 = torch.split(quaternion1, 1, dim=-1)
+        return torch.concatenate((
+            -x1 * x0 - y1 * y0 - z1 * z0 + w1 * w0,
+            x1 * w0 + y1 * z0 - z1 * y0 + w1 * x0,
+            -x1 * z0 + y1 * w0 + z1 * x0 + w1 * y0,
+            x1 * y0 - y1 * x0 + z1 * w0 + w1 * z0,
+        ), dim=-1)
+
+    @classmethod
+    def rotate_by_quaternion(cls, xyz, rotations, rotation_matrix):
+        # rotate xyz
+        xyz = torch.matmul(xyz, rotation_matrix.T)
+
+        # rotate via quaternion
+        rotations = torch.nn.functional.normalize(cls.quat_multiply(
+            rotations,
+            torch.tensor([rotmat2qvec(rotation_matrix.cpu().numpy())]).to(xyz),
+        ))
+
+        return xyz, rotations
