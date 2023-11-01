@@ -124,6 +124,9 @@ class Cameras:
         if self.distortion_params is None:
             self.distortion_params = torch.zeros(self.R.shape[0], 6)
 
+    def __len__(self):
+        return self.R.shape[0]
+
     def __getitem__(self, index) -> Camera:
         return Camera(
             R=self.R[index],

@@ -1,3 +1,5 @@
 .idea
 outputs
+camera_paths
+renders
 **/__pycache__

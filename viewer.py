@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import math
 import glob
 import time
@@ -11,9 +12,11 @@ import viser
 import viser.transforms as vtf
 import torch
 from internal.renderers import VanillaRenderer
+from internal.utils.gaussian_model_loader import GaussianModelLoader
 from internal.models.gaussian_model_simplified import GaussianModelSimplified
 from internal.models.simplified_gaussian_model_manager import SimplifiedGaussianModelManager
 from internal.viewer import ClientThread, ViewerRenderer
+from internal.viewer.ui import populate_render_tab
 from internal.utils.rotation import rotation_matrix
 
 DROPDOWN_USE_DIRECT_APPEARANCE_EMBEDDING_VALUE = "@Direct"
@@ -34,14 +37,13 @@ class Viewer:
     ):
         self.device = torch.device("cuda")
 
+        self.model_paths = model_paths
         self.host = host
         self.port = port
+        self.background_color = background_color
         self.image_format = image_format
-
         self.sh_degree = sh_degree
-
         self.enable_transform = enable_transform
-
         self.show_cameras = show_cameras
 
         load_from = self._search_load_file(model_paths[0])
@@ -101,40 +103,7 @@ class Viewer:
 
     @staticmethod
     def _search_load_file(model_path: str) -> str:
-        # if a directory path is provided, auto search checkpoint or ply
-        if os.path.isdir(model_path) is False:
-            return model_path
-        # search checkpoint
-        checkpoint_dir = os.path.join(model_path, "checkpoints")
-        # find checkpoint with max iterations
-        load_from = None
-        previous_checkpoint_iteration = -1
-        for i in glob.glob(os.path.join(checkpoint_dir, "*.ckpt")):
-            try:
-                checkpoint_iteration = int(i[i.rfind("=") + 1:i.rfind(".")])
-            except Exception as err:
-                print("error occurred when parsing iteration from {}: {}".format(i, err))
-                continue
-            if checkpoint_iteration > previous_checkpoint_iteration:
-                previous_checkpoint_iteration = checkpoint_iteration
-                load_from = i
-
-        # not a checkpoint can be found, search point cloud
-        if load_from is None:
-            previous_point_cloud_iteration = -1
-            for i in glob.glob(os.path.join(model_path, "point_cloud", "iteration_*")):
-                try:
-                    point_cloud_iteration = int(os.path.basename(i).replace("iteration_", ""))
-                except Exception as err:
-                    print("error occurred when parsing iteration from {}: {}".format(i, err))
-                    continue
-
-                if point_cloud_iteration > previous_point_cloud_iteration:
-                    load_from = os.path.join(i, "point_cloud.ply")
-
-        assert load_from is not None, "not a checkpoint or point cloud can be found"
-
-        return load_from
+        return GaussianModelLoader.search_load_file(model_path)
 
     def _reorient(self, cameras_json_path: str, mode: str, dataset_type: str = None):
         transform = torch.eye(4, dtype=torch.float)
@@ -244,34 +213,14 @@ class Viewer:
 
     @staticmethod
     def _do_initialize_models_from_checkpoint(checkpoint_path: str, sh_degree, device):
-        checkpoint = torch.load(checkpoint_path)
-        hparams = checkpoint["hyper_parameters"]
-
-        # initialize gaussian and renderer model
-        model = GaussianModelSimplified.construct_from_state_dict(checkpoint["state_dict"], sh_degree, device)
-        # extract state dict of renderer
-        renderer = hparams["renderer"]
-        renderer_state_dict = {}
-        for i in checkpoint["state_dict"]:
-            if i.startswith("renderer."):
-                renderer_state_dict[i[len("renderer."):]] = checkpoint["state_dict"][i]
-        # load state dict of renderer
-        renderer.load_state_dict(renderer_state_dict)
-        renderer = renderer.to(device)
-
-        return model, renderer, checkpoint
+        return GaussianModelLoader.initialize_simplified_model_from_checkpoint(checkpoint_path, sh_degree, device)
 
     def _initialize_models_from_checkpoint(self, checkpoint_path: str):
         return self._do_initialize_models_from_checkpoint(checkpoint_path, self.sh_degree, self.device)
 
     @staticmethod
     def _do_initialize_models_from_point_cloud(point_cloud_path: str, sh_degree, device):
-        model = GaussianModelSimplified.construct_from_ply(ply_path=point_cloud_path, active_sh_degree=sh_degree, device=device)
-        renderer = VanillaRenderer()
-        renderer.setup(stage="val")
-        renderer = renderer.to(device)
-
-        return model, renderer
+        return GaussianModelLoader.initialize_simplified_model_from_point_cloud(point_cloud_path, sh_degree, device)
 
     def _initialize_models_from_point_cloud(self, point_cloud_path: str):
         return self._do_initialize_models_from_point_cloud(point_cloud_path, self.sh_degree, self.device)
@@ -294,7 +243,10 @@ class Viewer:
     def start(self):
         # create viser server
         server = viser.ViserServer(host=self.host, port=self.port)
-        server.configure_theme(control_layout="collapsible")
+        server.configure_theme(
+            control_layout="collapsible",
+            show_logo=False,
+        )
         # register hooks
         server.on_client_connect(self._handle_new_client)
         server.on_client_disconnect(self._handle_client_disconnect)
@@ -497,6 +449,17 @@ class Viewer:
                             ty_slider,
                             tz_slider,
                         )
+
+        with tabs.add_tab("Render"):
+            populate_render_tab(
+                server,
+                self.model_paths,
+                Path("./"),
+                orientation_transform=torch.linalg.inv(self.camera_transform).cpu().numpy(),
+                enable_transform=self.enable_transform,
+                background_color=self.background_color,
+                sh_degree=self.sh_degree,
+            )
 
         while True:
             time.sleep(999)
