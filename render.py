@@ -105,7 +105,8 @@ if __name__ == "__main__":
     cameras = parse_camera_poses(camera_path)
 
     frame_output_path = args.output_path + "_frames"
-    render_frames(cameras, viewer_renderer=renderer, output_path=frame_output_path, device=device)
+    with torch.no_grad():
+        render_frames(cameras, viewer_renderer=renderer, output_path=frame_output_path, device=device)
 
     subprocess.call([
         "ffmpeg",
