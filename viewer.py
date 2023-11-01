@@ -346,6 +346,15 @@ class Viewer:
             )
             self.scaling_modifier.on_update(self._handle_option_updated)
 
+            self.active_sh_degree_slider = server.add_gui_slider(
+                "Active SH Degree",
+                min=0,
+                max=self.viewer_renderer.gaussian_model.max_sh_degree,
+                step=1,
+                initial_value=self.viewer_renderer.gaussian_model.max_sh_degree,
+            )
+            self.active_sh_degree_slider.on_update(self._handle_activate_sh_degree_slider_updated)
+
             if self.available_appearance_options is not None:
                 # find max appearance id
                 max_input_id = 0
@@ -489,6 +498,10 @@ class Viewer:
 
     def _handle_appearance_embedding_slider_updated(self, _):
         self.appearance_group_dropdown.value = DROPDOWN_USE_DIRECT_APPEARANCE_EMBEDDING_VALUE
+        self._handle_option_updated(_)
+
+    def _handle_activate_sh_degree_slider_updated(self, _):
+        self.viewer_renderer.gaussian_model.active_sh_degree = self.active_sh_degree_slider.value
         self._handle_option_updated(_)
 
     def get_appearance_id_value(self):

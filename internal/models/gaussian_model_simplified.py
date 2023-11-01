@@ -12,7 +12,7 @@ class GaussianModelSimplified(nn.Module):
             scaling: torch.Tensor,
             rotation: torch.Tensor,
             opacity: torch.Tensor,
-            active_sh_degree: int,
+            sh_degree: int,
             device,
     ) -> None:
         super().__init__()
@@ -26,7 +26,8 @@ class GaussianModelSimplified(nn.Module):
 
         self._features = torch.cat([features_dc, features_rest], dim=1).to(device)
 
-        self.active_sh_degree = active_sh_degree
+        self.max_sh_degree = sh_degree
+        self.active_sh_degree = sh_degree
 
     def to_device(self, device):
         self._xyz = self._xyz.to(device)
@@ -39,7 +40,7 @@ class GaussianModelSimplified(nn.Module):
     @classmethod
     def construct_from_state_dict(cls, state_dict, active_sh_degree, device):
         init_args = {
-            "active_sh_degree": active_sh_degree,
+            "sh_degree": active_sh_degree,
             "device": device,
         }
         for i in state_dict:
@@ -49,10 +50,10 @@ class GaussianModelSimplified(nn.Module):
         return cls(**init_args)
 
     @classmethod
-    def construct_from_ply(cls, ply_path: str, active_sh_degree, device):
-        gaussians = gaussian_utils.Gaussian.load_from_ply(ply_path, active_sh_degree).to_parameter_structure()
+    def construct_from_ply(cls, ply_path: str, sh_degree, device):
+        gaussians = gaussian_utils.Gaussian.load_from_ply(ply_path, sh_degree).to_parameter_structure()
         return cls(
-            active_sh_degree=active_sh_degree,
+            sh_degree=sh_degree,
             device=device,
             xyz=gaussians.xyz,
             opacity=gaussians.opacities,
@@ -81,7 +82,3 @@ class GaussianModelSimplified(nn.Module):
     @property
     def get_opacity(self):
         return self._opacity
-
-    @property
-    def max_sh_degree(self):
-        return self.active_sh_degree

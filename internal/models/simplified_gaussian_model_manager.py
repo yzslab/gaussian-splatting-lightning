@@ -42,7 +42,8 @@ class SimplifiedGaussianModelManager:
             self._scaling[begin:end] = model.get_scaling.to(device)
             self._rotation[begin:end] = model.get_rotation.to(device)
 
-        self.active_sh_degree = simplified_gaussian_models[0].active_sh_degree
+        self.max_sh_degree = simplified_gaussian_models[0].max_sh_degree
+        self.active_sh_degree = simplified_gaussian_models[0].max_sh_degree
 
     def get_model_gaussian_indices(self, idx: int):
         return self.model_gaussian_indices[idx]
@@ -116,7 +117,3 @@ class SimplifiedGaussianModelManager:
     @property
     def get_opacity(self):
         return self._opacity
-
-    @property
-    def max_sh_degree(self):
-        return self.active_sh_degree
