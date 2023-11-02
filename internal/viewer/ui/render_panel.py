@@ -35,15 +35,26 @@ class Keyframe:
     override_fov_enabled: bool
     override_fov_value: float
     aspect: float
+    model_sizes: list[float]
+    model_poses: list
 
     @staticmethod
-    def from_camera(camera: viser.CameraHandle, aspect: float) -> Keyframe:
+    def from_camera(
+            camera: viser.CameraHandle,
+            model_size_sliders: list,
+            model_poses: list,
+            aspect: float,
+    ) -> Keyframe:
+        model_sizes = [i.value for i in model_size_sliders]
+        model_poses_copied = [i.copy() for i in model_poses]
         return Keyframe(
             camera.position,
             camera.wxyz,
             override_fov_enabled=False,
             override_fov_value=camera.fov,
             aspect=aspect,
+            model_sizes=model_sizes,
+            model_poses=model_poses_copied,
         )
 
 
@@ -56,7 +67,10 @@ class CameraPath:
         self._camera_edit_panel: Optional[viser.Gui3dContainerHandle] = None
 
         self._orientation_spline: Optional[splines.quaternion.KochanekBartels] = None
+        self._model_orientation_splines: Optional[list[splines.quaternion.KochanekBartels]] = None
         self._position_spline: Optional[splines.KochanekBartels] = None
+        self._model_position_splines: Optional[list[splines.KochanekBartels]] = None
+        self._model_size_splines: Optional[list[splines.KochanekBartels]] = None
         self._fov_spline: Optional[splines.KochanekBartels] = None
         self._keyframes_visible: bool = True
 
@@ -192,7 +206,7 @@ class CameraPath:
         self._keyframes.clear()
         self.update_spline()
 
-    def interpolate_pose_and_fov(self, normalized_t: float) -> Optional[Tuple[tf.SE3, float]]:
+    def interpolate_pose_and_fov(self, normalized_t: float) -> Optional[Tuple[tf.SE3, float, list, list]]:
         if len(self._keyframes) < 2:
             return None
         # TODO: this doesn't need to be constantly re-instantiated.
@@ -212,12 +226,26 @@ class CameraPath:
         t = max_t * normalized_t
         quat = self._orientation_spline.evaluate(t)
         assert isinstance(quat, splines.quaternion.UnitQuaternion)
+
+        # model pose
+        model_sizes = []
+        model_poses = []
+        for i in range(len(self._model_position_splines)):
+            model_sizes.append(self._model_size_splines[i].evaluate(t))
+            model_quat = self._model_orientation_splines[i].evaluate(t)
+            model_poses.append({
+                "wxyz": onp.array([model_quat.scalar, *model_quat.vector]),
+                "position": self._model_position_splines[i].evaluate(t),
+            })
+
         return (
             tf.SE3.from_rotation_and_translation(
                 tf.SO3(onp.array([quat.scalar, *quat.vector])),
                 self._position_spline.evaluate(t),
             ),
             float(self._fov_spline.evaluate(t)),
+            model_sizes,
+            model_poses,
         )
 
     def update_spline(self) -> None:
@@ -242,6 +270,37 @@ class CameraPath:
             tcb=(self.smoothness, 0.0, 0.0),
             endconditions="closed" if self.loop else "natural",
         )
+        # Update model internal splines
+        model_count = len(keyframes[0][0].model_sizes)
+        self._model_orientation_splines = []
+        self._model_position_splines = []
+        self._model_size_splines = []
+        for model_idx in range(model_count):
+            # collect model pose from all frames
+            model_size_list = []
+            model_pose_list = []
+            for keyframe in keyframes:
+                model_size_list.append(keyframe[0].model_sizes[model_idx])
+                model_pose_list.append(keyframe[0].model_poses[model_idx])
+
+            self._model_orientation_splines.append(splines.quaternion.KochanekBartels(
+                [
+                    splines.quaternion.UnitQuaternion.from_unit_xyzw(onp.roll(model_pose.wxyz, shift=-1))
+                    for model_pose in model_pose_list
+                ],
+                tcb=(self.smoothness, 0.0, 0.0),
+                # endconditions="closed" if self.loop else "natural",
+            ))
+            self._model_position_splines.append(splines.KochanekBartels(
+                [model_pose.position for model_pose in model_pose_list],
+                tcb=(self.smoothness, 0.0, 0.0),
+                # endconditions="closed" if self.loop else "natural",
+            ))
+            self._model_size_splines.append(splines.KochanekBartels(
+                model_size_list,
+                tcb=(self.smoothness, 0.0, 0.0),
+                # endconditions="closed" if self.loop else "natural",
+            ))
 
         # Update visualized spline.
         num_keyframes = len(keyframes) + 1 if self.loop else len(keyframes)
@@ -259,6 +318,7 @@ class CameraPath:
 
 def populate_render_tab(
         server: viser.ViserServer,
+        viewer,
         model_paths: list[str],
         datapath: Path,
         orientation_transform: onp.ndarray,
@@ -320,7 +380,12 @@ def populate_render_tab(
 
         # Add this camera to the path.
         camera_path.add_camera(
-            Keyframe.from_camera(camera, aspect=resolution.value[0] / resolution.value[1]),
+            Keyframe.from_camera(
+                camera,
+                model_size_sliders=viewer.transform_panel.model_size_sliders if viewer.transform_panel is not None else [],
+                model_poses=viewer.transform_panel.model_poses if viewer.transform_panel is not None else [],
+                aspect=resolution.value[0] / resolution.value[1],
+            ),
         )
         camera_path.update_spline()
 
@@ -477,7 +542,7 @@ def populate_render_tab(
             )
             if maybe_pose_and_fov is None:
                 return
-            pose, fov = maybe_pose_and_fov
+            pose, fov, model_sizes, model_poses = maybe_pose_and_fov
             server.add_camera_frustum(
                 "/preview_camera",
                 fov=fov,
@@ -591,6 +656,8 @@ def populate_render_tab(
                     if keyframe.override_fov_enabled
                     else fov_degrees.value,
                     "aspect": keyframe.aspect,
+                    "model_sizes": keyframe.model_sizes,
+                    "model_poses": [i.to_dict() for i in keyframe.model_poses],
                 }
             )
         json_data["keyframes"] = keyframes
@@ -611,7 +678,7 @@ def populate_render_tab(
             maybe_pose_and_fov = camera_path.interpolate_pose_and_fov(i / num_frames)
             if maybe_pose_and_fov is None:
                 return
-            pose, fov = maybe_pose_and_fov
+            pose, fov, model_sizes, model_poses = maybe_pose_and_fov
             # rotate the axis of the camera 180 about x axis
             pose = tf.SE3.from_rotation_and_translation(
                 pose.rotation() @ tf.SO3.from_x_radians(onp.pi),
@@ -622,6 +689,11 @@ def populate_render_tab(
                     "camera_to_world": pose.as_matrix().flatten().tolist(),
                     "fov": onp.rad2deg(fov),
                     "aspect": resolution.value[0] / resolution.value[1],
+                    "model_sizes": onp.asarray(model_sizes).tolist(),
+                    "model_poses": [{
+                        "wxyz": i["wxyz"].tolist(),
+                        "position": i["position"].tolist(),
+                    } for i in model_poses],
                 }
             )
         json_data["camera_path"] = camera_path_list

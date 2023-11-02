@@ -11,6 +11,18 @@ class ModelPose:
     wxyz: np.ndarray
     position: np.ndarray
 
+    def copy(self):
+        return ModelPose(
+            wxyz=self.wxyz.copy(),
+            position=self.position.copy(),
+        )
+
+    def to_dict(self):
+        return {
+            "wxyz": self.wxyz.tolist(),
+            "position": self.position.tolist(),
+        }
+
 
 class TransformPanel:
     def __init__(

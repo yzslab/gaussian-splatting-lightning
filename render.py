@@ -3,6 +3,7 @@ import subprocess
 import multiprocessing.pool
 import argparse
 import json
+import numpy as np
 import torch
 import torchvision
 from tqdm import tqdm
@@ -55,7 +56,7 @@ def parse_camera_poses(camera_path: dict):
     c2w = torch.matmul(orientation_transform, c2w)
     c2w[..., :3, 1:3] *= -1
     w2c = torch.linalg.inv(c2w)
-    fov = torch.tensor(fov_list, dtype=torch.float)
+    fov = torch.deg2rad(torch.tensor(fov_list, dtype=torch.float))
     fx = width / (2 * torch.atan(fov / 2))
     fy = fx
 
@@ -75,6 +76,23 @@ def parse_camera_poses(camera_path: dict):
     )
 
 
+def parse_model_transformations(camera_path: dict) -> list[list]:
+    frame_transformation_list = []
+
+    for frame in camera_path["camera_path"]:
+        model_transformation_list = []
+        if "model_poses" in frame and frame["model_poses"] is not None:
+            for model_idx in range(len(frame["model_poses"])):
+                model_transformation_list.append({
+                    "size": frame["model_sizes"][model_idx],
+                    "wxyz": frame["model_poses"][model_idx]["wxyz"],
+                    "position": frame["model_poses"][model_idx]["position"],
+                })
+        frame_transformation_list.append(model_transformation_list)
+
+    return frame_transformation_list
+
+
 def save_image(image_information: tuple):
     image, output_path = image_information
     torchvision.utils.save_image(image, output_path)
@@ -88,6 +106,7 @@ def save_images(image_list: list):
 
 def render_frames(
         cameras: Cameras,
+        model_transformations: list,
         viewer_renderer: ViewerRenderer,
         output_path: str,
         image_save_batch: int,
@@ -96,6 +115,16 @@ def render_frames(
     os.makedirs(output_path, exist_ok=True)
     image_list = []
     for idx in tqdm(range(len(cameras)), desc="rendering frames"):
+        # model transform
+        for model_idx, model_transformation in enumerate(model_transformations[idx]):
+            viewer_renderer.gaussian_model.transform_with_vectors(
+                model_idx,
+                scale=model_transformation["size"],
+                r_wxyz=np.asarray(model_transformation["wxyz"]),
+                t_xyz=np.asarray(model_transformation["position"]),
+            )
+
+        # render
         camera = cameras[idx].to_device(device)
         image = viewer_renderer.get_outputs(camera).cpu()
         image_output_path = os.path.join(output_path, "{:06d}.png".format(idx))
@@ -135,11 +164,13 @@ if __name__ == "__main__":
     )
 
     cameras = parse_camera_poses(camera_path)
+    model_transformations = parse_model_transformations(camera_path)
 
     frame_output_path = args.output_path + "_frames"
     with torch.no_grad():
         render_frames(
             cameras,
+            model_transformations,
             viewer_renderer=renderer,
             output_path=frame_output_path,
             image_save_batch=args.image_save_batch,

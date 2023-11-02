@@ -354,6 +354,7 @@ class Viewer:
                     self.normalized_appearance_id.on_update(self._handle_appearance_embedding_slider_updated)
                     self.appearance_group_dropdown.on_update(self._handle_option_updated)
 
+        self.transform_panel = None
         if self.enable_transform is True:
             with tabs.add_tab("Transform"):
                 self.transform_panel = TransformPanel(server, self, self.loaded_model_count)
@@ -361,6 +362,7 @@ class Viewer:
         with tabs.add_tab("Render"):
             populate_render_tab(
                 server,
+                self,
                 self.model_paths,
                 Path("./"),
                 orientation_transform=torch.linalg.inv(self.camera_transform).cpu().numpy(),
