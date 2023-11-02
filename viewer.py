@@ -16,7 +16,7 @@ from internal.utils.gaussian_model_loader import GaussianModelLoader
 from internal.models.gaussian_model_simplified import GaussianModelSimplified
 from internal.models.simplified_gaussian_model_manager import SimplifiedGaussianModelManager
 from internal.viewer import ClientThread, ViewerRenderer
-from internal.viewer.ui import populate_render_tab
+from internal.viewer.ui import populate_render_tab, TransformPanel
 from internal.utils.rotation import rotation_matrix
 
 DROPDOWN_USE_DIRECT_APPEARANCE_EMBEDDING_VALUE = "@Direct"
@@ -92,6 +92,7 @@ class Viewer:
 
             self.loaded_model_count += len(addition_models)
 
+        self.gaussian_model = model
         # create renderer
         self.viewer_renderer = ViewerRenderer(
             model,
@@ -353,102 +354,9 @@ class Viewer:
                     self.normalized_appearance_id.on_update(self._handle_appearance_embedding_slider_updated)
                     self.appearance_group_dropdown.on_update(self._handle_option_updated)
 
-        def setup_transform_callback(
-                idx: int,
-                scale,
-                rx,
-                ry,
-                rz,
-                tx,
-                ty,
-                tz,
-        ):
-            def do_transform(_):
-                with server.atomic():
-                    self.viewer_renderer.gaussian_model.transform(
-                        idx,
-                        scale.value,
-                        math.radians(rx.value),
-                        math.radians(ry.value),
-                        math.radians(rz.value),
-                        tx.value,
-                        ty.value,
-                        tz.value,
-                    )
-                    self._handle_option_updated(_)
-
-            scale.on_update(do_transform)
-            rx.on_update(do_transform)
-            ry.on_update(do_transform)
-            rz.on_update(do_transform)
-            tx.on_update(do_transform)
-            ty.on_update(do_transform)
-            tz.on_update(do_transform)
-
         if self.enable_transform is True:
             with tabs.add_tab("Transform"):
-                for i in range(self.loaded_model_count):
-                    with server.add_gui_folder("Model {} Transform".format(i)):
-                        scale_slider = server.add_gui_slider(
-                            "scale",
-                            min=0.,
-                            max=2.,
-                            step=0.01,
-                            initial_value=1.,
-                        )
-                        rx_slider = server.add_gui_slider(
-                            "rx",
-                            min=-180,
-                            max=180,
-                            step=1,
-                            initial_value=0,
-                        )
-                        ry_slider = server.add_gui_slider(
-                            "ry",
-                            min=-180,
-                            max=180,
-                            step=1,
-                            initial_value=0,
-                        )
-                        rz_slider = server.add_gui_slider(
-                            "rz",
-                            min=-180,
-                            max=180,
-                            step=1,
-                            initial_value=0,
-                        )
-                        tx_slider = server.add_gui_slider(
-                            "tx",
-                            min=-10.,
-                            max=10.,
-                            step=0.01,
-                            initial_value=0,
-                        )
-                        ty_slider = server.add_gui_slider(
-                            "ty",
-                            min=-10.,
-                            max=10.,
-                            step=0.01,
-                            initial_value=0,
-                        )
-                        tz_slider = server.add_gui_slider(
-                            "tz",
-                            min=-10.,
-                            max=10.,
-                            step=0.01,
-                            initial_value=0,
-                        )
-
-                        setup_transform_callback(
-                            i,
-                            scale_slider,
-                            rx_slider,
-                            ry_slider,
-                            rz_slider,
-                            tx_slider,
-                            ty_slider,
-                            tz_slider,
-                        )
+                self.transform_panel = TransformPanel(server, self, self.loaded_model_count)
 
         with tabs.add_tab("Render"):
             populate_render_tab(
@@ -481,12 +389,21 @@ class Viewer:
         return self.available_appearance_options[name]
 
     def _handle_option_updated(self, _):
+        return self.rerender_for_all_client()
+
+    def handle_option_updated(self, _):
+        return self._handle_option_updated(_)
+
+    def rerender_for_client(self, client_id: int):
+        try:
+            self.clients[client_id].state = "low"
+            self.clients[client_id].render_trigger.set()
+        except:
+            pass
+
+    def rerender_for_all_client(self):
         for i in self.clients:
-            try:
-                self.clients[i].state = "low"
-                self.clients[i].render_trigger.set()
-            except:
-                pass
+            return self.rerender_for_client(i)
 
     def _handle_new_client(self, client: viser.ClientHandle) -> None:
         # create client thread

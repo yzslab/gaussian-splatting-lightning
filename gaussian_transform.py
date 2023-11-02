@@ -36,7 +36,7 @@ class Gaussian(internal.utils.gaussian_utils.Gaussian):
 
             print("rescaled with factor {}".format(scale))
 
-    def rotate(self, x: float, y: float, z: float):
+    def rotate_by_euler_angles(self, x: float, y: float, z: float):
         """
         rotate in z-y-x order, radians as unit
         """
@@ -150,7 +150,7 @@ def main():
             gaussian.sh_degrees = args.new_sh_degrees
 
         gaussian.rescale(args.scale)
-        gaussian.rotate(args.rx, args.ry, args.rz)
+        gaussian.rotate_by_euler_angles(args.rx, args.ry, args.rz)
         gaussian.translation(args.tx, args.ty, args.tz)
 
     gaussian.save_to_ply(args.output)

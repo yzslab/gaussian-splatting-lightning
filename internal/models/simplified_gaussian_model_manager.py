@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 import internal.utils.gaussian_utils as gaussian_utils
 from .gaussian_model_simplified import GaussianModelSimplified
 
@@ -51,6 +52,40 @@ class SimplifiedGaussianModelManager:
     def get_model(self, idx: int) -> GaussianModelSimplified:
         return self.models[idx]
 
+    def transform_with_vectors(
+            self,
+            idx: int,
+            scale: float,
+            r_wxyz: np.ndarray,
+            t_xyz: np.ndarray,
+    ):
+        model = self.get_model(idx)
+        begin, end = self.get_model_gaussian_indices(idx)
+
+        xyz = model.get_xyz.to(self.device)
+        # TODO: avoid memory copy if no rotation or scaling happened compared to previous state
+        scaling = model.get_scaling.to(self.device)
+        rotation = model.get_rotation.to(self.device)
+
+        # rescale
+        xyz, scaling = gaussian_utils.GaussianTransformUtils.rescale(
+            xyz,
+            scaling,
+            scale
+        )
+        # rotate
+        xyz, rotation = gaussian_utils.GaussianTransformUtils.rotate_by_wxyz_quaternions(
+            xyz=xyz,
+            rotations=rotation,
+            quaternions=torch.tensor(r_wxyz).to(xyz),
+        )
+        # translate
+        xyz = gaussian_utils.GaussianTransformUtils.translation(xyz, *t_xyz.tolist())
+
+        self._xyz[begin:end] = xyz
+        self._scaling[begin:end] = scaling
+        self._rotation[begin:end] = rotation
+
     def transform(
             self,
             idx: int,
@@ -70,29 +105,24 @@ class SimplifiedGaussianModelManager:
         scaling = model.get_scaling.to(self.device)
         rotation = model.get_rotation.to(self.device)
 
-        if scale != 1.:
-            xyz, scaling = gaussian_utils.GaussianTransformUtils.rescale(
-                xyz,
-                scaling,
-                scale
-            )
-
-        if rx != 0. or ry != 0. or rz != 0.:
-            xyz, rotation = gaussian_utils.GaussianTransformUtils.rotate(
-                xyz,
-                rotation,
-                rx,
-                ry,
-                rz,
-            )
-
-        if tx != 0. or ty != 0. or tz != 0.:
-            xyz = gaussian_utils.GaussianTransformUtils.translation(
-                xyz,
-                tx,
-                ty,
-                tz,
-            )
+        xyz, scaling = gaussian_utils.GaussianTransformUtils.rescale(
+            xyz,
+            scaling,
+            scale
+        )
+        xyz, rotation = gaussian_utils.GaussianTransformUtils.rotate_by_euler_angles(
+            xyz,
+            rotation,
+            rx,
+            ry,
+            rz,
+        )
+        xyz = gaussian_utils.GaussianTransformUtils.translation(
+            xyz,
+            tx,
+            ty,
+            tz,
+        )
 
         self._xyz[begin:end] = xyz
         self._scaling[begin:end] = scaling

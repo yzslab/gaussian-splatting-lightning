@@ -1,1 +1,2 @@
+from .transform_panel import TransformPanel
 from .render_panel import populate_render_tab
