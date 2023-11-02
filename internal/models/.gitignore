@@ -1,0 +1,7 @@
+*
+!.gitignore
+!__init__.py
+!appearance_model.py
+!gaussian_model.py
+!gaussian_model_simplified.py
+!simplified_gaussian_model_manager.py
