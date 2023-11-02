@@ -1,5 +1,6 @@
 import os
 import subprocess
+import multiprocessing.pool
 import argparse
 import json
 import torch
@@ -74,12 +75,41 @@ def parse_camera_poses(camera_path: dict):
     )
 
 
-def render_frames(cameras: Cameras, viewer_renderer: ViewerRenderer, output_path: str, device):
+def save_image(image_information: tuple):
+    image, output_path = image_information
+    torchvision.utils.save_image(image, output_path)
+
+
+def save_images(image_list: list):
+    with multiprocessing.pool.ThreadPool() as tp:
+        for _ in tp.imap_unordered(save_image, image_list):
+            pass
+
+
+def render_frames(
+        cameras: Cameras,
+        viewer_renderer: ViewerRenderer,
+        output_path: str,
+        image_save_batch: int,
+        device,
+):
     os.makedirs(output_path, exist_ok=True)
+    image_list = []
     for idx in tqdm(range(len(cameras)), desc="rendering frames"):
         camera = cameras[idx].to_device(device)
         image = viewer_renderer.get_outputs(camera).cpu()
-        torchvision.utils.save_image(image, os.path.join(output_path, "{:06d}.png".format(idx)))
+        image_output_path = os.path.join(output_path, "{:06d}.png".format(idx))
+
+        if image_save_batch > 1:
+            image_list.append((image, image_output_path))
+            if len(image_list) >= image_save_batch:
+                save_images(image_list)
+                image_list = []
+        else:
+            save_image((image, image_output_path))
+
+    if len(image_list) > 0:
+        save_images(image_list)
 
 
 if __name__ == "__main__":
@@ -87,6 +117,8 @@ if __name__ == "__main__":
     parser.add_argument("model_paths", type=str, nargs="+")
     parser.add_argument("--camera-path-filename", type=str, required=True)
     parser.add_argument("--output-path", type=str, required=True)
+    parser.add_argument("--image-save-batch", "-b", type=int, default=8,
+                        help="increase this to speedup rendering, but more memory will be consumed")
     args = parser.parse_args()
 
     device = torch.device("cuda")
@@ -106,7 +138,13 @@ if __name__ == "__main__":
 
     frame_output_path = args.output_path + "_frames"
     with torch.no_grad():
-        render_frames(cameras, viewer_renderer=renderer, output_path=frame_output_path, device=device)
+        render_frames(
+            cameras,
+            viewer_renderer=renderer,
+            output_path=frame_output_path,
+            image_save_batch=args.image_save_batch,
+            device=device,
+        )
 
     subprocess.call([
         "ffmpeg",
