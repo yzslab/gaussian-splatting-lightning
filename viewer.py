@@ -405,7 +405,7 @@ class Viewer:
 
     def rerender_for_all_client(self):
         for i in self.clients:
-            return self.rerender_for_client(i)
+            self.rerender_for_client(i)
 
     def _handle_new_client(self, client: viser.ClientHandle) -> None:
         # create client thread
