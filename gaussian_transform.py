@@ -112,8 +112,11 @@ def parse_args():
     # scale
     parser.add_argument("--scale", type=float, default=1)
 
+    parser.add_argument("--sh-factor", type=float, default=1.0)
+
     # auto reorient
     parser.add_argument("--auto-reorient", action="store_true", default=False)
+    parser.add_argument("--cameras-json", type=str, default=None)
 
     args = parser.parse_args()
     args.input = os.path.expanduser(args.input)
@@ -125,14 +128,17 @@ def parse_args():
 def main():
     args = parse_args()
     assert args.input != args.output
-    assert args.sh_degrees >= 1 and args.sh_degrees <= 3
+    assert args.sh_degrees >= 0 and args.sh_degrees <= 3
     assert args.scale > 0
     assert os.path.exists(args.input)
 
     gaussian = Gaussian.load_from_ply(args.input, args.sh_degrees)
 
     if args.auto_reorient is True:
-        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(args.input))), "cameras.json"), "r") as f:
+        cameras_json_path = args.cameras_json
+        if cameras_json_path is None:
+            cameras_json_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(args.input))), "cameras.json")
+        with open(cameras_json_path, "r") as f:
             cameras = json.load(f)
         up = np.zeros(3)
         for i in cameras:
@@ -152,6 +158,10 @@ def main():
         gaussian.rescale(args.scale)
         gaussian.rotate_by_euler_angles(args.rx, args.ry, args.rz)
         gaussian.translation(args.tx, args.ty, args.tz)
+
+    if args.sh_factor != 1.:
+        gaussian.features_dc *= args.sh_factor
+        gaussian.features_extra *= args.sh_factor
 
     gaussian.save_to_ply(args.output)
 
