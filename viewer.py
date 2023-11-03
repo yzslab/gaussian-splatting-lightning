@@ -13,7 +13,6 @@ import viser.transforms as vtf
 import torch
 from internal.renderers import VanillaRenderer
 from internal.utils.gaussian_model_loader import GaussianModelLoader
-from internal.models.gaussian_model_simplified import GaussianModelSimplified
 from internal.models.simplified_gaussian_model_manager import SimplifiedGaussianModelManager
 from internal.viewer import ClientThread, ViewerRenderer
 from internal.viewer.ui import populate_render_tab, TransformPanel
@@ -83,9 +82,9 @@ class Viewer:
             for model_path in addition_models:
                 load_from = self._search_load_file(model_path)
                 if load_from.endswith(".ckpt"):
-                    load_results = self._do_initialize_models_from_checkpoint(load_from, sh_degree, device=torch.device("cpu"))
+                    load_results = self._do_initialize_models_from_checkpoint(load_from, device=torch.device("cpu"))
                 else:
-                    load_results = self._do_initialize_models_from_point_cloud(load_from, sh_degree, device=torch.device("cpu"))
+                    load_results = self._do_initialize_models_from_point_cloud(load_from, self.sh_degree, device=torch.device("cpu"))
                 model_list.append(load_results[0])
 
             model = SimplifiedGaussianModelManager(model_list, enable_transform=enable_transform, device=self.device)
@@ -213,11 +212,11 @@ class Viewer:
         # self.camera_scale_slider.on_update(update_camera_scale)
 
     @staticmethod
-    def _do_initialize_models_from_checkpoint(checkpoint_path: str, sh_degree, device):
-        return GaussianModelLoader.initialize_simplified_model_from_checkpoint(checkpoint_path, sh_degree, device)
+    def _do_initialize_models_from_checkpoint(checkpoint_path: str, device):
+        return GaussianModelLoader.initialize_simplified_model_from_checkpoint(checkpoint_path, device)
 
     def _initialize_models_from_checkpoint(self, checkpoint_path: str):
-        return self._do_initialize_models_from_checkpoint(checkpoint_path, self.sh_degree, self.device)
+        return self._do_initialize_models_from_checkpoint(checkpoint_path, self.device)
 
     @staticmethod
     def _do_initialize_models_from_point_cloud(point_cloud_path: str, sh_degree, device):
@@ -233,6 +232,7 @@ class Viewer:
             model, renderer, checkpoint = self._initialize_models_from_checkpoint(load_from)
             training_output_base_dir = os.path.dirname(os.path.dirname(load_from))
             dataset_type = checkpoint["datamodule_hyper_parameters"]["type"]
+            self.sh_degree = model.max_sh_degree
         elif load_from.endswith(".ply") is True:
             model, renderer = self._initialize_models_from_point_cloud(load_from)
             training_output_base_dir = os.path.dirname(os.path.dirname(os.path.dirname(load_from)))
@@ -303,14 +303,15 @@ class Viewer:
                 )
                 self.scaling_modifier.on_update(self._handle_option_updated)
 
-                self.active_sh_degree_slider = server.add_gui_slider(
-                    "Active SH Degree",
-                    min=0,
-                    max=self.viewer_renderer.gaussian_model.max_sh_degree,
-                    step=1,
-                    initial_value=self.viewer_renderer.gaussian_model.max_sh_degree,
-                )
-                self.active_sh_degree_slider.on_update(self._handle_activate_sh_degree_slider_updated)
+                if self.viewer_renderer.gaussian_model.max_sh_degree > 0:
+                    self.active_sh_degree_slider = server.add_gui_slider(
+                        "Active SH Degree",
+                        min=0,
+                        max=self.viewer_renderer.gaussian_model.max_sh_degree,
+                        step=1,
+                        initial_value=self.viewer_renderer.gaussian_model.max_sh_degree,
+                    )
+                    self.active_sh_degree_slider.on_update(self._handle_activate_sh_degree_slider_updated)
 
                 if self.available_appearance_options is not None:
                     # find max appearance id
