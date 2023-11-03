@@ -76,7 +76,7 @@ class GaussianModelLoader:
     def search_and_load(cls, model_path: str, sh_degree, device):
         load_from = cls.search_load_file(model_path)
         if load_from.endswith(".ckpt"):
-            model, renderer, _ = cls.initialize_simplified_model_from_checkpoint(load_from, sh_degree=sh_degree, device=device)
+            model, renderer, _ = cls.initialize_simplified_model_from_checkpoint(load_from, device=device)
         elif load_from.endswith(".ply"):
             model, renderer = cls.initialize_simplified_model_from_point_cloud(load_from, sh_degree=sh_degree, device=device)
         else:
