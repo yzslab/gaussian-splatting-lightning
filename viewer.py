@@ -246,7 +246,7 @@ class Viewer:
         server = viser.ViserServer(host=self.host, port=self.port)
         server.configure_theme(
             control_layout="collapsible",
-            show_logo=False,
+            # show_logo=False,
         )
         # register hooks
         server.on_client_connect(self._handle_new_client)
