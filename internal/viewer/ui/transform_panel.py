@@ -63,7 +63,7 @@ class TransformPanel:
                 self.model_size_sliders.append(size_slider)
 
                 self.model_poses.append(ModelPose(
-                    np.zeros((4,)),
+                    np.asarray([1., 0., 0., 0.]),
                     np.zeros((3,)),
                 ))
                 model_show_transform_control_checkbox = server.add_gui_checkbox(

@@ -35,12 +35,14 @@ class Keyframe:
     override_fov_enabled: bool
     override_fov_value: float
     aspect: float
+    enable_model_transform: bool
     model_sizes: list[float]
     model_poses: list
 
     @staticmethod
     def from_camera(
             camera: viser.CameraHandle,
+            enable_model_transform: bool,
             model_size_sliders: list,
             model_poses: list,
             aspect: float,
@@ -53,14 +55,16 @@ class Keyframe:
             override_fov_enabled=False,
             override_fov_value=camera.fov,
             aspect=aspect,
+            enable_model_transform=enable_model_transform,
             model_sizes=model_sizes,
             model_poses=model_poses_copied,
         )
 
 
 class CameraPath:
-    def __init__(self, server: viser.ViserServer):
+    def __init__(self, server: viser.ViserServer, viewer):
         self._server = server
+        self._viewer = viewer
         self._keyframes: Dict[int, Tuple[Keyframe, viser.CameraFrustumHandle]] = {}
         self._keyframe_counter: int = 0
         self._spline: Optional[viser.SceneNodeHandle] = None
@@ -121,6 +125,7 @@ class CameraPath:
                     initial_value=keyframe.override_fov_value * 180.0 / onp.pi,
                     disabled=not keyframe.override_fov_enabled,
                 )
+                enable_model_transform = server.add_gui_checkbox("Enable Model Transform", initial_value=keyframe.enable_model_transform)
                 delete_button = server.add_gui_button("Delete", color="red", icon=viser.Icon.TRASH)
                 go_to_button = server.add_gui_button("Go to")
                 close_button = server.add_gui_button("Close")
@@ -135,6 +140,11 @@ class CameraPath:
                 def _(_) -> None:
                     keyframe.override_fov_value = override_fov_degrees.value / 180.0 * onp.pi
                     self.add_camera(keyframe, keyframe_index)
+
+                @enable_model_transform.on_update
+                def _(_) -> None:
+                    keyframe.enable_model_transform = enable_model_transform.value
+                    self.update_spline()
 
                 @delete_button.on_click
                 def _(event: viser.GuiEvent) -> None:
@@ -186,6 +196,16 @@ class CameraPath:
                         with client.atomic():
                             client.camera.wxyz = T_world_set.rotation().wxyz
                             client.camera.position = T_world_set.translation()
+
+                            if keyframe.enable_model_transform:
+                                for model_idx in range(len(keyframe.model_sizes)):
+                                    self._viewer.gaussian_model.transform_with_vectors(
+                                        model_idx,
+                                        scale=keyframe.model_sizes[model_idx],
+                                        r_wxyz=keyframe.model_poses[model_idx].wxyz,
+                                        t_xyz=keyframe.model_poses[model_idx].position,
+                                    )
+
                         time.sleep(1.0 / 30.0)
 
                 @close_button.on_click
@@ -227,15 +247,24 @@ class CameraPath:
         quat = self._orientation_spline.evaluate(t)
         assert isinstance(quat, splines.quaternion.UnitQuaternion)
 
+        model_pose_max_t = 0
+        for i in self._keyframes:
+            keyframe = self._keyframes[i][0]
+            if keyframe.enable_model_transform:
+                model_pose_max_t += 1
+        model_pose_max_t -= 1 # not self.loop
+        model_pose_t = model_pose_max_t * normalized_t
+
+
         # model pose
         model_sizes = []
         model_poses = []
         for i in range(len(self._model_position_splines)):
-            model_sizes.append(self._model_size_splines[i].evaluate(t))
-            model_quat = self._model_orientation_splines[i].evaluate(t)
+            model_sizes.append(self._model_size_splines[i].evaluate(model_pose_t))
+            model_quat = self._model_orientation_splines[i].evaluate(model_pose_t)
             model_poses.append({
                 "wxyz": onp.array([model_quat.scalar, *model_quat.vector]),
-                "position": self._model_position_splines[i].evaluate(t),
+                "position": self._model_position_splines[i].evaluate(model_pose_t),
             })
 
         return (
@@ -280,8 +309,14 @@ class CameraPath:
             model_size_list = []
             model_pose_list = []
             for keyframe in keyframes:
+                if keyframe[0].enable_model_transform is False:
+                    continue
                 model_size_list.append(keyframe[0].model_sizes[model_idx])
                 model_pose_list.append(keyframe[0].model_poses[model_idx])
+
+            # skip if frames < 2
+            if len(model_size_list) < 2:
+                break
 
             self._model_orientation_splines.append(splines.quaternion.KochanekBartels(
                 [
@@ -373,8 +408,7 @@ def populate_render_tab(
         hint="Add a new keyframe at the current pose.",
     )
 
-    @add_button.on_click
-    def _(event: viser.GuiEvent) -> None:
+    def add_camera(event: viser.GuiEvent, enable_model_transform: bool):
         assert event.client_id is not None
         camera = server.get_clients()[event.client_id].camera
 
@@ -382,12 +416,28 @@ def populate_render_tab(
         camera_path.add_camera(
             Keyframe.from_camera(
                 camera,
+                enable_model_transform=enable_model_transform,
                 model_size_sliders=viewer.transform_panel.model_size_sliders if viewer.transform_panel is not None else [],
                 model_poses=viewer.transform_panel.model_poses if viewer.transform_panel is not None else [],
                 aspect=resolution.value[0] / resolution.value[1],
             ),
         )
         camera_path.update_spline()
+
+    @add_button.on_click
+    def _(event: viser.GuiEvent) -> None:
+        add_camera(event, enable_model_transform=True)
+
+    if viewer.transform_panel is not None:
+        add_without_model_transform_button = server.add_gui_button(
+            "Add keyframe w/o model transform",
+            icon=viser.Icon.PLUS,
+            hint="Add a new keyframe at the current pose, but without model transform.",
+        )
+
+        @add_without_model_transform_button.on_click
+        def _(event: viser.GuiEvent) -> None:
+            add_camera(event, enable_model_transform=False)
 
     reset_up_button = server.add_gui_button(
         "Reset up direction",
@@ -656,6 +706,7 @@ def populate_render_tab(
                     if keyframe.override_fov_enabled
                     else fov_degrees.value,
                     "aspect": keyframe.aspect,
+                    "enable_model_transform": keyframe.enable_model_transform,
                     "model_sizes": keyframe.model_sizes,
                     "model_poses": [i.to_dict() for i in keyframe.model_poses],
                 }
@@ -731,7 +782,7 @@ def populate_render_tab(
             def _(_) -> None:
                 modal.close()
 
-    camera_path = CameraPath(server)
+    camera_path = CameraPath(server, viewer)
     camera_path.default_fov = fov_degrees.value / 180.0 * onp.pi
 
     transform_controls: List[viser.SceneNodeHandle] = []

@@ -172,7 +172,11 @@ class GaussianTransformUtils:
 
     @classmethod
     def rotate_by_wxyz_quaternions(cls, xyz, rotations, quaternions: torch.tensor):
-        if torch.all(quaternions == 0.):
+        if torch.all(quaternions == 0.) or torch.all(quaternions == torch.tensor(
+                [1., 0., 0., 0.],
+                dtype=quaternions.dtype,
+                device=quaternions.device,
+        )):
             return xyz, rotations
 
         # convert quaternions to rotation matrix
