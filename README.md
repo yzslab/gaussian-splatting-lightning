@@ -9,6 +9,11 @@
 * Appearance variation support
 * Load arbitrary number of images without OOM
 * Interactive web viewer
+  * Load multiple models
+  * Model transform
+  * Scene editor
+  * Video camera path editor
+* Video renderer
 ## Installation
 ```bash
 # clone repository
