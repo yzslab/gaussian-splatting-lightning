@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 import internal.utils.gaussian_utils as gaussian_utils
+from internal.utils.general_utils import inverse_sigmoid
 
 
 class GaussianModelSimplified(nn.Module):
@@ -25,6 +26,8 @@ class GaussianModelSimplified(nn.Module):
         self._opacity = torch.sigmoid(opacity).to(device)
 
         self._features = torch.cat([features_dc, features_rest], dim=1).to(device)
+
+        self._opacity_origin = None
 
         self.max_sh_degree = sh_degree
         self.active_sh_degree = sh_degree
@@ -82,3 +85,60 @@ class GaussianModelSimplified(nn.Module):
     @property
     def get_opacity(self):
         return self._opacity
+
+    def select(self, mask: torch.tensor):
+        if self._opacity_origin is None:
+            self._opacity_origin = torch.clone(self._opacity)  # make a backup
+        else:
+            self._opacity = torch.clone(self._opacity_origin)
+
+        self._opacity[mask] = 0.
+
+    def delete_gaussians(self, mask: torch.tensor):
+        gaussians_to_be_preserved = torch.bitwise_not(mask)
+        self._xyz = self._xyz[gaussians_to_be_preserved]
+        self._scaling = self._scaling[gaussians_to_be_preserved]
+        self._rotation = self._rotation[gaussians_to_be_preserved]
+
+        if self._opacity_origin is not None:
+            self._opacity = self._opacity_origin
+            self._opacity_origin = None
+        self._opacity = self._opacity[gaussians_to_be_preserved]
+
+        self._features = self._features[gaussians_to_be_preserved]
+
+    def to_parameter_structure(self) -> gaussian_utils.Gaussian:
+        xyz = self._xyz.cpu()
+        features_dc = self._features[:, :1, :].cpu()
+        features_rest = self._features[:, 1:, :].cpu()
+        scaling = torch.log(self._scaling).cpu()
+        rotation = self._rotation.cpu()
+        opacity = inverse_sigmoid(self._opacity).cpu()
+
+        return gaussian_utils.Gaussian(
+            sh_degrees=self.max_sh_degree,
+            xyz=xyz,
+            opacities=opacity,
+            features_dc=features_dc,
+            features_extra=features_rest,
+            scales=scaling,
+            rotations=rotation,
+        )
+
+    def to_ply_structure(self) -> gaussian_utils.Gaussian:
+        xyz = self._xyz.cpu().numpy()
+        features_dc = self._features[:, :1, :].transpose(1, 2).cpu().numpy()
+        features_rest = self._features[:, 1:, :].transpose(1, 2).cpu().numpy()
+        scaling = torch.log(self._scaling).cpu().numpy()
+        rotation = self._rotation.cpu().numpy()
+        opacity = inverse_sigmoid(self._opacity).cpu().numpy()
+
+        return gaussian_utils.Gaussian(
+            sh_degrees=self.max_sh_degree,
+            xyz=xyz,
+            opacities=opacity,
+            features_dc=features_dc,
+            features_extra=features_rest,
+            scales=scaling,
+            rotations=rotation,
+        )

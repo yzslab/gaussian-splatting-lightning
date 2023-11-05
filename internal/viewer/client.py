@@ -26,6 +26,8 @@ class ClientThread(threading.Thread):
 
         self.stop_client = False  # whether stop this thread
 
+        client.camera.up_direction = viewer.up_direction
+
         @client.camera.on_update
         def _(cam: viser.CameraHandle) -> None:
             with self.client.atomic():

@@ -15,7 +15,7 @@ from internal.renderers import VanillaRenderer
 from internal.utils.gaussian_model_loader import GaussianModelLoader
 from internal.models.simplified_gaussian_model_manager import SimplifiedGaussianModelManager
 from internal.viewer import ClientThread, ViewerRenderer
-from internal.viewer.ui import populate_render_tab, TransformPanel
+from internal.viewer.ui import populate_render_tab, TransformPanel, EditPanel
 from internal.utils.rotation import rotation_matrix
 
 DROPDOWN_USE_DIRECT_APPEARANCE_EMBEDDING_VALUE = "@Direct"
@@ -45,11 +45,13 @@ class Viewer:
         self.enable_transform = enable_transform
         self.show_cameras = show_cameras
 
+        self.up_direction = np.asarray([0., 0., 1.])
+
         load_from = self._search_load_file(model_paths[0])
 
         # TODO: load multiple models more elegantly
         # load and create models
-        model, renderer, training_output_base_dir, dataset_type = self._load_model_from_file(load_from)
+        model, renderer, training_output_base_dir, dataset_type, self.checkpoint = self._load_model_from_file(load_from)
 
         # reorient the scene
         cameras_json_path = os.path.join(training_output_base_dir, "cameras.json")
@@ -125,6 +127,7 @@ class Viewer:
             print("skip reorient for {} dataset".format(dataset_type))
             return transform
 
+        print("load {}".format(cameras_json_path))
         with open(cameras_json_path, "r") as f:
             cameras = json.load(f)
         up = torch.zeros(3)
@@ -133,12 +136,15 @@ class Viewer:
         up = -up / torch.linalg.norm(up)
 
         print("up vector = {}".format(up))
-
-        rotation = rotation_matrix(up, torch.Tensor([0, 0, 1]))
-        transform[:3, :3] = rotation
-        transform = torch.linalg.inv(transform)
+        self.up_direction = up
 
         return transform
+
+        # rotation = rotation_matrix(up, torch.Tensor([0, 0, 1]))
+        # transform[:3, :3] = rotation
+        # transform = torch.linalg.inv(transform)
+        #
+        # return transform
 
     def load_camera_poses(self, cameras_json_path: str):
         if os.path.exists(cameras_json_path) is False:
@@ -227,6 +233,7 @@ class Viewer:
 
     def _load_model_from_file(self, load_from: str):
         print("load model from {}".format(load_from))
+        checkpoint = None
         dataset_type = None
         if load_from.endswith(".ckpt") is True:
             model, renderer, checkpoint = self._initialize_models_from_checkpoint(load_from)
@@ -239,14 +246,14 @@ class Viewer:
         else:
             raise ValueError("unsupported file {}".format(load_from))
 
-        return model, renderer, training_output_base_dir, dataset_type
+        return model, renderer, training_output_base_dir, dataset_type, checkpoint
 
     def start(self):
         # create viser server
         server = viser.ViserServer(host=self.host, port=self.port)
         server.configure_theme(
             control_layout="collapsible",
-            # show_logo=False,
+            show_logo=False,
         )
         # register hooks
         server.on_client_connect(self._handle_new_client)
@@ -355,10 +362,14 @@ class Viewer:
                     self.normalized_appearance_id.on_update(self._handle_appearance_embedding_slider_updated)
                     self.appearance_group_dropdown.on_update(self._handle_option_updated)
 
+        self.edit_panel = None
         self.transform_panel = None
         if self.enable_transform is True:
             with tabs.add_tab("Transform"):
                 self.transform_panel = TransformPanel(server, self, self.loaded_model_count)
+        elif self.loaded_model_count == 1:
+            with tabs.add_tab("Edit") as edit_tab:
+                self.edit_panel = EditPanel(server, self, edit_tab)
 
         with tabs.add_tab("Render"):
             populate_render_tab(
