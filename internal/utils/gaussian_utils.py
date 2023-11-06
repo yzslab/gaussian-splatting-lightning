@@ -64,7 +64,25 @@ class Gaussian:
             rotations=rots,
         )
 
+    @classmethod
+    def load_from_state_dict(cls, sh_degrees: int, state_dict: dict, key_prefix: str = "gaussian_model._"):
+        init_args = {
+            "sh_degrees": sh_degrees,
+        }
+        for name_in_dict, name_in_dataclass in [
+            ("xyz", "xyz"),
+            ("features_dc", "features_dc"),
+            ("features_rest", "features_extra"),
+            ("scaling", "scales"),
+            ("rotation", "rotations"),
+            ("opacity", "opacities"),
+        ]:
+            init_args[name_in_dataclass] = state_dict["{}{}".format(key_prefix, name_in_dict)]
+
+        return cls(**init_args)
+
     def to_parameter_structure(self):
+        assert isinstance(self.xyz, np.ndarray) is True
         return Gaussian(
             sh_degrees=self.sh_degrees,
             xyz=torch.tensor(self.xyz, dtype=torch.float),
@@ -75,7 +93,21 @@ class Gaussian:
             rotations=torch.tensor(self.rotations, dtype=torch.float),
         )
 
+    def to_ply_format(self):
+        assert isinstance(self.xyz, torch.Tensor) is True
+        return self.__class__(
+            sh_degrees=self.sh_degrees,
+            xyz=self.xyz.cpu().numpy(),
+            opacities=self.opacities.cpu().numpy(),
+            features_dc=self.features_dc.transpose(1, 2).cpu().numpy(),
+            features_extra=self.features_extra.transpose(1, 2).cpu().numpy(),
+            scales=self.scales.cpu().numpy(),
+            rotations=self.rotations.cpu().numpy(),
+        )
+
     def save_to_ply(self, path: str):
+        assert isinstance(self.xyz, np.ndarray) is True
+
         gaussian = self
 
         os.makedirs(os.path.dirname(path), exist_ok=True)

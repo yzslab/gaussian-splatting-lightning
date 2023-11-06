@@ -360,7 +360,7 @@ class Viewer:
                     )
                     self.appearance_id.on_update(self._handle_appearance_embedding_slider_updated)
                     self.normalized_appearance_id.on_update(self._handle_appearance_embedding_slider_updated)
-                    self.appearance_group_dropdown.on_update(self._handle_option_updated)
+                    self.appearance_group_dropdown.on_update(self._handel_appearance_group_dropdown_updated)
 
         self.edit_panel = None
         self.transform_panel = None
@@ -386,9 +386,11 @@ class Viewer:
         while True:
             time.sleep(999)
 
-    def _handle_appearance_embedding_slider_updated(self, _):
+    def _handle_appearance_embedding_slider_updated(self, event: viser.GuiEvent):
+        if event.client is None:
+            return
         self.appearance_group_dropdown.value = DROPDOWN_USE_DIRECT_APPEARANCE_EMBEDDING_VALUE
-        self._handle_option_updated(_)
+        self._handle_option_updated(event)
 
     def _handle_activate_sh_degree_slider_updated(self, _):
         self.viewer_renderer.gaussian_model.active_sh_degree = self.active_sh_degree_slider.value
@@ -401,6 +403,14 @@ class Viewer:
         if name == DROPDOWN_USE_DIRECT_APPEARANCE_EMBEDDING_VALUE or name not in self.available_appearance_options:
             return (self.appearance_id.value, self.normalized_appearance_id.value)
         return self.available_appearance_options[name]
+
+    def _handel_appearance_group_dropdown_updated(self, event: viser.GuiEvent):
+        if event.client is None:
+            return
+        appearance_id, normalized_appearance_id = self.available_appearance_options[self.appearance_group_dropdown.value]
+        self.appearance_id.value = appearance_id
+        self.normalized_appearance_id.value = normalized_appearance_id
+        self._handle_option_updated(event)
 
     def _handle_option_updated(self, _):
         return self.rerender_for_all_client()

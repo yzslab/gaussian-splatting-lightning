@@ -6,6 +6,7 @@ import torch
 from dataclasses import dataclass
 from internal.utils.colmap import rotmat2qvec
 from internal.utils.rotation import rotation_matrix
+from internal.utils.sh_utils import SH2RGB, RGB2SH
 import internal.utils.gaussian_utils
 
 
@@ -66,7 +67,7 @@ class Gaussian(internal.utils.gaussian_utils.Gaussian):
 
         quaternions = rotmat2qvec(rotation_matrix)[np.newaxis, ...]
         rotations_from_quats = quat_multiply(self.rotations, quaternions)
-        self.rotations = rotations_from_quats / np.linalg.norm(rotations_from_quats)
+        self.rotations = rotations_from_quats / np.linalg.norm(rotations_from_quats, axis=-1, keepdims=True)
 
         # rotate via rotation matrix
         # gaussian_rotation = build_rotation(torch.from_numpy(self.rotations)).cpu()
@@ -118,6 +119,8 @@ def parse_args():
     parser.add_argument("--auto-reorient", action="store_true", default=False)
     parser.add_argument("--cameras-json", type=str, default=None)
 
+    parser.add_argument("--appearance-id", type=float, default=-1)
+
     args = parser.parse_args()
     args.input = os.path.expanduser(args.input)
     args.output = os.path.expanduser(args.output)
@@ -132,7 +135,20 @@ def main():
     assert args.scale > 0
     assert os.path.exists(args.input)
 
-    gaussian = Gaussian.load_from_ply(args.input, args.sh_degrees)
+    if args.input.endswith(".ply"):
+        gaussian = Gaussian.load_from_ply(args.input, args.sh_degrees)
+    else:
+        checkpoint = torch.load(args.input)
+        gaussian = Gaussian.load_from_state_dict(checkpoint["hyper_parameters"]["gaussian"].sh_degree, checkpoint["state_dict"]).to_ply_format()
+        if args.appearance_id >= 0.:
+            args.new_sh_degree = 0
+            with torch.no_grad():
+                gray_scale_factor, gamma = checkpoint["hyper_parameters"]["renderer"].appearance_model.get_appearance(args.appearance_id)
+            gray_scale_factor = torch.reshape(gray_scale_factor, (1, -1, 1))
+            rgb = SH2RGB(gaussian.features_dc).clip(min=0.)  # [n, 3, 1]
+            rgb *= gray_scale_factor.cpu().numpy()
+            rgb = np.power(rgb + 1e-5, float(gamma.reshape((-1, ))[0].cpu()))
+            gaussian.features_dc = RGB2SH(rgb)
 
     if args.auto_reorient is True:
         cameras_json_path = args.cameras_json
@@ -152,12 +168,12 @@ def main():
 
         gaussian.rotate_by_matrix(rotation)
     else:
-        if args.new_sh_degrees >= 0:
-            gaussian.sh_degrees = args.new_sh_degrees
-
         gaussian.rescale(args.scale)
         gaussian.rotate_by_euler_angles(args.rx, args.ry, args.rz)
         gaussian.translation(args.tx, args.ty, args.tz)
+
+    if args.new_sh_degrees >= 0:
+        gaussian.sh_degrees = args.new_sh_degrees
 
     if args.sh_factor != 1.:
         gaussian.features_dc *= args.sh_factor
