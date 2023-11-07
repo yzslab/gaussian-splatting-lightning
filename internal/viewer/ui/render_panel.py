@@ -252,9 +252,8 @@ class CameraPath:
             keyframe = self._keyframes[i][0]
             if keyframe.enable_model_transform:
                 model_pose_max_t += 1
-        model_pose_max_t -= 1 # not self.loop
+        model_pose_max_t -= 1  # not self.loop
         model_pose_t = model_pose_max_t * normalized_t
-
 
         # model pose
         model_sizes = []
@@ -556,6 +555,7 @@ def populate_render_tab(
         play_button = server.add_gui_button("Play", icon=viser.Icon.PLAYER_PLAY)
         pause_button = server.add_gui_button("Pause", icon=viser.Icon.PLAYER_PAUSE, visible=False)
         attach_viewport_checkbox = server.add_gui_checkbox("Attach viewport", initial_value=False)
+        apply_transform_checkbox = server.add_gui_checkbox("Apply Transform", initial_value=False)
         show_checkbox = server.add_gui_checkbox(
             "Show keyframes",
             initial_value=True,
@@ -608,11 +608,27 @@ def populate_render_tab(
                 # Easy to fix with a global variable.
                 visible=not attach_viewport_checkbox.value,
             )
+
+            def apply_transform():
+                for model_idx in range(len(model_sizes)):
+                    viewer.gaussian_model.transform_with_vectors(
+                        model_idx,
+                        scale=model_sizes[model_idx],
+                        r_wxyz=model_poses[model_idx]["wxyz"],
+                        t_xyz=model_poses[model_idx]["position"],
+                    )
+                    viewer.transform_panel.set_model_transform_control_value(model_idx, model_poses[model_idx]["wxyz"], model_poses[model_idx]["position"])
+
             if attach_viewport_checkbox.value:
                 for client in server.get_clients().values():
                     client.camera.wxyz = pose.rotation().wxyz
                     client.camera.position = pose.translation()
                     client.camera.fov = fov
+                if apply_transform_checkbox:
+                    apply_transform()
+            elif apply_transform_checkbox.value:
+                apply_transform()
+                viewer.rerender_for_all_client()
 
         return preview_frame_slider
 

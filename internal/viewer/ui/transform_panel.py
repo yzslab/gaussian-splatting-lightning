@@ -34,6 +34,8 @@ class TransformPanel:
         self.server = server
         self.viewer = viewer
 
+        self.transform_control_no_handle_update = False
+
         self.model_poses = []
         self.model_transform_controls: dict[int, viser.TransformControlsHandle] = {}
         self.model_size_sliders = []
@@ -102,6 +104,15 @@ class TransformPanel:
                 self._transform_model(idx)
                 self.viewer.rerender_for_client(event.client_id)
 
+    def set_model_transform_control_value(self, idx, wxyz: np.ndarray, position: np.ndarray):
+        if idx in self.model_transform_controls:
+            self.transform_control_no_handle_update = True
+            try:
+                    self.model_transform_controls[idx].wxyz = wxyz
+                    self.model_transform_controls[idx].position = position
+            finally:
+                self.transform_control_no_handle_update = False
+
     def _make_transform_controls_callback(
             self,
             idx,
@@ -109,6 +120,8 @@ class TransformPanel:
     ) -> None:
         @controls.on_update
         def _(event: viser.GuiEvent) -> None:
+            if self.transform_control_no_handle_update is True:
+                return
             model_pose = self.model_poses[idx]
             model_pose.wxyz = controls.wxyz
             model_pose.position = controls.position

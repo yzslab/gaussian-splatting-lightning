@@ -33,6 +33,7 @@ class Viewer:
             sh_degree: int = 3,
             enable_transform: bool = False,
             show_cameras: bool = False,
+            cameras_json: str = None,
     ):
         self.device = torch.device("cuda")
 
@@ -54,7 +55,9 @@ class Viewer:
         model, renderer, training_output_base_dir, dataset_type, self.checkpoint = self._load_model_from_file(load_from)
 
         # reorient the scene
-        cameras_json_path = os.path.join(training_output_base_dir, "cameras.json")
+        cameras_json_path = cameras_json
+        if cameras_json_path is None:
+            cameras_json_path = os.path.join(training_output_base_dir, "cameras.json")
         self.camera_transform = self._reorient(cameras_json_path, mode=reorient, dataset_type=dataset_type)
         # load camera poses
         self.camera_poses = self.load_camera_poses(cameras_json_path)
@@ -363,7 +366,7 @@ class Viewer:
                     self.appearance_group_dropdown.on_update(self._handel_appearance_group_dropdown_updated)
 
         self.edit_panel = None
-        self.transform_panel = None
+        self.transform_panel: TransformPanel = None
         if self.enable_transform is True:
             with tabs.add_tab("Transform"):
                 self.transform_panel = TransformPanel(server, self, self.loaded_model_count)
@@ -463,6 +466,7 @@ if __name__ == "__main__":
                         help="Enable transform options on Web UI. May consume more memory")
     parser.add_argument("--show_cameras", "--show-cameras",
                         action="store_true")
+    parser.add_argument("--cameras-json", "--cameras_json", type=str, default=None)
     args = parser.parse_args()
 
     # arguments post process
