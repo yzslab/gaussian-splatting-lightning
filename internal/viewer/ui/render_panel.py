@@ -60,6 +60,17 @@ class Keyframe:
             model_poses=model_poses_copied,
         )
 
+    def update_model_poses(self, model_size_sliders: list, model_poses: list):
+        if model_size_sliders is None:
+            model_size_sliders = []
+        if model_poses is None:
+            model_poses = []
+
+        model_sizes = [i.value for i in model_size_sliders]
+        model_poses_copied = [i.copy() for i in model_poses]
+        self.model_sizes = model_sizes
+        self.model_poses = model_poses_copied
+
 
 class CameraPath:
     def __init__(self, server: viser.ViserServer, viewer):
@@ -128,6 +139,7 @@ class CameraPath:
                 enable_model_transform = server.add_gui_checkbox("Enable Model Transform", initial_value=keyframe.enable_model_transform)
                 delete_button = server.add_gui_button("Delete", color="red", icon=viser.Icon.TRASH)
                 go_to_button = server.add_gui_button("Go to")
+                update_model_poses = server.add_gui_button("Use Current Model Poses")
                 close_button = server.add_gui_button("Close")
 
                 @override_fov.on_update
@@ -145,6 +157,23 @@ class CameraPath:
                 def _(_) -> None:
                     keyframe.enable_model_transform = enable_model_transform.value
                     self.update_spline()
+
+                @update_model_poses.on_click
+                def _(event: viser.GuiEvent) -> None:
+                    with event.client.add_gui_modal("Confirm") as modal:
+                        event.client.add_gui_markdown("Update model poses to current?")
+                        confirm_button = event.client.add_gui_button("Yes", color="red")
+                        cancel_button = event.client.add_gui_button("Cancel")
+
+                        @confirm_button.on_click
+                        def _(_) -> None:
+                            keyframe.update_model_poses(self._viewer.transform_panel.model_size_sliders, self._viewer.transform_panel.model_poses)
+                            self.update_spline()
+                            modal.close()
+
+                        @cancel_button.on_click
+                        def _(_) -> None:
+                            modal.close()
 
                 @delete_button.on_click
                 def _(event: viser.GuiEvent) -> None:
@@ -204,6 +233,11 @@ class CameraPath:
                                         scale=keyframe.model_sizes[model_idx],
                                         r_wxyz=keyframe.model_poses[model_idx].wxyz,
                                         t_xyz=keyframe.model_poses[model_idx].position,
+                                    )
+                                    self._viewer.transform_panel.set_model_transform_control_value(
+                                        model_idx,
+                                        wxyz=keyframe.model_poses[model_idx].wxyz,
+                                        position=keyframe.model_poses[model_idx].position,
                                     )
 
                         time.sleep(1.0 / 30.0)
