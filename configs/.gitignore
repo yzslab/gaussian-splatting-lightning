@@ -1,0 +1,9 @@
+*
+!.gitignore
+!ddp.yaml
+!blender.yaml
+!appearance.yaml
+!experiment.yaml
+!larger_dataset.yaml
+!reorient.yaml
+!background_sphere.yaml
