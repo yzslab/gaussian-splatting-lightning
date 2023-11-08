@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, Literal
 from dataclasses import dataclass
 
 
@@ -19,3 +19,5 @@ class OptimizationParams:
     densify_from_iter: int = 500
     densify_until_iter: int = 15_000
     densify_grad_threshold: float = 0.0002
+
+    rgb_diff_loss: Literal["l1", "l2"] = "l1"

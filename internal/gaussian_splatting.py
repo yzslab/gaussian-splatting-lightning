@@ -62,6 +62,12 @@ class GaussianSplatting(LightningModule):
 
         self.batch_size = 1
 
+    def _l1_loss(self, predict: torch.Tensor, gt: torch.Tensor):
+        return torch.abs(predict - gt).mean()
+
+    def _l2_loss(self, predict: torch.Tensor, gt: torch.Tensor):
+        return torch.mean((predict - gt) ** 2)
+
     def setup(self, stage: str):
         if stage == "fit":
             self.cameras_extent = self.trainer.datamodule.dataparser_outputs.camera_extent
@@ -83,6 +89,12 @@ class GaussianSplatting(LightningModule):
             self.log_image = self.tensorboard_log_image
         elif isinstance(self.logger, lightning.pytorch.loggers.WandbLogger):
             self.log_image = self.wandb_log_image
+
+        # set loss function
+        self.rgb_diff_loss_fn = self._l1_loss
+        if self.hparams["gaussian"].optimization.rgb_diff_loss == "l2":
+            print("Use L2 loss")
+            self.rgb_diff_loss_fn = self._l2_loss
 
     def tensorboard_log_image(self, tag: str, image_tensor):
         self.logger.experiment.add_image(
@@ -119,11 +131,11 @@ class GaussianSplatting(LightningModule):
         # calculate loss
         if masked_pixels is not None:
             gt_image[masked_pixels] = image.detach()[masked_pixels]  # copy masked pixels from prediction to G.T.
-        l1_loss = torch.abs(outputs["render"] - gt_image).mean()
+        rgb_diff_loss = self.rgb_diff_loss_fn(outputs["render"], gt_image)
         ssim_metric = ssim(outputs["render"], gt_image)
-        loss = (1.0 - self.lambda_dssim) * l1_loss + self.lambda_dssim * (1. - ssim_metric)
+        loss = (1.0 - self.lambda_dssim) * rgb_diff_loss + self.lambda_dssim * (1. - ssim_metric)
 
-        return outputs, loss, l1_loss, ssim_metric
+        return outputs, loss, rgb_diff_loss, ssim_metric
 
     def optimizers(self, use_pl_optimizer: bool = True):
         optimizers = super().optimizers(use_pl_optimizer=use_pl_optimizer)
@@ -171,7 +183,7 @@ class GaussianSplatting(LightningModule):
             self.gaussian_model.oneupSHdegree()
 
         # forward
-        outputs, loss, l1_loss, ssim_metric = self.forward_with_loss_calculation(camera, image_info)
+        outputs, loss, rgb_diff_loss, ssim_metric = self.forward_with_loss_calculation(camera, image_info)
         image, viewspace_point_tensor, visibility_filter, radii = outputs["render"], outputs["viewspace_points"], \
             outputs["visibility_filter"], outputs["radii"]
 
@@ -182,7 +194,7 @@ class GaussianSplatting(LightningModule):
         # ssim_metric = ssim(outputs["render"], gt_image)
         # loss = (1.0 - self.lambda_dssim) * l1_loss + self.lambda_dssim * (1. - ssim_metric)
 
-        self.log("train/loss_l1", l1_loss, on_step=True, on_epoch=False, prog_bar=False, batch_size=self.batch_size)
+        self.log("train/rgb_diff", rgb_diff_loss, on_step=True, on_epoch=False, prog_bar=False, batch_size=self.batch_size)
         self.log("train/ssim", ssim_metric, on_step=True, on_epoch=False, prog_bar=False, batch_size=self.batch_size)
         self.log("train/loss", loss, on_step=True, on_epoch=False, prog_bar=True, batch_size=self.batch_size)
 
@@ -252,14 +264,14 @@ class GaussianSplatting(LightningModule):
         gt_image = image_info[1]
 
         # forward
-        outputs, loss, l1_loss, ssim_metric = self.forward_with_loss_calculation(camera, image_info)
+        outputs, loss, rgb_diff_loss, ssim_metric = self.forward_with_loss_calculation(camera, image_info)
 
         # calculate loss
         # l1_loss = torch.abs(outputs["render"] - gt_image).mean()
         # ssim_metric = ssim(outputs["render"], gt_image)
         # loss = (1.0 - self.lambda_dssim) * l1_loss + self.lambda_dssim * (1. - ssim_metric)
 
-        self.log("val/loss_l1", l1_loss, on_epoch=True, prog_bar=False, batch_size=self.batch_size)
+        self.log("val/rgb_diff", rgb_diff_loss, on_epoch=True, prog_bar=False, batch_size=self.batch_size)
         self.log("val/ssim", ssim_metric, on_epoch=True, prog_bar=False, batch_size=self.batch_size)
         self.log("val/loss", loss, on_epoch=True, prog_bar=True, batch_size=self.batch_size)
         self.log("val/psnr", self.psnr(outputs["render"], gt_image), on_epoch=True, prog_bar=True,
