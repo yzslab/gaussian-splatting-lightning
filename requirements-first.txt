@@ -8,4 +8,4 @@ plyfile==0.8.1
 tensorboard
 wandb
 tqdm
-./submodules/viser
+-e ./submodules/viser
