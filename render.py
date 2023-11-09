@@ -1,3 +1,4 @@
+import glob
 import os
 import subprocess
 import multiprocessing.pool
@@ -148,6 +149,7 @@ if __name__ == "__main__":
     parser.add_argument("--output-path", type=str, required=True)
     parser.add_argument("--image-save-batch", "-b", type=int, default=8,
                         help="increase this to speedup rendering, but more memory will be consumed")
+    parser.add_argument("--disable-transform", action="store_true", default=False)
     args = parser.parse_args()
 
     device = torch.device("cuda")
@@ -164,9 +166,14 @@ if __name__ == "__main__":
     )
 
     cameras = parse_camera_poses(camera_path)
-    model_transformations = parse_model_transformations(camera_path)
+    if args.disable_transform is False:
+        model_transformations = parse_model_transformations(camera_path)
+    else:
+        model_transformations = [[] for _ in range(len(cameras))]
 
     frame_output_path = args.output_path + "_frames"
+    for i in glob.glob(os.path.join(frame_output_path, "*.png")):
+        os.unlink(i)
     with torch.no_grad():
         render_frames(
             cameras,
