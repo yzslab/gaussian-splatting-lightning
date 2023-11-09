@@ -7,6 +7,12 @@ from .gaussian_model_simplified import GaussianModelSimplified
 class SimplifiedGaussianModelManager:
     models: list = None
 
+    # setup methods
+    select = GaussianModelSimplified.select
+    _delete_gaussians = GaussianModelSimplified.delete_gaussians
+    to_parameter_structure = GaussianModelSimplified.to_parameter_structure
+    to_ply_structure = GaussianModelSimplified.to_ply_structure
+
     def __init__(self, simplified_gaussian_models: list[GaussianModelSimplified], enable_transform: bool, device):
         super().__init__()
         if enable_transform is True:
@@ -45,6 +51,8 @@ class SimplifiedGaussianModelManager:
 
         self.max_sh_degree = simplified_gaussian_models[0].max_sh_degree
         self.active_sh_degree = simplified_gaussian_models[0].max_sh_degree
+
+        self._opacity_origin = None
 
     def get_model_gaussian_indices(self, idx: int):
         return self.model_gaussian_indices[idx]
@@ -147,3 +155,22 @@ class SimplifiedGaussianModelManager:
     @property
     def get_opacity(self):
         return self._opacity
+
+    def delete_gaussians(self, mask: torch.tensor):
+        # delete form each model, build new indices
+        total_gaussian_num = 0
+        model_gaussian_indices = []
+        for idx, model in enumerate(self.models):
+            begin, end = self.model_gaussian_indices[idx]
+            model.delete_gaussians(mask[begin:end])
+
+            # build new indices
+            n = model.get_xyz.shape[0]
+            model_gaussian_indices.append((total_gaussian_num, total_gaussian_num + n))
+            total_gaussian_num += n
+        # update indices
+        self.model_gaussian_indices = model_gaussian_indices
+
+        self._delete_gaussians(mask)
+
+        assert self._xyz.shape[0] == total_gaussian_num

@@ -95,7 +95,7 @@ class GaussianModelSimplified(nn.Module):
         self._opacity[mask] = 0.
 
     def delete_gaussians(self, mask: torch.tensor):
-        gaussians_to_be_preserved = torch.bitwise_not(mask)
+        gaussians_to_be_preserved = torch.bitwise_not(mask).to(self._xyz.device)
         self._xyz = self._xyz[gaussians_to_be_preserved]
         self._scaling = self._scaling[gaussians_to_be_preserved]
         self._rotation = self._rotation[gaussians_to_be_preserved]

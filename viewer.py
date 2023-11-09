@@ -365,14 +365,13 @@ class Viewer:
                     self.normalized_appearance_id.on_update(self._handle_appearance_embedding_slider_updated)
                     self.appearance_group_dropdown.on_update(self._handel_appearance_group_dropdown_updated)
 
-        self.edit_panel = None
+        with tabs.add_tab("Edit") as edit_tab:
+            self.edit_panel = EditPanel(server, self, edit_tab)
+
         self.transform_panel: TransformPanel = None
         if self.enable_transform is True:
             with tabs.add_tab("Transform"):
                 self.transform_panel = TransformPanel(server, self, self.loaded_model_count)
-        elif self.loaded_model_count == 1:
-            with tabs.add_tab("Edit") as edit_tab:
-                self.edit_panel = EditPanel(server, self, edit_tab)
 
         with tabs.add_tab("Render"):
             populate_render_tab(
