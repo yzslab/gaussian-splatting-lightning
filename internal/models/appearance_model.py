@@ -1,7 +1,6 @@
 from typing import Union
 import torch
 import torch.nn.functional as F
-import tinycudann as tcnn
 
 from torch import nn
 
@@ -23,6 +22,7 @@ class AppearanceModel(nn.Module):
         self.device_indicator = nn.Parameter(torch.empty(0))
 
         # create model
+        import tinycudann as tcnn
         self.grayscale_model = tcnn.NetworkWithInputEncoding(
             n_input_dims=n_input_dims,
             n_output_dims=n_grayscale_factors,
