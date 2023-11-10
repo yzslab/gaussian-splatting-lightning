@@ -10,6 +10,3 @@
 [submodule "submodules/tiny-cuda-nn-fp32"]
 	path = submodules/tiny-cuda-nn-fp32
 	url = https://github.com/yzslab/tiny-cuda-nn-fp32.git
-[submodule "submodules/viser"]
-	path = submodules/viser
-	url = https://github.com/nerfstudio-project/viser.git
