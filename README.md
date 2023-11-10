@@ -37,6 +37,8 @@ pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https
 # install other requirements
 pip install -r requirements-first.txt
 pip install -r requirements-second.txt
+# optional one, you can skip this one unless you want to train with appearance variation images
+pip install ./submodules/tiny-cuda-nn-fp32/bindings/torch
 ```
 
 ## Training

@@ -1,3 +1,2 @@
 ./submodules/diff-gaussian-rasterization
 ./submodules/simple-knn
-./submodules/tiny-cuda-nn-fp32/bindings/torch
