@@ -5,4 +5,4 @@ plyfile==0.8.1
 tensorboard
 wandb
 tqdm
--e ./submodules/viser
+viser==0.1.9
