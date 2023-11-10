@@ -6,3 +6,5 @@ tensorboard
 wandb
 tqdm
 viser==0.1.9
+./submodules/diff-gaussian-rasterization
+./submodules/simple-knn
