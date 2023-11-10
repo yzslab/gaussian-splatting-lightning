@@ -28,7 +28,13 @@ cd gaussian-splatting-lightning
 conda create -yn gspl python=3.9 pip
 conda activate gspl
 
-# install requirements
+# install the PyTorch first, you must install the one match to the version of your nvcc (nvcc --version)
+# for cuda 11.7
+pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2
+# for cuda 11.8
+pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
+
+# install other requirements
 pip install -r requirements-first.txt
 pip install -r requirements-second.txt
 ```
