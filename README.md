@@ -1,10 +1,8 @@
 # Gaussian Splatting PyTorch Lightning Implementation
 ## Known issues
-* Multi-GPU training not work correctly
-  * GPUs do not have a consistent gaussian model after densification
-  * Slower than single GPU
+* Multi-GPU training can only be enabled after densification
 ## Features
-* <del>Multi-GPU/Node training</del>
+* Multi-GPU/Node training (only after densification)
 * Dynamic object mask
 * Appearance variation support
 * Load arbitrary number of images without OOM
@@ -79,11 +77,21 @@ python main.py fit \
     -n EXPERIMENT_NAME
 ```
 ### Multi-GPU training
+<b>[NOTE]</b> Multi-GPU training only can be enabled after densification. You can start a single GPU training at the beginning, and save a checkpoint after densification finishing. Then resume from this checkpoint and enable multi-GPU training.
 ```bash
+# Single GPU at the beginning
 python main.py fit \
-    --config configs/blender.yaml \
+    --config ... \
+    --data.path DATASET_PATH \
+    --model.gaussian.optimization.densify_until_iter 15000 \
+    --max_steps 15000
+# Then resume, and enable multi-GPU
+python main.py fit \
+    --config ... \
     --trainer configs/ddp.yaml \
-    --data.path DATASET_PATH
+    --data.path DATASET_PATH \
+    --max_steps 30000 \
+    --ckpt_path CHECKPOINT_FILE_PATH
 ```
 
 ## Web Viewer
