@@ -2,6 +2,7 @@ import os.path
 from typing import Tuple, List, Union
 
 import torch.optim
+import torch.distributed as dist
 import torchvision
 import wandb
 from lightning.pytorch.core.module import MODULE_OPTIMIZERS
@@ -243,11 +244,62 @@ class GaussianSplatting(LightningModule):
             # Densification
             if global_step < self.hparams["gaussian"].optimization.densify_until_iter:
                 gaussians = self.gaussian_model
-                gaussians.max_radii2D[visibility_filter] = torch.max(
-                    gaussians.max_radii2D[visibility_filter],
-                    radii[visibility_filter]
-                )
-                gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
+
+                def create_tensor_list(reference_tensor):
+                    return [
+                        torch.zeros_like(reference_tensor, device=reference_tensor.device, dtype=reference_tensor.dtype)
+                        for _ in range(self.trainer.world_size)
+                    ]
+
+                if self.trainer.world_size > 1:
+                    with torch.no_grad():
+                        gaussian_num = torch.tensor(self.gaussian_model._xyz.shape[0], dtype=torch.int, device=self.device)
+                        gaussian_num_list = create_tensor_list(gaussian_num)
+                        dist.all_gather(gaussian_num_list, gaussian_num)
+                        gaussian_num = torch.tensor(gaussian_num_list, device=gaussian_num.device)
+                        if torch.min(gaussian_num) != torch.max(gaussian_num):
+                            raise RuntimeError("[step={}] different gaussian numbers: {}".format(
+                                self.trainer.global_step,
+                                gaussian_num,
+                            ))
+
+                        print("[step={}, rank={}] sum(visibility_filter)={}, gaussians_num={}, all_gaussians_num={}".format(self.trainer.global_step, self.trainer.global_rank, torch.sum(visibility_filter), self.gaussian_model._xyz.shape[0], gaussian_num))
+
+                    with torch.no_grad():
+                        visibility_filter_list = create_tensor_list(visibility_filter)
+                        dist.all_gather(visibility_filter_list, visibility_filter)
+
+                        radii_list = create_tensor_list(radii)
+                        dist.all_gather(radii_list, radii)
+
+                        viewspace_point_tensor_list = create_tensor_list(viewspace_point_tensor)
+                        dist.all_gather(viewspace_point_tensor_list, viewspace_point_tensor)
+
+                        viewspace_point_grad_tensor_list = create_tensor_list(viewspace_point_tensor.grad)
+                        dist.all_gather(viewspace_point_grad_tensor_list, viewspace_point_tensor.grad)
+
+                    viewspace_point_tensor_list[self.trainer.global_rank] = viewspace_point_tensor
+
+                else:
+                    visibility_filter_list = [visibility_filter]
+                    radii_list = [radii]
+                    viewspace_point_tensor_list = [viewspace_point_tensor]
+
+                for tensor_idx in range(len(visibility_filter_list)):
+                    visibility_filter = visibility_filter_list[tensor_idx]
+                    radii = radii_list[tensor_idx]
+                    viewspace_point_tensor = viewspace_point_tensor_list[tensor_idx]
+                    if viewspace_point_tensor.grad is None:
+                        viewspace_point_tensor.grad = viewspace_point_grad_tensor_list[tensor_idx]
+
+                    with torch.no_grad():
+                        print("[step={}, rank={}] from_rank #{} = {}".format(self.trainer.global_step, self.trainer.global_rank, tensor_idx, torch.sum(visibility_filter)))
+
+                    gaussians.max_radii2D[visibility_filter] = torch.max(
+                        gaussians.max_radii2D[visibility_filter],
+                        radii[visibility_filter]
+                    )
+                    gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
                 if global_step > self.optimization_hparams.densify_from_iter and global_step % self.optimization_hparams.densification_interval == 0:
                     size_threshold = 20 if global_step > self.optimization_hparams.opacity_reset_interval else None

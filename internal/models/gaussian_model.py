@@ -376,6 +376,9 @@ class GaussianModel(nn.Module):
                                               torch.max(self.get_scaling,
                                                         dim=1).values <= self.percent_dense * scene_extent)
 
+        # TODO: selected_pts_mask different, the new gaussians not work with ddp
+        print("#{} sum(selected_pts_mask)={}".format(os.getpid(), torch.sum(selected_pts_mask)))
+
         new_xyz = self._xyz[selected_pts_mask]
         new_features_dc = self._features_dc[selected_pts_mask]
         new_features_rest = self._features_rest[selected_pts_mask]
@@ -389,6 +392,7 @@ class GaussianModel(nn.Module):
     def densify_and_prune(self, max_grad, min_opacity, extent, prune_extent, max_screen_size):
         grads = self.xyz_gradient_accum / self.denom
         grads[grads.isnan()] = 0.0
+        print("#{} sum(grads)={}".format(os.getpid(), torch.sum(grads)))
 
         self.densify_and_clone(grads, max_grad, extent)
         self.densify_and_split(grads, max_grad, extent)
