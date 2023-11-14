@@ -98,8 +98,9 @@ class GaussianSplatting(LightningModule):
 
     def on_load_checkpoint(self, checkpoint) -> None:
         self.gaussian_model.initialize_by_gaussian_number(checkpoint["state_dict"]["gaussian_model._xyz"].shape[0])
-        for i in checkpoint["gaussian_model_extra_state_dict"]:
-            setattr(self.gaussian_model, i, checkpoint["gaussian_model_extra_state_dict"][i])
+        if "gaussian_model_extra_state_dict" in checkpoint:
+            for i in checkpoint["gaussian_model_extra_state_dict"]:
+                setattr(self.gaussian_model, i, checkpoint["gaussian_model_extra_state_dict"][i])
         super().on_load_checkpoint(checkpoint)
 
     def on_save_checkpoint(self, checkpoint) -> None:
