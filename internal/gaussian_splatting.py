@@ -75,8 +75,8 @@ class GaussianSplatting(LightningModule):
             self.gaussian_model.create_from_pcd(
                 self.trainer.datamodule.point_cloud,
                 spatial_lr_scale=self.cameras_extent,
+                deivce=self.device,
             )
-            self.gaussian_model.training_setup(self.hparams["gaussian"].optimization)
 
             # scale after create_from_pcd(), avoid lr scaling
             self.cameras_extent *= self.hparams["camera_extent_factor"]
@@ -95,6 +95,21 @@ class GaussianSplatting(LightningModule):
         if self.hparams["gaussian"].optimization.rgb_diff_loss == "l2":
             print("Use L2 loss")
             self.rgb_diff_loss_fn = self._l2_loss
+
+    def on_load_checkpoint(self, checkpoint) -> None:
+        self.gaussian_model.initialize_by_gaussian_number(checkpoint["state_dict"]["gaussian_model._xyz"].shape[0])
+        for i in checkpoint["gaussian_model_extra_state_dict"]:
+            setattr(self.gaussian_model, i, checkpoint["gaussian_model_extra_state_dict"][i])
+        super().on_load_checkpoint(checkpoint)
+
+    def on_save_checkpoint(self, checkpoint) -> None:
+        checkpoint["gaussian_model_extra_state_dict"] = {
+            "max_radii2D": self.gaussian_model.max_radii2D,
+            "xyz_gradient_accum": self.gaussian_model.xyz_gradient_accum,
+            "denom": self.gaussian_model.denom,
+            "spatial_lr_scale": self.gaussian_model.spatial_lr_scale,
+        }
+        super().on_save_checkpoint(checkpoint)
 
     def tensorboard_log_image(self, tag: str, image_tensor):
         self.logger.experiment.add_image(
@@ -303,6 +318,8 @@ class GaussianSplatting(LightningModule):
         return self.validation_step(batch, batch_idx)
 
     def configure_optimizers(self):
+        self.gaussian_model.training_setup(self.hparams["gaussian"].optimization)
+
         optimizers = [
             self.gaussian_model.optimizer,
         ]
@@ -349,11 +366,12 @@ class GaussianSplatting(LightningModule):
 
         print("Gaussians saved to {}".format(output_path))
 
-        checkpoint_path = os.path.join(
-            self.hparams["output_path"],
-            "checkpoints",
-            "epoch={}-step={}.ckpt".format(self.trainer.current_epoch, self.trainer.global_step),
-        )
-        os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
-        self.trainer.save_checkpoint(checkpoint_path)
-        print("checkpoint save to {}".format(checkpoint_path))
+        if self.trainer.global_rank == 0:
+            checkpoint_path = os.path.join(
+                self.hparams["output_path"],
+                "checkpoints",
+                "epoch={}-step={}.ckpt".format(self.trainer.current_epoch, self.trainer.global_step),
+            )
+            os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
+            self.trainer.save_checkpoint(checkpoint_path)
+            print("checkpoint save to {}".format(checkpoint_path))
