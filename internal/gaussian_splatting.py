@@ -183,6 +183,12 @@ class GaussianSplatting(LightningModule):
 
         return schedulers
 
+    def on_train_start(self) -> None:
+        global_step = self.trainer.global_step + 1
+        if global_step < self.hparams["gaussian"].optimization.densify_until_iter and self.trainer.world_size > 1:
+            print("[WARNING] DDP should only be enabled after finishing densify (after densify_until_iter={} iterations, but {} currently)".format(self.hparams["gaussian"].optimization.densify_until_iter, global_step))
+        super().on_train_start()
+
     def training_step(self, batch, batch_idx):
         camera, image_info = batch
         # image_name, gt_image, masked_pixels = image_info
