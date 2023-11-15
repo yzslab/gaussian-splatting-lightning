@@ -77,7 +77,12 @@ python main.py fit \
     -n EXPERIMENT_NAME
 ```
 ### Multi-GPU training
-<b>[NOTE]</b> Multi-GPU training only can be enabled after densification. You can start a single GPU training at the beginning, and save a checkpoint after densification finishing. Then resume from this checkpoint and enable multi-GPU training.
+<b>[NOTE]</b> Multi-GPU training can only be enabled after densification. You can start a single GPU training at the beginning, and save a checkpoint after densification finishing. Then resume from this checkpoint and enable multi-GPU training.
+
+You will get improved PSNR and SSIM with more GPUs:
+![image](https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/06e91e71-5068-46ce-b169-524a069609bf)
+
+
 ```bash
 # Single GPU at the beginning
 python main.py fit \
