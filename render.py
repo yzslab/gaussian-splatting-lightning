@@ -193,4 +193,7 @@ if __name__ == "__main__":
         args.output_path,
     ])
 
-    subprocess.call(["stty", "sane"])
+    try:
+        subprocess.call(["stty", "sane"])
+    except:
+        pass
