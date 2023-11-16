@@ -84,6 +84,7 @@ class GaussianSplatting(LightningModule):
 
         self.renderer.setup(stage, lightning_module=self)
 
+        # use different image log method based on the logger type
         self.log_image = None
         if isinstance(self.logger, lightning.pytorch.loggers.TensorBoardLogger):
             self.log_image = self.tensorboard_log_image
@@ -97,13 +98,16 @@ class GaussianSplatting(LightningModule):
             self.rgb_diff_loss_fn = self._l2_loss
 
     def on_load_checkpoint(self, checkpoint) -> None:
+        # reinitialize parameters based on the gaussian number in the checkpoint
         self.gaussian_model.initialize_by_gaussian_number(checkpoint["state_dict"]["gaussian_model._xyz"].shape[0])
+        # restore some extra parameters
         if "gaussian_model_extra_state_dict" in checkpoint:
             for i in checkpoint["gaussian_model_extra_state_dict"]:
                 setattr(self.gaussian_model, i, checkpoint["gaussian_model_extra_state_dict"][i])
         super().on_load_checkpoint(checkpoint)
 
     def on_save_checkpoint(self, checkpoint) -> None:
+        # store some extra parameters
         checkpoint["gaussian_model_extra_state_dict"] = {
             "max_radii2D": self.gaussian_model.max_radii2D,
             "xyz_gradient_accum": self.gaussian_model.xyz_gradient_accum,
@@ -197,7 +201,6 @@ class GaussianSplatting(LightningModule):
 
         # get optimizers and schedulers
         optimizers = self.optimizers()
-
         schedulers = self.lr_schedulers()
 
         # Every 1000 its we increase the levels of SH up to a maximum degree
@@ -209,18 +212,11 @@ class GaussianSplatting(LightningModule):
         image, viewspace_point_tensor, visibility_filter, radii = outputs["render"], outputs["viewspace_points"], \
             outputs["visibility_filter"], outputs["radii"]
 
-        # calculate loss
-        # if masked_pixels is not None:
-        #     gt_image[masked_pixels] = image.detach()[masked_pixels]  # copy masked pixels from prediction to G.T.
-        # l1_loss = torch.abs(outputs["render"] - gt_image).mean()
-        # ssim_metric = ssim(outputs["render"], gt_image)
-        # loss = (1.0 - self.lambda_dssim) * l1_loss + self.lambda_dssim * (1. - ssim_metric)
-
         self.log("train/rgb_diff", rgb_diff_loss, on_step=True, on_epoch=False, prog_bar=False, batch_size=self.batch_size)
         self.log("train/ssim", ssim_metric, on_step=True, on_epoch=False, prog_bar=False, batch_size=self.batch_size)
         self.log("train/loss", loss, on_step=True, on_epoch=False, prog_bar=True, batch_size=self.batch_size)
 
-        # log learning rate
+        # log learning rate every 100 iterations
         if (global_step - 1) % 100 == 0:
             metrics_to_log = {}
             for opt_idx, opt in enumerate(optimizers):
@@ -288,17 +284,13 @@ class GaussianSplatting(LightningModule):
         # forward
         outputs, loss, rgb_diff_loss, ssim_metric = self.forward_with_loss_calculation(camera, image_info)
 
-        # calculate loss
-        # l1_loss = torch.abs(outputs["render"] - gt_image).mean()
-        # ssim_metric = ssim(outputs["render"], gt_image)
-        # loss = (1.0 - self.lambda_dssim) * l1_loss + self.lambda_dssim * (1. - ssim_metric)
-
         self.log("val/rgb_diff", rgb_diff_loss, on_epoch=True, prog_bar=False, batch_size=self.batch_size)
         self.log("val/ssim", ssim_metric, on_epoch=True, prog_bar=False, batch_size=self.batch_size)
         self.log("val/loss", loss, on_epoch=True, prog_bar=True, batch_size=self.batch_size)
         self.log("val/psnr", self.psnr(outputs["render"], gt_image), on_epoch=True, prog_bar=True,
                  batch_size=self.batch_size)
 
+        # write validation image
         if self.trainer.global_rank == 0 and self.hparams["save_val_output"] is True and (
                 self.hparams["max_save_val_output"] < 0 or batch_idx < self.hparams["max_save_val_output"]
         ):
@@ -325,32 +317,16 @@ class GaussianSplatting(LightningModule):
         return self.validation_step(batch, batch_idx)
 
     def configure_optimizers(self):
+        # gaussian_model.training_setup() must be called here, where parameters have been moved to GPUs
         self.gaussian_model.training_setup(self.hparams["gaussian"].optimization)
 
+        # initialize lists that store optimizers and schedulers
         optimizers = [
             self.gaussian_model.optimizer,
         ]
         schedulers = []
 
-        # appearance model
-        # if self.hparams["enable_appearance_model"] is True:
-        #     appearance_optimizer = torch.optim.Adam(
-        #         [
-        #             {"params": list(self.appearance_model.parameters()), "name": "appearance"}
-        #         ],
-        #         lr=self.hparams["appearance"].optimization.lr,
-        #         eps=self.hparams["appearance"].optimization.eps,
-        #     )
-        #     appearance_scheduler = torch.optim.lr_scheduler.LambdaLR(
-        #         optimizer=appearance_optimizer,
-        #         lr_lambda=lambda iter: self.hparams["appearance"].optimization.gamma ** min(iter / self.hparams["appearance"].optimization.max_steps, 1),
-        #         verbose=False,
-        #     )
-        #
-        #     optimizers.append(appearance_optimizer)
-        #     schedulers.append(appearance_scheduler)
-
-        # renderer
+        # renderer optimizer and scheduler setup
         renderer_optimizer, renderer_scheduler = self.renderer.training_setup()
         if renderer_optimizer is not None:
             optimizers.append(renderer_optimizer)
@@ -360,9 +336,13 @@ class GaussianSplatting(LightningModule):
         return optimizers, schedulers
 
     def save_gaussian_to_ply(self):
-        filename = "point_cloud.ply"
         if self.trainer.global_rank != 0:
-            filename = "point_cloud_{}.ply".format(self.trainer.global_rank)
+            return
+
+        # save ply file
+        filename = "point_cloud.ply"
+        # if self.trainer.global_rank != 0:
+        #     filename = "point_cloud_{}.ply".format(self.trainer.global_rank)
         with torch.no_grad():
             output_dir = os.path.join(self.hparams["output_path"], "point_cloud",
                                       "iteration_{}".format(self.trainer.global_step))
@@ -373,12 +353,12 @@ class GaussianSplatting(LightningModule):
 
         print("Gaussians saved to {}".format(output_path))
 
-        if self.trainer.global_rank == 0:
-            checkpoint_path = os.path.join(
-                self.hparams["output_path"],
-                "checkpoints",
-                "epoch={}-step={}.ckpt".format(self.trainer.current_epoch, self.trainer.global_step),
-            )
-            os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
-            self.trainer.save_checkpoint(checkpoint_path)
-            print("checkpoint save to {}".format(checkpoint_path))
+        # save checkpoint
+        checkpoint_path = os.path.join(
+            self.hparams["output_path"],
+            "checkpoints",
+            "epoch={}-step={}.ckpt".format(self.trainer.current_epoch, self.trainer.global_step),
+        )
+        os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
+        self.trainer.save_checkpoint(checkpoint_path)
+        print("checkpoint save to {}".format(checkpoint_path))

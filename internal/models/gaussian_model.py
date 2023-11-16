@@ -96,6 +96,7 @@ class GaussianModel(nn.Module):
 
         print("Number of points at initialisation : ", fused_point_cloud.shape[0])
 
+        # the parameter device may be "cpu", so tensor must move to cuda before calling distCUDA2()
         dist2 = torch.clamp_min(distCUDA2(torch.from_numpy(np.asarray(pcd.points)).float().cuda()), 0.0000001).to(deivce)
         scales = torch.log(torch.sqrt(dist2))[..., None].repeat(1, 3)
         rots = torch.zeros((fused_point_cloud.shape[0], 4), device=deivce)
@@ -136,6 +137,7 @@ class GaussianModel(nn.Module):
     def training_setup(self, training_args):
         self.percent_dense = training_args.percent_dense
 
+        # some tensor may still in CPU, move to the same device as the _xyz
         self.extra_params_to(self._xyz.device, self._xyz.dtype)
 
         l = [

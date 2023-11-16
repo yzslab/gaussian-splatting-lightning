@@ -52,8 +52,10 @@ class TransformPanel:
         )
         self.pose_control_size.on_update(self._update_pose_control_size)
 
+        # create gui folder for each model
         for i in range(n_models):
             with server.add_gui_folder("Model {} Transform".format(i)):
+                # model size control
                 size_slider = server.add_gui_number(
                     "Size",
                     min=0.,
@@ -64,6 +66,7 @@ class TransformPanel:
                 self._make_size_slider_callback(i, size_slider)
                 self.model_size_sliders.append(size_slider)
 
+                # model pose control
                 self.model_poses.append(ModelPose(
                     np.asarray([1., 0., 0., 0.]),
                     np.zeros((3,)),
@@ -75,6 +78,7 @@ class TransformPanel:
                 self._make_show_transform_control_checkbox_callback(i, model_show_transform_control_checkbox)
                 self.model_show_transform_control_checkboxes.append(model_show_transform_control_checkbox)
 
+                # add text input (synchronize with model pose control) that control model pose more precisely
                 t_xyz_text_handle = server.add_gui_vector3(
                     "t_xyz",
                     initial_value=(0., 0., 0.),

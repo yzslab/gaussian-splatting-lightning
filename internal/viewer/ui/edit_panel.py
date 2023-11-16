@@ -75,6 +75,7 @@ class EditPanel:
         server = self.server
 
         with server.add_gui_folder("Edit"):
+            # initialize a list to store panel(grid)'s information
             self.grids: dict[int, list[
                 viser.MeshHandle,
                 viser.TransformControlsHandle,
@@ -90,10 +91,12 @@ class EditPanel:
 
         self.grid_folders = {}
 
+        # create panel(grid)
         def new_grid(idx):
             with self.server.add_gui_folder("Grid {}".format(idx)) as folder:
                 self.grid_folders[idx] = folder
 
+                # TODO: add height
                 grid_size = server.add_gui_vector2("Size", initial_value=(10., 10.), min=(0., 0.), step=0.01)
 
                 grid = server.add_grid(
@@ -107,11 +110,13 @@ class EditPanel:
                     position=grid.position,
                 )
 
+                # resize panel on size value changed
                 @grid_size.on_update
                 def _(event: viser.GuiEvent):
                     with event.client.atomic():
                         self._resize_grid(idx)
 
+                # handle panel deletion
                 grid_delete_button = server.add_gui_button("Delete")
 
                 @grid_delete_button.on_click
@@ -130,6 +135,7 @@ class EditPanel:
 
                     self._update_scene()
 
+            # update the pose of panel(grid) when grid_transform updated
             @grid_transform.on_update
             def _(_):
                 self.grids[idx][0].wxyz = grid_transform.wxyz
@@ -139,19 +145,21 @@ class EditPanel:
             self.grids[self.grid_idx] = [grid, grid_transform, grid_size]
             self._update_scene()
 
+        # setup callbacks
+
         @add_grid_button.on_click
         def _(_):
             with server.atomic():
                 new_grid(self.grid_idx)
                 self.grid_idx += 1
 
-            @self.delete_gaussians_button.on_click
-            def _(_):
-                with server.atomic():
-                    gaussian_to_be_deleted = self._get_selected_gaussians_mask()
-                    self.viewer.gaussian_model.delete_gaussians(gaussian_to_be_deleted)
-                    self._update_pcd()
-                self.viewer.rerender_for_all_client()
+        @self.delete_gaussians_button.on_click
+        def _(_):
+            with server.atomic():
+                gaussian_to_be_deleted = self._get_selected_gaussians_mask()
+                self.viewer.gaussian_model.delete_gaussians(gaussian_to_be_deleted)
+                self._update_pcd()
+            self.viewer.rerender_for_all_client()
 
     def _setup_save_gaussian_folder(self):
         with self.server.add_gui_folder("Save"):
@@ -163,6 +171,7 @@ class EditPanel:
 
             @save_button.on_click
             def _(event: viser.GuiEvent):
+                # skip if not triggered by client
                 if event.client is None:
                     return
                 try:
@@ -170,16 +179,20 @@ class EditPanel:
 
                     with self.server.atomic():
                         try:
+                            # check whether is a valid name
                             name = name_text.value
                             match = re.search("^[a-zA-Z0-9_\-]+$", name)
                             if match:
+                                # save ply
                                 ply_save_path = os.path.join("edited", "{}.ply".format(name))
                                 self.viewer.gaussian_model.to_ply_structure().save_to_ply(ply_save_path)
                                 message_text = "Saved to {}".format(ply_save_path)
 
+                                # save as a checkpoint if viewer started from a checkpoint
                                 if self.viewer.checkpoint is not None:
                                     checkpoint_save_path = os.path.join("edited", "{}.ckpt".format(name))
                                     checkpoint = self.viewer.checkpoint
+                                    # update state dict of the checkpoint
                                     state_dict_value = self.viewer.gaussian_model.to_parameter_structure()
                                     for name_in_dict, name_in_dataclass in [
                                         ("xyz", "xyz"),
@@ -192,14 +205,15 @@ class EditPanel:
                                         dict_key = "gaussian_model._{}".format(name_in_dict)
                                         assert dict_key in checkpoint["state_dict"]
                                         checkpoint["state_dict"][dict_key] = getattr(state_dict_value, name_in_dataclass)
+                                    # save
                                     torch.save(checkpoint, checkpoint_save_path)
                                     message_text += " & {}".format(checkpoint_save_path)
-
                             else:
                                 message_text = "Invalid name"
                         except:
                             traceback.print_exc()
 
+                    # show message
                     with event.client.add_gui_modal("Message") as modal:
                         event.client.add_gui_markdown(message_text)
                         close_button = event.client.add_gui_button("Close")
@@ -213,21 +227,28 @@ class EditPanel:
 
     def _get_selected_gaussians_mask(self):
         xyz = self.viewer.gaussian_model.get_xyz
+
+        # if no grid exists, do not delete any gaussians
         if len(self.grids) == 0:
             return torch.zeros(xyz.shape[0], device=xyz.device, dtype=torch.bool)
 
+        # initialize mask with True
         is_gaussian_selected = torch.ones(xyz.shape[0], device=xyz.device, dtype=torch.bool)
         for i in self.grids:
+            # get the pose of grid, and build world-to-grid transform matrix
             grid = self.grids[i][0]
             se3 = torch.linalg.inv(torch.tensor(vtf.SE3.from_rotation_and_translation(
                 vtf.SO3(grid.wxyz),
                 grid.position,
             ).as_matrix()).to(xyz))
+            # transform xyz from world to grid
             new_xyz = torch.matmul(xyz, se3[:3, :3].T) + se3[:3, 3]
+            # find the gaussians to be deleted based on the new_xyz
             grid_size = self.grids[i][2].value
             x_mask = torch.abs(new_xyz[:, 0]) < grid_size[0] / 2
             y_mask = torch.abs(new_xyz[:, 1]) < grid_size[1] / 2
             z_mask = new_xyz[:, 2] > 0
+            # update mask
             is_gaussian_selected = torch.bitwise_and(is_gaussian_selected, x_mask)
             is_gaussian_selected = torch.bitwise_and(is_gaussian_selected, y_mask)
             is_gaussian_selected = torch.bitwise_and(is_gaussian_selected, z_mask)

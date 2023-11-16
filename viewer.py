@@ -389,7 +389,11 @@ class Viewer:
             time.sleep(999)
 
     def _handle_appearance_embedding_slider_updated(self, event: viser.GuiEvent):
-        if event.client is None:
+        """
+        Change appearance group dropdown to "@Direct" on slider updated
+        """
+
+        if event.client is None:  # skip if not updated by client
             return
         self.appearance_group_dropdown.value = DROPDOWN_USE_DIRECT_APPEARANCE_EMBEDDING_VALUE
         self._handle_option_updated(event)
@@ -399,32 +403,55 @@ class Viewer:
         self._handle_option_updated(_)
 
     def get_appearance_id_value(self):
+        """
+        Return appearance id according to the slider and dropdown value
+        """
+
+        # no available appearance options, simply return zero
         if self.available_appearance_options is None:
             return (0, 0.)
         name = self.appearance_group_dropdown.value
+        # if the value of dropdown is "@Direct", or not in available_appearance_options, return the slider's values
         if name == DROPDOWN_USE_DIRECT_APPEARANCE_EMBEDDING_VALUE or name not in self.available_appearance_options:
             return (self.appearance_id.value, self.normalized_appearance_id.value)
+        # else return the values according to the dropdown
         return self.available_appearance_options[name]
 
     def _handel_appearance_group_dropdown_updated(self, event: viser.GuiEvent):
-        if event.client is None:
+        """
+        Update slider's values when dropdown updated
+        """
+
+        if event.client is None:  # skip if not updated by client
             return
+
+        # get appearance ids according to the dropdown value
         appearance_id, normalized_appearance_id = self.available_appearance_options[self.appearance_group_dropdown.value]
+        # update sliders
         self.appearance_id.value = appearance_id
         self.normalized_appearance_id.value = normalized_appearance_id
+        # rerender
         self._handle_option_updated(event)
 
     def _handle_option_updated(self, _):
+        """
+        Simply push new render to all client
+        """
         return self.rerender_for_all_client()
 
     def handle_option_updated(self, _):
         return self._handle_option_updated(_)
 
     def rerender_for_client(self, client_id: int):
+        """
+        Render for specific client
+        """
         try:
+            # switch to low resolution mode first, then notify the client to render
             self.clients[client_id].state = "low"
             self.clients[client_id].render_trigger.set()
         except:
+            # ignore errors
             pass
 
     def rerender_for_all_client(self):
@@ -432,6 +459,10 @@ class Viewer:
             self.rerender_for_client(i)
 
     def _handle_new_client(self, client: viser.ClientHandle) -> None:
+        """
+        Create and start a thread for every new client
+        """
+
         # create client thread
         client_thread = ClientThread(self, self.viewer_renderer, client)
         client_thread.start()
@@ -439,6 +470,10 @@ class Viewer:
         self.clients[client.client_id] = client_thread
 
     def _handle_client_disconnect(self, client: viser.ClientHandle):
+        """
+        Destroy client thread when client disconnected
+        """
+
         try:
             self.clients[client.client_id].stop()
             del self.clients[client.client_id]
