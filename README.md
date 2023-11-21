@@ -133,7 +133,7 @@ python viewer.py \
 ```
 * Load <a href="https://github.com/ingra14m/Deformable-3D-Gaussians">ingra14m/Deformable-3D-Gaussians</a>'s output
 
-[NOTE] The `--vanilla_deformable` only design for ingra14m/Deformable-3D-Gaussians's output. The deformable model trained by this repository must be load without `--vanilla_deformable`.
+<b>[NOTE]</b> The `--vanilla_deformable` only design for ingra14m/Deformable-3D-Gaussians's output. The deformable model trained by this repository must be load without `--vanilla_deformable`.
 
 ```
 python viewer.py \
