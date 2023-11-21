@@ -99,6 +99,15 @@ python main.py fit \
     --ckpt_path CHECKPOINT_FILE_PATH
 ```
 
+### <a href="https://ingra14m.github.io/Deformable-Gaussians/">Deformable 3D Gaussians</a>
+<video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/177b3fbf-fdd2-490f-b446-433a4d929502"></video>
+
+```
+python main.py fit \
+    --config configs/deformable_blender.yaml \
+    --data.path ...
+```
+
 ## Web Viewer
 | Transform | Camera Path | Edit |
 | --- | --- | --- |
