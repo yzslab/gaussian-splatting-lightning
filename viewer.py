@@ -365,6 +365,15 @@ class Viewer:
                     self.normalized_appearance_id.on_update(self._handle_appearance_embedding_slider_updated)
                     self.appearance_group_dropdown.on_update(self._handel_appearance_group_dropdown_updated)
 
+                self.time_slider = server.add_gui_slider(
+                    "Time",
+                    min=0.,
+                    max=1.,
+                    step=0.01,
+                    initial_value=0.,
+                )
+                self.time_slider.on_update(self._handle_option_updated)
+
         with tabs.add_tab("Edit") as edit_tab:
             self.edit_panel = EditPanel(server, self, edit_tab)
 

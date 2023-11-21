@@ -133,11 +133,18 @@ class GaussianSplatting(LightningModule):
         )
 
     def forward(self, camera):
+        if self.training is True:
+            return self.renderer.training_forward(
+                self.trainer.global_step,
+                self,
+                camera,
+                self.gaussian_model,
+                bg_color=self.background_color.to(camera.R.device),
+            )
         return self.renderer(
             camera,
             self.gaussian_model,
-            # self.appearance_model,
-            bg_color=self.background_color.to(camera.R.device)
+            bg_color=self.background_color.to(camera.R.device),
         )
 
     def forward_with_loss_calculation(self, camera, image_info):
@@ -202,6 +209,8 @@ class GaussianSplatting(LightningModule):
         # get optimizers and schedulers
         optimizers = self.optimizers()
         schedulers = self.lr_schedulers()
+
+        self.renderer.before_training_step(global_step, self)
 
         # Every 1000 its we increase the levels of SH up to a maximum degree
         if global_step % 1000 == 0:

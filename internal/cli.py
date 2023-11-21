@@ -6,9 +6,8 @@ from lightning.pytorch.cli import LightningCLI, LightningArgumentParser
 
 class CLI(LightningCLI):
     def add_arguments_to_parser(self, parser: LightningArgumentParser) -> None:
-        parser.add_argument("--iterations", "--iteration", "--steps", "--step", "--max_steps", type=Optional[int],
-                            default=30_000)
-        parser.add_argument("--epochs", "--epoch", "--max_epochs", type=Optional[int], default=None)
+        parser.add_argument("--max_steps", "--iterations", "--iteration", "--steps", "--step", type=Optional[int], default=None)
+        parser.add_argument("--max_epochs", "--epochs", "--epoch", type=Optional[int], default=None)
         parser.add_argument("--name", "-n", type=Optional[str], default=None,
                             help="the training result output path will be 'output/name'")
         parser.add_argument("--version", "-v", type=Optional[str], default=None,
@@ -22,8 +21,8 @@ class CLI(LightningCLI):
             "outputs",
         ), help="the base directory of the output")
 
-        parser.link_arguments("iterations", "trainer.max_steps")
-        parser.link_arguments("epochs", "trainer.max_epochs")
+        # parser.link_arguments("iterations", "trainer.max_steps")
+        # parser.link_arguments("epochs", "trainer.max_epochs")
         # parser.link_arguments("name", "logger.init_args.name")
         # parser.link_arguments("version", "logger.init_args.version")
         # parser.link_arguments("output", "logger.init_args.save_dir")
@@ -37,6 +36,11 @@ class CLI(LightningCLI):
             # auto set experiment name base on --data.path
             config.name = "_".join(config.data.path.strip("/").split("/")[-3:])
             print("auto determine experiment name: {}".format(config.name))
+
+        if config.max_steps is not None:
+            config.trainer.max_steps = config.max_steps
+        if config.max_epochs is not None:
+            config.trainer.max_epochs = config.max_epochs
 
         # build output path
         output_path = os.path.join(config.output, config.name)

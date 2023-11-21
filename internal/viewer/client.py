@@ -83,6 +83,7 @@ class ClientThread(threading.Thread):
                 height=torch.tensor([image_height], dtype=torch.int),
                 appearance_id=torch.tensor([appearance_id[0]], dtype=torch.int),
                 normalized_appearance_id=torch.tensor([appearance_id[1]], dtype=torch.float),
+                time=torch.tensor([self.viewer.time_slider.value], dtype=torch.float),
                 distortion_params=None,
                 camera_type=torch.tensor([0], dtype=torch.int),
             )[0].to_device(self.viewer.device)

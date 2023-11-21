@@ -19,6 +19,7 @@ class Camera:
     height: Tensor
     appearance_id: Tensor
     normalized_appearance_id: Tensor
+    time: Tensor
     distortion_params: Optional[Tensor]  # [6]
     camera_type: Tensor
 
@@ -62,6 +63,8 @@ class Cameras:
     projection: Tensor = field(init=False)
     full_projection: Tensor = field(init=False)
     camera_center: Tensor = field(init=False)
+
+    time: Optional[Tensor] = None  # [n_cameras]
 
     def _calculate_fov(self):
         # calculate fov
@@ -121,6 +124,8 @@ class Cameras:
         self._calculate_ndc_projection_matrix()
         self._calculate_camera_center()
 
+        if self.time is None:
+            self.time = torch.zeros(self.R.shape[0])
         if self.distortion_params is None:
             self.distortion_params = torch.zeros(self.R.shape[0], 6)
 
@@ -142,6 +147,7 @@ class Cameras:
             appearance_id=self.appearance_id[index],
             normalized_appearance_id=self.normalized_appearance_id[index],
             distortion_params=self.distortion_params[index],
+            time=self.time[index],
             camera_type=self.camera_type[index],
             world_to_camera=self.world_to_camera[index],
             projection=self.projection[index],

@@ -38,11 +38,16 @@ class BlenderDataParser(DataParser):
         image_name_list = []
         image_path_list = []
         camera_to_world_list = []
+        time_list = []
         for frame in transforms["frames"]:
             image_name_with_extension = "{}.png".format(frame["file_path"])
             image_name_list.append(os.path.basename(image_name_with_extension))
             image_path_list.append(os.path.join(self.path, image_name_with_extension))
             camera_to_world_list.append(frame["transform_matrix"])
+            if "time" in frame:
+                time_list.append(frame["time"])
+            else:
+                time_list.append(0.)
         camera_to_world = torch.tensor(camera_to_world_list, dtype=torch.float32)
         # change from OpenGL/Blender camera axes (Y up, Z back) to COLMAP (Y down, Z forward)
         camera_to_world[:, :3, 1:3] *= -1
@@ -80,6 +85,7 @@ class BlenderDataParser(DataParser):
                 normalized_appearance_id=torch.zeros_like(width),
                 distortion_params=None,
                 camera_type=torch.zeros_like(width),
+                time=torch.tensor(time_list, dtype=torch.float),
             ),
         )
 
