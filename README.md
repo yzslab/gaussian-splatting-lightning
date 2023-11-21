@@ -5,6 +5,7 @@
 * Multi-GPU/Node training (only after densification)
 * Dynamic object mask
 * Appearance variation support
+* <a href="https://ingra14m.github.io/Deformable-Gaussians/">Deformable 3D Gaussians</a>
 * Load arbitrary number of images without OOM
 * Interactive web viewer
   * Load multiple models
