@@ -7,3 +7,4 @@
 !larger_dataset.yaml
 !reorient.yaml
 !background_sphere.yaml
+!deformable_blender.yaml
