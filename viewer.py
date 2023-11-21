@@ -12,11 +12,11 @@ import viser
 import viser.transforms as vtf
 import torch
 from internal.renderers import VanillaRenderer
+from internal.renderers.vanilla_deformable_renderer import VanillaDeformableRenderer
 from internal.utils.gaussian_model_loader import GaussianModelLoader
 from internal.models.simplified_gaussian_model_manager import SimplifiedGaussianModelManager
 from internal.viewer import ClientThread, ViewerRenderer
 from internal.viewer.ui import populate_render_tab, TransformPanel, EditPanel
-from internal.utils.rotation import rotation_matrix
 
 DROPDOWN_USE_DIRECT_APPEARANCE_EMBEDDING_VALUE = "@Direct"
 
@@ -34,6 +34,7 @@ class Viewer:
             enable_transform: bool = False,
             show_cameras: bool = False,
             cameras_json: str = None,
+            vanilla_deformable: bool = False,
     ):
         self.device = torch.device("cuda")
 
@@ -53,6 +54,14 @@ class Viewer:
         # TODO: load multiple models more elegantly
         # load and create models
         model, renderer, training_output_base_dir, dataset_type, self.checkpoint = self._load_model_from_file(load_from)
+
+        if vanilla_deformable is True:
+            load_iteration = int(os.path.basename(os.path.dirname(load_from)).replace("iteration_", ""))
+            renderer = VanillaDeformableRenderer(
+                os.path.dirname(os.path.dirname(os.path.dirname(load_from))),
+                load_iteration,
+                device=self.device,
+            )
 
         # reorient the scene
         cameras_json_path = cameras_json
@@ -510,6 +519,7 @@ if __name__ == "__main__":
     parser.add_argument("--show_cameras", "--show-cameras",
                         action="store_true")
     parser.add_argument("--cameras-json", "--cameras_json", type=str, default=None)
+    parser.add_argument("--vanilla_deformable", action="store_true", default=False)
     args = parser.parse_args()
 
     # arguments post process

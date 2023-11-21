@@ -6,3 +6,4 @@
 !appearance_mlp_renderer.py
 !rgb_mlp_renderer.py
 !deformable_renderer.py
+!vanilla_deformable_renderer.py

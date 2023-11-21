@@ -131,6 +131,16 @@ python viewer.py \
     outputs/Synthetic_NSVF/Palace/point_cloud/iteration_30000/point_cloud.ply \
     --enable_transform
 ```
+* Load <a href="https://github.com/ingra14m/Deformable-3D-Gaussians">ingra14m/Deformable-3D-Gaussians</a>'s output
+
+[NOTE] The `--vanilla_deformable` only design for ingra14m/Deformable-3D-Gaussians's output. The deformable model trained by this repository must be load without `--vanilla_deformable`.
+
+```
+python viewer.py \
+    outputs/lego \
+    --vanilla_deformable \
+    --reorient disable
+```
 # License
 This repository is licensed under MIT license. Except some thirdparty dependencies (e.g. files in `submodules` directory), files and codes copied from other repositories, which are separately licensed.
 ```text
