@@ -10,7 +10,7 @@ model:
     class_path: internal.renderers.deformable_renderer.DeformableRenderer
     init_args:
       deform_network:
-        # tcnn: false  # uncomment this line if you want to use pytorch
+        tcnn: false
         is_6dof: true
       time_encoding:
         n_frequencies: 10
