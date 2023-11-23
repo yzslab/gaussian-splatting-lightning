@@ -8,3 +8,4 @@
 !reorient.yaml
 !background_sphere.yaml
 !deformable_blender.yaml
+!deformable_6dof_blender.yaml

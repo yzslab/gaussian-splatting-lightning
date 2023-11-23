@@ -13,30 +13,25 @@ def get_embedder(multires, i=1):
     return pe, pe.get_output_n_channels()
 
 
-def get_time_embedder(multires, i=1, n_layers: int = 0, n_neurons: int = 0, output_ch: int = 30):
+def get_time_embedder(network_factory, multires, i=1, n_layers: int = 0, n_neurons: int = 0, output_ch: int = 30):
     if (n_layers > 0 and n_neurons > 0) is False:
         return get_embedder(multires, i)
-    return TimeNetwork(D=n_layers, W=n_neurons, output_ch=output_ch, multires=multires), output_ch
+    return TimeNetwork(network_factory, D=n_layers, W=n_neurons, output_ch=output_ch, multires=multires), output_ch
 
 
 class TimeNetwork(nn.Module):
-    def __init__(self, D=2, W=256, input_ch=1, output_ch=30, multires=10):
+    def __init__(self, network_factory, D=2, W=256, input_ch=1, output_ch=30, multires=10):
         super().__init__()
         self.t_multires = multires
         self.embed_time_fn, time_input_ch = get_embedder(self.t_multires, input_ch)
 
-        import tinycudann as tcnn
-
-        self.timenet = tcnn.Network(
+        self.timenet = network_factory.get_network(
             n_input_dims=time_input_ch,
             n_output_dims=output_ch,
-            network_config={
-                "otype": "CutlassMLP",
-                "activation": "ReLU",
-                "output_activation": "None",
-                "n_neurons": W,
-                "n_hidden_layers": D - 1
-            }
+            n_layers=D,
+            n_neurons=W,
+            activation="ReLU",
+            output_activation="None",  # vanilla implementation does not have ReLU on output layer
         )
 
     def forward(self, t):
@@ -46,6 +41,7 @@ class TimeNetwork(nn.Module):
 class DeformModel(nn.Module):
     def __init__(
             self,
+            network_factory,
             D=8,
             W=256,
             input_ch=3,
@@ -65,123 +61,44 @@ class DeformModel(nn.Module):
         self.t_multires = t_multires
         self.skips = [D // 2]
 
-        self.embed_time_fn, time_input_ch = get_time_embedder(self.t_multires, 1, n_layers=t_D, n_neurons=t_W, output_ch=t_output_ch)
+        self.embed_time_fn, time_input_ch = get_time_embedder(network_factory, self.t_multires, 1, n_layers=t_D, n_neurons=t_W, output_ch=t_output_ch)
         self.embed_fn, xyz_input_ch = get_embedder(multires, 3)
         self.input_ch = xyz_input_ch + time_input_ch
-
-        import tinycudann as tcnn
-
-        # seed generator, used to initialize tiny-cuda-nn
-        seed = 1336
-
-        def get_seed():
-            nonlocal seed
-            seed += 1
-            return seed
 
         # build deformable field
         skip_layer_list = []
         initialized_layers = 0
         n_input_dims = self.input_ch
         for i in self.skips:
-            n_hidden_layers = D - 1 - i
-            skip_layer_list.append(tcnn.Network(
+            skip_layer_list.append(network_factory.get_network(
                 n_input_dims=n_input_dims,
                 n_output_dims=W,
-                network_config={
-                    "otype": "CutlassMLP",
-                    "activation": "ReLU",
-                    "output_activation": "ReLU",
-                    "n_neurons": W,
-                    "n_hidden_layers": n_hidden_layers,
-                },
-                seed=get_seed(),
+                n_layers=i - initialized_layers,
+                n_neurons=W,
+                activation="ReLU",
+                output_activation="ReLU",
             ))
             n_input_dims = W + self.input_ch
-            initialized_layers += n_hidden_layers + 1
+            initialized_layers += i
         self.skip_layers = nn.ModuleList(skip_layer_list)
-        self.output_linear = tcnn.Network(
+        self.output_linear = network_factory.get_network(
             n_input_dims=n_input_dims,
             n_output_dims=W,
-            network_config={
-                "otype": "CutlassMLP",
-                "activation": "ReLU",
-                "output_activation": "ReLU",
-                "n_neurons": W,
-                "n_hidden_layers": D - 1 - initialized_layers,
-            },
-            seed=get_seed(),
+            n_layers=D - initialized_layers,
+            n_neurons=W,
+            activation="ReLU",
+            output_activation="ReLU",
         )
 
         self.is_6dof = is_6dof
 
         if is_6dof:
-            # self.branch_w = nn.Linear(W, 3)
-            # self.branch_v = nn.Linear(W, 3)
-            self.branch_w = tcnn.Network(
-                n_input_dims=W,
-                n_output_dims=3,
-                network_config={
-                    "otype": "CutlassMLP",
-                    "activation": "ReLU",
-                    "output_activation": "None",
-                    "n_neurons": W,
-                    "n_hidden_layers": 0,
-                },
-                seed=get_seed(),
-            )
-            self.branch_v = tcnn.Network(
-                n_input_dims=W,
-                n_output_dims=3,
-                network_config={
-                    "otype": "CutlassMLP",
-                    "activation": "ReLU",
-                    "output_activation": "None",
-                    "n_neurons": W,
-                    "n_hidden_layers": 0,
-                },
-                seed=get_seed(),
-            )
+            self.branch_w = network_factory.get_linear(W, 3)
+            self.branch_v = network_factory.get_linear(W, 3)
         else:
-            # self.gaussian_warp = nn.Linear(W, 3)
-            self.gaussian_warp = tcnn.Network(
-                n_input_dims=W,
-                n_output_dims=3,
-                network_config={
-                    "otype": "CutlassMLP",
-                    "activation": "ReLU",
-                    "output_activation": "None",
-                    "n_neurons": W,
-                    "n_hidden_layers": 0,
-                },
-                seed=get_seed(),
-            )
-        # self.gaussian_rotation = nn.Linear(W, 4)
-        # self.gaussian_scaling = nn.Linear(W, 3)
-        self.gaussian_rotation = tcnn.Network(
-            n_input_dims=W,
-            n_output_dims=4,
-            network_config={
-                "otype": "CutlassMLP",
-                "activation": "ReLU",
-                "output_activation": "None",
-                "n_neurons": W,
-                "n_hidden_layers": 0,
-            },
-            seed=get_seed(),
-        )
-        self.gaussian_scaling = tcnn.Network(
-            n_input_dims=W,
-            n_output_dims=3,
-            network_config={
-                "otype": "CutlassMLP",
-                "activation": "ReLU",
-                "output_activation": "None",
-                "n_neurons": W,
-                "n_hidden_layers": 0,
-            },
-            seed=get_seed(),
-        )
+            self.gaussian_warp = network_factory.get_linear(W, 3)
+        self.gaussian_rotation = network_factory.get_linear(W, 4)
+        self.gaussian_scaling = network_factory.get_linear(W, 3)
 
     def forward(self, x, t):
         t_emb = self.embed_time_fn(t)

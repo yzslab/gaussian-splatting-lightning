@@ -10,12 +10,19 @@ from .renderer import Renderer
 from ..cameras import Camera
 from ..models.gaussian_model import GaussianModel
 from ..models.deform_model import DeformModel
+from ..utils.network_factory import NetworkFactory
 from ..utils.general_utils import get_linear_noise_func
 from ..utils.rigid_utils import from_homogenous, to_homogenous
 
 
 @dataclass
 class DeformNetworkConfig:
+    """
+    Args:
+        tcnn: whether use tiny-cuda-nn as network implementation
+    """
+
+    tcnn: bool = True
     n_layers: int = 8
     n_neurons: int = 256
     is_6dof: bool = False
@@ -223,7 +230,10 @@ class DeformableRenderer(Renderer):
         }
 
     def setup(self, stage: str, *args: Any, **kwargs: Any) -> Any:
+        network_factory = NetworkFactory(tcnn=self.deform_network_config.tcnn)
+
         self.deform_model = DeformModel(
+            network_factory=network_factory,
             D=self.deform_network_config.n_layers,
             W=self.deform_network_config.n_neurons,
             input_ch=3,

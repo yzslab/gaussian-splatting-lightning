@@ -11,6 +11,7 @@ model:
     init_args:
       deform_network:
         # tcnn: false  # uncomment this line if you want to use pytorch
+        is_6dof: true
       time_encoding:
         n_frequencies: 10
         n_layers: 2
