@@ -116,3 +116,80 @@ class VanillaRenderer(Renderer):
             "visibility_filter": radii > 0,
             "radii": radii,
         }
+
+    @staticmethod
+    def render(
+            means3D: torch.Tensor,  # xyz
+            opacity: torch.Tensor,
+            scales: Optional[torch.Tensor],
+            rotations: Optional[torch.Tensor],
+            features: Optional[torch.Tensor],  # shs
+            active_sh_degree: int,
+            viewpoint_camera,
+            bg_color: torch.Tensor,
+            scaling_modifier=1.0,
+            colors_precomp: Optional[torch.Tensor] = None,
+            cov3D_precomp: Optional[torch.Tensor] = None,
+    ):
+        if colors_precomp is not None:
+            assert features is None
+        if cov3D_precomp is not None:
+            assert scales is None
+            assert rotations is None
+
+        # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
+        screenspace_points = torch.zeros_like(
+            means3D,
+            dtype=means3D.dtype,
+            requires_grad=True,
+            device=means3D.device,
+        )
+
+        try:
+            screenspace_points.retain_grad()
+        except:
+            pass
+
+        # Set up rasterization configuration
+        tanfovx = math.tan(viewpoint_camera.fov_x * 0.5)
+        tanfovy = math.tan(viewpoint_camera.fov_y * 0.5)
+
+        raster_settings = GaussianRasterizationSettings(
+            image_height=int(viewpoint_camera.height),
+            image_width=int(viewpoint_camera.width),
+            tanfovx=tanfovx,
+            tanfovy=tanfovy,
+            bg=bg_color,
+            scale_modifier=scaling_modifier,
+            viewmatrix=viewpoint_camera.world_to_camera,
+            projmatrix=viewpoint_camera.full_projection,
+            sh_degree=active_sh_degree,
+            campos=viewpoint_camera.camera_center,
+            prefiltered=False,
+            debug=False
+        )
+
+        rasterizer = GaussianRasterizer(raster_settings=raster_settings)
+
+        means2D = screenspace_points
+
+        # Rasterize visible Gaussians to image, obtain their radii (on screen).
+        rendered_image, radii = rasterizer(
+            means3D=means3D,
+            means2D=means2D,
+            shs=features,
+            colors_precomp=colors_precomp,
+            opacities=opacity,
+            scales=scales,
+            rotations=rotations,
+            cov3D_precomp=cov3D_precomp,
+        )
+
+        # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
+        # They will be excluded from value updates used in the splitting criteria.
+        return {
+            "render": rendered_image,
+            "viewspace_points": screenspace_points,
+            "visibility_filter": radii > 0,
+            "radii": radii,
+        }

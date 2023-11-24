@@ -12,7 +12,6 @@ import viser
 import viser.transforms as vtf
 import torch
 from internal.renderers import VanillaRenderer
-from internal.renderers.vanilla_deformable_renderer import VanillaDeformableRenderer
 from internal.utils.gaussian_model_loader import GaussianModelLoader
 from internal.models.simplified_gaussian_model_manager import SimplifiedGaussianModelManager
 from internal.viewer import ClientThread, ViewerRenderer
@@ -35,6 +34,7 @@ class Viewer:
             show_cameras: bool = False,
             cameras_json: str = None,
             vanilla_deformable: bool = False,
+            vanilla_gs4d: bool = False,
     ):
         self.device = torch.device("cuda")
 
@@ -51,15 +51,31 @@ class Viewer:
 
         load_from = self._search_load_file(model_paths[0])
 
+        self.simplified_model = True
+        # whether model is trained by other implementations
+        if vanilla_gs4d is True:
+            self.simplified_model = False
+
         # TODO: load multiple models more elegantly
         # load and create models
         model, renderer, training_output_base_dir, dataset_type, self.checkpoint = self._load_model_from_file(load_from)
 
+        def get_load_iteration() -> int:
+            return int(os.path.basename(os.path.dirname(load_from)).replace("iteration_", ""))
+
+        # whether model is trained by other implementations
         if vanilla_deformable is True:
-            load_iteration = int(os.path.basename(os.path.dirname(load_from)).replace("iteration_", ""))
+            from internal.renderers.vanilla_deformable_renderer import VanillaDeformableRenderer
             renderer = VanillaDeformableRenderer(
                 os.path.dirname(os.path.dirname(os.path.dirname(load_from))),
-                load_iteration,
+                get_load_iteration(),
+                device=self.device,
+            )
+        elif vanilla_gs4d is True:
+            from internal.renderers.vanilla_gs4d_renderer import VanillaGS4DRenderer
+            renderer = VanillaGS4DRenderer(
+                os.path.dirname(os.path.dirname(os.path.dirname(load_from))),
+                get_load_iteration(),
                 device=self.device,
             )
 
@@ -237,11 +253,16 @@ class Viewer:
         return self._do_initialize_models_from_checkpoint(checkpoint_path, self.device)
 
     @staticmethod
-    def _do_initialize_models_from_point_cloud(point_cloud_path: str, sh_degree, device):
-        return GaussianModelLoader.initialize_simplified_model_from_point_cloud(point_cloud_path, sh_degree, device)
+    def _do_initialize_models_from_point_cloud(point_cloud_path: str, sh_degree, device, simplified: bool = True):
+        if simplified is True:
+            return GaussianModelLoader.initialize_simplified_model_from_point_cloud(point_cloud_path, sh_degree, device)
+        from internal.models.gaussian_model import GaussianModel
+        model = GaussianModel(sh_degree=sh_degree)
+        model.load_ply(point_cloud_path, device=device)
+        return model, VanillaRenderer()
 
     def _initialize_models_from_point_cloud(self, point_cloud_path: str):
-        return self._do_initialize_models_from_point_cloud(point_cloud_path, self.sh_degree, self.device)
+        return self._do_initialize_models_from_point_cloud(point_cloud_path, self.sh_degree, self.device, simplified=self.simplified_model)
 
     def _load_model_from_file(self, load_from: str):
         print("load model from {}".format(load_from))
@@ -520,6 +541,7 @@ if __name__ == "__main__":
                         action="store_true")
     parser.add_argument("--cameras-json", "--cameras_json", type=str, default=None)
     parser.add_argument("--vanilla_deformable", action="store_true", default=False)
+    parser.add_argument("--vanilla_gs4d", action="store_true", default=False)
     args = parser.parse_args()
 
     # arguments post process

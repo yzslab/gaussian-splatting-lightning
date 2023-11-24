@@ -5,7 +5,9 @@
 * Multi-GPU/Node training (only after densification)
 * Dynamic object mask
 * Appearance variation support
-* <a href="https://ingra14m.github.io/Deformable-Gaussians/">Deformable 3D Gaussians</a>
+* Deformable Gaussians
+  * <a href="https://ingra14m.github.io/Deformable-Gaussians/">Deformable 3D Gaussians</a>
+  * <a href="https://guanjunwu.github.io/4dgs/index.html">4D Gaussian</a> (Viewer Only)
 * Load arbitrary number of images without OOM
 * Interactive web viewer
   * Load multiple models
@@ -115,7 +117,7 @@ python main.py fit \
 | <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/de1ff3c3-a27a-4600-8c76-ab6551df6fca"></video> | <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/3f87243d-d9a1-41e2-9d51-225735925db4"></video> | <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/7cf0ccf2-44e9-4fc9-87cc-740b7bbda488"></video> |
 
 
-* Base
+### Base
 ```bash
 python viewer.py TRAINING_OUTPUT_PATH
 # e.g.: 
@@ -123,7 +125,7 @@ python viewer.py TRAINING_OUTPUT_PATH
 #   python viewer.py outputs/lego/checkpoints/epoch=300-step=30000.ckpt
 #   python viewer.py outputs/lego/baseline/point_cloud/iteration_30000/point_cloud.ply  # only works with VanillaRenderer
 ```
-* Load multiple models and enable transform options
+### Load multiple models and enable transform options
 ```bash
 python viewer.py \
     outputs/garden \
@@ -131,16 +133,28 @@ python viewer.py \
     outputs/Synthetic_NSVF/Palace/point_cloud/iteration_30000/point_cloud.ply \
     --enable_transform
 ```
-* Load <a href="https://github.com/ingra14m/Deformable-3D-Gaussians">ingra14m/Deformable-3D-Gaussians</a>'s output
 
-<b>[NOTE]</b> The `--vanilla_deformable` only design for ingra14m/Deformable-3D-Gaussians's output. The deformable model trained by this repository must be load without `--vanilla_deformable`.
+### Load model trained by other implementations
+<b>[NOTE]</b> The commands in this section only design for third-party outputs
+
+* <a href="https://github.com/ingra14m/Deformable-3D-Gaussians">ingra14m/Deformable-3D-Gaussians</a>
 
 ```
 python viewer.py \
-    outputs/lego \
+    Deformable-3D-Gaussians/outputs/lego \
     --vanilla_deformable \
-    --reorient disable
+    --reorient disable  # change to enable when loading real world scene
 ```
+
+* <a href="https://github.com/hustvl/4DGaussians">hustvl/4DGaussians</a>
+
+```
+python viewer.py \
+    4DGaussians/outputs/lego \
+    --vanilla_gs4d
+    
+```
+
 # License
 This repository is licensed under MIT license. Except some thirdparty dependencies (e.g. files in `submodules` directory), files and codes copied from other repositories, which are separately licensed.
 ```text
