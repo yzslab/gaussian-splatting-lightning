@@ -147,6 +147,4 @@ class DeformModel(nn.Module):
             scaling_chunks.append(scaling)
             rotation_chunks.append(rotation)
 
-        torch.cuda.empty_cache()  # avoid CUDA OOM
-
         return torch.concat(d_xyz_chunks, dim=0), torch.concat(rotation_chunks, dim=0), torch.concat(scaling_chunks, dim=0)

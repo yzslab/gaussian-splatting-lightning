@@ -112,6 +112,7 @@ class DeformableRenderer(Renderer):
                 time_interval = 1 / ((step % self.train_set_length) + 1)
                 ast_noise = torch.randn(1, 1, device=pc.get_xyz.device).expand(N, -1) * time_interval * self.smooth_term(step)
             d_xyz, d_rotation, d_scaling = self.deform_model(pc.get_xyz.detach(), time_input + ast_noise)
+            torch.cuda.empty_cache()  # avoid CUDA OOM
 
         return self._render(
             d_xyz,
