@@ -52,6 +52,8 @@ class Viewer:
         load_from = self._search_load_file(model_paths[0])
 
         self.simplified_model = True
+        self.show_edit_panel = True
+        self.show_render_panel = True
         # whether model is trained by other implementations
         if vanilla_gs4d is True:
             self.simplified_model = False
@@ -71,6 +73,8 @@ class Viewer:
                 get_load_iteration(),
                 device=self.device,
             )
+            self.show_edit_panel = False
+            self.show_render_panel = False
         elif vanilla_gs4d is True:
             from internal.renderers.vanilla_gs4d_renderer import VanillaGS4DRenderer
             renderer = VanillaGS4DRenderer(
@@ -78,6 +82,8 @@ class Viewer:
                 get_load_iteration(),
                 device=self.device,
             )
+            self.show_edit_panel = False
+            self.show_render_panel = False
 
         # reorient the scene
         cameras_json_path = cameras_json
@@ -295,6 +301,17 @@ class Viewer:
         tabs = server.add_gui_tab_group()
 
         with tabs.add_tab("General"):
+            reset_up_button = server.add_gui_button(
+                "Reset up direction",
+                icon=viser.Icon.ARROW_AUTOFIT_UP,
+                hint="Reset the orbit up direction.",
+            )
+
+            @reset_up_button.on_click
+            def _(event: viser.GuiEvent) -> None:
+                assert event.client is not None
+                event.client.camera.up_direction = vtf.SO3(event.client.camera.wxyz) @ np.array([0.0, -1.0, 0.0])
+
             # add cameras
             if self.show_cameras is True:
                 self.add_cameras_to_scene(server)
@@ -404,25 +421,27 @@ class Viewer:
                 )
                 self.time_slider.on_update(self._handle_option_updated)
 
-        with tabs.add_tab("Edit") as edit_tab:
-            self.edit_panel = EditPanel(server, self, edit_tab)
+        if self.show_edit_panel is True:
+            with tabs.add_tab("Edit") as edit_tab:
+                self.edit_panel = EditPanel(server, self, edit_tab)
 
         self.transform_panel: TransformPanel = None
         if self.enable_transform is True:
             with tabs.add_tab("Transform"):
                 self.transform_panel = TransformPanel(server, self, self.loaded_model_count)
 
-        with tabs.add_tab("Render"):
-            populate_render_tab(
-                server,
-                self,
-                self.model_paths,
-                Path("./"),
-                orientation_transform=torch.linalg.inv(self.camera_transform).cpu().numpy(),
-                enable_transform=self.enable_transform,
-                background_color=self.background_color,
-                sh_degree=self.sh_degree,
-            )
+        if self.show_render_panel is True:
+            with tabs.add_tab("Render"):
+                populate_render_tab(
+                    server,
+                    self,
+                    self.model_paths,
+                    Path("./"),
+                    orientation_transform=torch.linalg.inv(self.camera_transform).cpu().numpy(),
+                    enable_transform=self.enable_transform,
+                    background_color=self.background_color,
+                    sh_degree=self.sh_degree,
+                )
 
         while True:
             time.sleep(999)

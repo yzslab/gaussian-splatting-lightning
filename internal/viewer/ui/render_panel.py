@@ -472,17 +472,6 @@ def populate_render_tab(
         def _(event: viser.GuiEvent) -> None:
             add_camera(event, enable_model_transform=False)
 
-    reset_up_button = server.add_gui_button(
-        "Reset up direction",
-        icon=viser.Icon.ARROW_AUTOFIT_UP,
-        hint="Reset the orbit up direction.",
-    )
-
-    @reset_up_button.on_click
-    def _(event: viser.GuiEvent) -> None:
-        assert event.client is not None
-        event.client.camera.up_direction = tf.SO3(event.client.camera.wxyz) @ onp.array([0.0, -1.0, 0.0])
-
     clear_keyframes_button = server.add_gui_button(
         "Clear keyframes",
         icon=viser.Icon.TRASH,
