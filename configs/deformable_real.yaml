@@ -9,6 +9,7 @@ model:
     init_args:
       deform_network:
         tcnn: false
+        #chunk: 16384  # avoid CUDA OOM
       time_encoding:
         n_frequencies: 6
         n_layers: 0

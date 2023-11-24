@@ -52,6 +52,7 @@ class DeformModel(nn.Module):
             t_multires=6,
             t_output_ch=30,
             is_6dof=False,
+            chunk: int = -1,
     ):
         super().__init__()
         self.D = D
@@ -59,6 +60,8 @@ class DeformModel(nn.Module):
         self.input_ch = input_ch
         # self.output_ch = output_ch
         self.t_multires = t_multires
+        self.chunk = chunk
+
         self.skips = [D // 2]
 
         self.embed_time_fn, time_input_ch = get_time_embedder(network_factory, self.t_multires, 1, n_layers=t_D, n_neurons=t_W, output_ch=t_output_ch)
@@ -104,24 +107,46 @@ class DeformModel(nn.Module):
         t_emb = self.embed_time_fn(t)
         x_emb = self.embed_fn(x)
 
-        # query deformable field
-        h = torch.cat([x_emb, t_emb], dim=-1)
-        for i, l in enumerate(self.skip_layers):
-            h = self.skip_layers[i](h)
-            h = torch.cat([x_emb, t_emb, h], -1)
-        h = self.output_linear(h)
-
-        if self.is_6dof:
-            w = self.branch_w(h)
-            v = self.branch_v(h)
-            theta = torch.norm(w, dim=-1, keepdim=True)
-            w = w / theta + 1e-5
-            v = v / theta + 1e-5
-            screw_axis = torch.cat([w, v], dim=-1)
-            d_xyz = exp_se3(screw_axis, theta)
+        if self.chunk > 0:
+            chunks = []
+            n_gaussians = x.shape[0]
+            for i in range(0, n_gaussians, self.chunk):
+                chunks.append((
+                    t_emb[i:i + self.chunk],
+                    x_emb[i:i + self.chunk],
+                ))
         else:
-            d_xyz = self.gaussian_warp(h)
-        scaling = self.gaussian_scaling(h)
-        rotation = self.gaussian_rotation(h)
+            chunks = [(t_emb, x_emb)]
 
-        return d_xyz, rotation, scaling
+        d_xyz_chunks = []
+        scaling_chunks = []
+        rotation_chunks = []
+        # query deformable field
+        for i in chunks:
+            t_input, x_input = i
+            h = torch.cat([x_input, t_input], dim=-1)
+            for i, l in enumerate(self.skip_layers):
+                h = self.skip_layers[i](h)
+                h = torch.cat([x_input, t_input, h], -1)
+            h = self.output_linear(h)
+
+            if self.is_6dof:
+                w = self.branch_w(h)
+                v = self.branch_v(h)
+                theta = torch.norm(w, dim=-1, keepdim=True)
+                w = w / theta + 1e-5
+                v = v / theta + 1e-5
+                screw_axis = torch.cat([w, v], dim=-1)
+                d_xyz = exp_se3(screw_axis, theta)
+            else:
+                d_xyz = self.gaussian_warp(h)
+            scaling = self.gaussian_scaling(h)
+            rotation = self.gaussian_rotation(h)
+
+            d_xyz_chunks.append(d_xyz)
+            scaling_chunks.append(scaling)
+            rotation_chunks.append(rotation)
+
+        torch.cuda.empty_cache()  # avoid CUDA OOM
+
+        return torch.concat(d_xyz_chunks, dim=0), torch.concat(rotation_chunks, dim=0), torch.concat(scaling_chunks, dim=0)

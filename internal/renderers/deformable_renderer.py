@@ -26,6 +26,7 @@ class DeformNetworkConfig:
     n_layers: int = 8
     n_neurons: int = 256
     is_6dof: bool = False
+    chunk: int = -1  # avoid CUDA oom
 
 
 @dataclass
@@ -106,11 +107,9 @@ class DeformableRenderer(Renderer):
         if step >= self.optimization_config.warm_up:
             N = pc.get_xyz.shape[0]
             time_input = viewpoint_camera.time.unsqueeze(0).expand(N, -1)
-
             ast_noise = 0
             if self.optimization_config.enable_ast is True:
-                # TODO: calculate time_interval
-                time_interval = 0.1
+                time_interval = 1 / ((step % self.train_set_length) + 1)
                 ast_noise = torch.randn(1, 1, device=pc.get_xyz.device).expand(N, -1) * time_interval * self.smooth_term(step)
             d_xyz, d_rotation, d_scaling = self.deform_model(pc.get_xyz.detach(), time_input + ast_noise)
 
@@ -229,7 +228,10 @@ class DeformableRenderer(Renderer):
             "radii": radii,
         }
 
-    def setup(self, stage: str, *args: Any, **kwargs: Any) -> Any:
+    def setup(self, stage: str, lightning_module, *args: Any, **kwargs: Any) -> Any:
+        if stage == "fit":
+            self.train_set_length = len(lightning_module.trainer.datamodule.dataparser_outputs.train_set)
+
         network_factory = NetworkFactory(tcnn=self.deform_network_config.tcnn)
 
         self.deform_model = DeformModel(
@@ -243,6 +245,7 @@ class DeformableRenderer(Renderer):
             t_multires=self.time_encoding_config.n_frequencies,
             t_output_ch=self.time_encoding_config.n_output_dim,
             is_6dof=self.deform_network_config.is_6dof,
+            chunk=self.deform_network_config.chunk,
         )
         self.smooth_term = get_linear_noise_func(lr_init=0.1, lr_final=1e-15, lr_delay_mult=0.01, max_steps=20000)
 

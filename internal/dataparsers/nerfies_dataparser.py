@@ -163,6 +163,7 @@ class NerfiesDataparser(DataParser):
             point_cloud=PointCloud(
                 xyz=xyz,
                 rgb=np.ones_like(xyz) * 127,
+                # rgb=np.random.random(xyz.shape) * 127,
             ),
             camera_extent=radius,
             appearance_group_ids=None,
