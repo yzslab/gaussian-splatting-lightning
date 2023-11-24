@@ -152,7 +152,6 @@ python viewer.py \
 python viewer.py \
     4DGaussians/outputs/lego \
     --vanilla_gs4d
-    
 ```
 
 # License
