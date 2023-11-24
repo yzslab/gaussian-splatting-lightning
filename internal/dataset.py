@@ -9,25 +9,33 @@ import random
 from typing import Literal, Tuple, Optional
 from PIL import Image
 import numpy as np
+import cv2
 import torch.utils.data
 from lightning import LightningDataModule
 from lightning.pytorch.utilities.types import EVAL_DATALOADERS, TRAIN_DATALOADERS
 
-from internal.cameras.cameras import Camera
+from internal.cameras.cameras import CameraType, Camera
 from internal.dataparsers import ImageSet
 from internal.configs.dataset import DatasetParams
 from internal.dataparsers.colmap_dataparser import ColmapDataParser
 from internal.dataparsers.blender_dataparser import BlenderDataParser
 from internal.dataparsers.nsvf_dataparser import NSVFDataParser
+from internal.dataparsers.nerfies_dataparser import NerfiesDataparser
 from internal.utils.graphics_utils import store_ply, BasicPointCloud
 
 from tqdm import tqdm
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, image_set: ImageSet) -> None:
+    def __init__(
+            self,
+            image_set: ImageSet,
+            undistort_image: bool = True,
+    ) -> None:
         super().__init__()
         self.image_set = image_set
+        self.undistort_image = undistort_image
+        self.image_cameras: list[Camera] = [i for i in image_set.cameras]  # store undistorted camera
 
     def __len__(self):
         return len(self.image_set)
@@ -36,7 +44,50 @@ class Dataset(torch.utils.data.Dataset):
         # TODO: resize
 
         pil_image = Image.open(self.image_set.image_paths[index])
-        image = torch.from_numpy(np.array(pil_image, dtype="uint8").astype("float32") / 255.0)
+        numpy_image = np.array(pil_image, dtype="uint8")
+
+        # undistort image
+        if self.undistort_image is True:
+            camera = self.image_set.cameras[index]  # get original camera
+            distortion = camera.distortion_params
+            if distortion is not None and torch.any(distortion != 0.):
+                # TODO: support fisheye camera model
+                assert camera.camera_type == CameraType.PERSPECTIVE
+                # build intrinsics matrix
+                intrinsics_matrix = np.eye(3)
+                intrinsics_matrix[0, 0] = float(camera.fx)  # fx
+                intrinsics_matrix[1, 1] = float(camera.fy)  # fy
+                intrinsics_matrix[0, 2] = float(camera.cx)  # cx
+                intrinsics_matrix[1, 2] = float(camera.cy)  # cy
+                # calculate new intrinsics matrix, without black border
+                image_shape = (int(camera.width), int(camera.height))
+                distortion = distortion.numpy()
+                new_intrinsics_matrix, _ = cv2.getOptimalNewCameraMatrix(
+                    intrinsics_matrix,
+                    distortion,
+                    image_shape,
+                    0,
+                    image_shape,
+                )
+                # undistort image
+                undistorted_image = cv2.undistort(numpy_image, intrinsics_matrix, distortion, None, new_intrinsics_matrix)
+                # update variables
+                numpy_image = undistorted_image
+                # update image camera
+                self.image_cameras[index].camera_type = torch.tensor(CameraType.PERSPECTIVE)
+                self.image_cameras[index].fx = torch.tensor(new_intrinsics_matrix[0, 0], dtype=torch.float)
+                self.image_cameras[index].fy = torch.tensor(new_intrinsics_matrix[1, 1], dtype=torch.float)
+                self.image_cameras[index].cx = torch.tensor(new_intrinsics_matrix[0, 2], dtype=torch.float)
+                self.image_cameras[index].cy = torch.tensor(new_intrinsics_matrix[1, 2], dtype=torch.float)
+                self.image_cameras[index].distortion_params = torch.zeros((4,), dtype=torch.float)
+
+                if "PREVIEW_UNDISTORTED_IMAGE" in os.environ:
+                    undistorted_pil_image = Image.fromarray(undistorted_image)
+                    image_save_path = os.path.join(os.environ["PREVIEW_UNDISTORTED_IMAGE"], self.image_set.image_names[index])
+                    os.makedirs(os.path.dirname(image_save_path), exist_ok=True)
+                    undistorted_pil_image.save(image_save_path, quality=100)
+
+        image = torch.from_numpy(numpy_image.astype("float32") / 255.0)
         # remove alpha channel
         if image.shape[2] == 4:
             # TODO: sync background color with model.background_color
@@ -59,7 +110,7 @@ class Dataset(torch.utils.data.Dataset):
         return self.image_set.image_names[index], image, mask
 
     def __getitem__(self, index) -> Tuple[Camera, Tuple]:
-        return self.image_set.cameras[index], self.get_image(index)
+        return self.image_cameras[index], self.get_image(index)
 
 
 class CacheDataLoader(torch.utils.data.DataLoader):
@@ -186,6 +237,7 @@ class DataModule(LightningDataModule):
             params: DatasetParams,
             type: Literal["colmap", "blender", "nsvf"] = None,
             distributed: bool = False,
+            undistort_image: bool = True,
     ) -> None:
         r"""Load dataset
 
@@ -212,8 +264,12 @@ class DataModule(LightningDataModule):
                 self.hparams["type"] = "colmap"
             elif os.path.exists(os.path.join(self.hparams["path"], "transforms_train.json")):
                 self.hparams["type"] = "blender"
-            else:
+            elif os.path.exists(os.path.join(self.hparams["path"], "intrinsics.txt")) and os.path.exists(os.path.join(self.hparams["path"], "bbox.txt")):
                 self.hparams["type"] = "nsvf"
+            elif os.path.exists(os.path.join(self.hparams["path"], "dataset.json")):
+                self.hparams["type"] = "nerfies"
+            else:
+                raise ValueError("Can not detect dataset type automatically")
 
         # build dataparser params
         dataparser_params = {
@@ -228,6 +284,8 @@ class DataModule(LightningDataModule):
             dataparser = BlenderDataParser(params=self.hparams["params"].blender, **dataparser_params)
         elif self.hparams["type"] == "nsvf":
             dataparser = NSVFDataParser(params=self.hparams["params"].nsvf, **dataparser_params)
+        elif self.hparams["type"] == "nerfies":
+            dataparser = NerfiesDataparser(params=self.hparams["params"].nerfies, **dataparser_params)
         else:
             raise ValueError("unsupported dataset type {}".format(self.hparams["type"]))
 
@@ -320,7 +378,7 @@ class DataModule(LightningDataModule):
 
     def train_dataloader(self) -> TRAIN_DATALOADERS:
         return CacheDataLoader(
-            Dataset(self.dataparser_outputs.train_set),
+            Dataset(self.dataparser_outputs.train_set, undistort_image=self.hparams["undistort_image"]),
             max_cache_num=self.hparams["params"].train_max_num_images_to_cache,
             shuffle=True,
             seed=torch.initial_seed() + self.global_rank,  # seed with global rank
@@ -332,7 +390,7 @@ class DataModule(LightningDataModule):
 
     def test_dataloader(self) -> EVAL_DATALOADERS:
         return CacheDataLoader(
-            Dataset(self.dataparser_outputs.val_set),
+            Dataset(self.dataparser_outputs.val_set, undistort_image=self.hparams["undistort_image"]),
             max_cache_num=self.hparams["params"].test_max_num_images_to_cache,
             shuffle=False,
             num_workers=0,
@@ -340,7 +398,7 @@ class DataModule(LightningDataModule):
 
     def val_dataloader(self) -> EVAL_DATALOADERS:
         return CacheDataLoader(
-            Dataset(self.dataparser_outputs.val_set),
+            Dataset(self.dataparser_outputs.val_set, undistort_image=self.hparams["undistort_image"]),
             max_cache_num=self.hparams["params"].val_max_num_images_to_cache,
             shuffle=False,
             num_workers=0,

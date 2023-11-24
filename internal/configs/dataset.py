@@ -60,6 +60,21 @@ class NSVFParams(BlenderParams):
 
 
 @dataclass
+class NerfiesParams:
+    down_sample_factor: int = 1
+
+    undistort_image: bool = True
+
+    step: int = 1
+
+    split_mode: Literal["reconstruction", "experiment"] = "experiment"
+
+    eval_image_select_mode: Literal["step"] = "step"
+
+    eval_step: int = 16
+
+
+@dataclass
 class DatasetParams:
     """
         Args:
@@ -73,6 +88,8 @@ class DatasetParams:
     blender: BlenderParams
 
     nsvf: NSVFParams
+
+    nerfies: NerfiesParams
 
     image_scale_factor: float = 1.  # TODO
 

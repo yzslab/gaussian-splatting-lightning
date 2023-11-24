@@ -49,15 +49,20 @@ def store_ply(path, xyz, rgb):
     ply_data.write(path)
 
 
-def getNerfppNorm(R_list, T_list):
-    def get_center_and_diag(cam_centers):
-        cam_centers = np.hstack(cam_centers)
-        avg_cam_center = np.mean(cam_centers, axis=1, keepdims=True)
-        center = avg_cam_center
-        dist = np.linalg.norm(cam_centers - center, axis=0, keepdims=True)
-        diagonal = np.max(dist)
-        return center.flatten(), diagonal
+def get_center_and_diag_from_hstacked_xyz(cam_centers: np.ndarray):
+    avg_cam_center = np.mean(cam_centers, axis=1, keepdims=True)
+    center = avg_cam_center
+    dist = np.linalg.norm(cam_centers - center, axis=0, keepdims=True)
+    diagonal = np.max(dist)
+    return center.flatten(), diagonal
 
+
+def get_center_and_diag(cam_centers):
+    cam_centers = np.hstack(cam_centers)
+    return get_center_and_diag_from_hstacked_xyz(cam_centers)
+
+
+def getNerfppNorm(R_list, T_list):
     cam_centers = []
 
     for R, T in zip(R_list, T_list):

@@ -111,7 +111,7 @@ class DeformableRenderer(Renderer):
             if self.optimization_config.enable_ast is True:
                 # TODO: calculate time_interval
                 time_interval = 0.1
-                ast_noise = torch.randn(1, 1, device=pc.get_xyz.device).expand(N, -1) * time_interval * self.smooth_term(self.iteration)
+                ast_noise = torch.randn(1, 1, device=pc.get_xyz.device).expand(N, -1) * time_interval * self.smooth_term(step)
             d_xyz, d_rotation, d_scaling = self.deform_model(pc.get_xyz.detach(), time_input + ast_noise)
 
         return self._render(

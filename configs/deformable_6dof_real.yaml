@@ -1,6 +1,4 @@
 max_steps: 40000
-trainer:
-  check_val_every_n_epoch: 10
 data:
   params:
     val_max_num_images_to_cache: -1
@@ -10,10 +8,11 @@ model:
     class_path: internal.renderers.deformable_renderer.DeformableRenderer
     init_args:
       deform_network:
-        tcnn: true
+        tcnn: false
+        is_6dof: true
       time_encoding:
-        n_frequencies: 10
-        n_layers: 2
-        n_neurons: 256
+        n_frequencies: 6
+        n_layers: 0
+        n_neurons: 0
       optimization:
-        enable_ast: false
+        enable_ast: true

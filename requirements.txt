@@ -6,5 +6,6 @@ tensorboard
 wandb
 tqdm
 viser==0.1.10
+opencv-python==4.8.*
 ./submodules/diff-gaussian-rasterization
 ./submodules/simple-knn
