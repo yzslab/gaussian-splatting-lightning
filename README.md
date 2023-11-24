@@ -118,6 +118,7 @@ python main.py fit \
 
 
 ### Base
+* Also works for <a href="https://github.com/graphdeco-inria/gaussian-splatting">graphdeco-inria/gaussian-splatting</a>'s ply output
 ```bash
 python viewer.py TRAINING_OUTPUT_PATH
 # e.g.: 
