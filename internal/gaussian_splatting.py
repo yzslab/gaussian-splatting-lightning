@@ -70,17 +70,10 @@ class GaussianSplatting(LightningModule):
 
     def setup(self, stage: str):
         if stage == "fit":
-            self.cameras_extent = self.trainer.datamodule.dataparser_outputs.camera_extent
-            self.prune_extent = self.trainer.datamodule.prune_extent
             self.gaussian_model.create_from_pcd(
                 self.trainer.datamodule.point_cloud,
-                spatial_lr_scale=self.cameras_extent,
                 deivce=self.device,
             )
-
-            # scale after create_from_pcd(), avoid lr scaling
-            self.cameras_extent *= self.hparams["camera_extent_factor"]
-            self.prune_extent *= self.hparams["camera_extent_factor"]
 
         self.renderer.setup(stage, lightning_module=self)
 
@@ -326,8 +319,13 @@ class GaussianSplatting(LightningModule):
         return self.validation_step(batch, batch_idx)
 
     def configure_optimizers(self):
+        self.cameras_extent = self.trainer.datamodule.dataparser_outputs.camera_extent
+        self.prune_extent = self.trainer.datamodule.prune_extent
         # gaussian_model.training_setup() must be called here, where parameters have been moved to GPUs
-        self.gaussian_model.training_setup(self.hparams["gaussian"].optimization)
+        self.gaussian_model.training_setup(self.hparams["gaussian"].optimization, self.cameras_extent)
+        # scale after optimizer being configured, avoid lr scaling
+        self.cameras_extent *= self.hparams["camera_extent_factor"]
+        self.prune_extent *= self.hparams["camera_extent_factor"]
 
         # initialize lists that store optimizers and schedulers
         optimizers = [
