@@ -143,11 +143,11 @@ class NerfiesDataparser(DataParser):
         # normalize time value
         max_time = 0
         for i in metadata:
-            if metadata[i]["time_id"] > max_time:
-                max_time = metadata[i]["time_id"]
+            if metadata[i]["warp_id"] > max_time:
+                max_time = metadata[i]["warp_id"]
         time_dict = {}
         for i in metadata:
-            time_dict[i] = metadata[i]["time_id"] / max_time
+            time_dict[i] = metadata[i]["warp_id"] / max_time
 
         # parse camera parameters
         train_set, radius = self._get_image_set(train_ids, time_dict, scene)
