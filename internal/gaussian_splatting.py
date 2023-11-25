@@ -97,6 +97,9 @@ class GaussianSplatting(LightningModule):
         if "gaussian_model_extra_state_dict" in checkpoint:
             for i in checkpoint["gaussian_model_extra_state_dict"]:
                 setattr(self.gaussian_model, i, checkpoint["gaussian_model_extra_state_dict"][i])
+            # for previous version
+            if "active_sh_degree" not in checkpoint["gaussian_model_extra_state_dict"]:
+                self.gaussian_model.active_sh_degree = self.gaussian_model.max_sh_degree
         super().on_load_checkpoint(checkpoint)
 
     def on_save_checkpoint(self, checkpoint) -> None:
@@ -106,6 +109,7 @@ class GaussianSplatting(LightningModule):
             "xyz_gradient_accum": self.gaussian_model.xyz_gradient_accum,
             "denom": self.gaussian_model.denom,
             "spatial_lr_scale": self.gaussian_model.spatial_lr_scale,
+            "active_sh_degree": self.gaussian_model.active_sh_degree,
         }
         super().on_save_checkpoint(checkpoint)
 
