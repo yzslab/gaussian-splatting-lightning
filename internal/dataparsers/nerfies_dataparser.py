@@ -128,14 +128,14 @@ class NerfiesDataparser(DataParser):
             # build val_ids from all ids
             train_ids = []
             val_ids = []
-            for idx, i in enumerate(dataset["ids"]):
+            for idx, i in enumerate(dataset["ids"][::self.params.step]):
                 if idx % self.params.eval_step == 0:
                     val_ids.append(i)
                 else:
                     train_ids.append(i)
-
-        train_ids = train_ids[::self.params.step]
-        val_ids = val_ids[::self.params.step]
+        else:
+            train_ids = train_ids[::self.params.step]
+            val_ids = val_ids[::self.params.step]
 
         if self.params.split_mode == "reconstruction":
             train_ids += val_ids
