@@ -16,3 +16,6 @@ model:
         n_neurons: 0
       optimization:
         enable_ast: true
+  gaussian:
+    optimization:
+      spatial_lr_scale: 5

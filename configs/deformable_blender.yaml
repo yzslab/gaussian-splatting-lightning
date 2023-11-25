@@ -10,10 +10,13 @@ model:
     class_path: internal.renderers.deformable_renderer.DeformableRenderer
     init_args:
       deform_network:
-        tcnn: true
+        tcnn: false
       time_encoding:
         n_frequencies: 6
         n_layers: 2
         n_neurons: 256
       optimization:
         enable_ast: false
+  gaussian:
+    optimization:
+      spatial_lr_scale: 5
