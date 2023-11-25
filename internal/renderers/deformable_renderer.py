@@ -46,7 +46,7 @@ class TimeEncodingConfig:
 class DeformableRendererOptimizationConfig:
     lr: float = 0.0008
     max_steps: int = 40_000
-    lr_delay_mult: float = 0.01
+    lr_delay_mult: float = 0.002
     eps: float = 1e-15
     warm_up: int = 3_000
     enable_ast: bool = True
