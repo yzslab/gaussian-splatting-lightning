@@ -86,8 +86,7 @@ class GaussianModel(nn.Module):
         if self.active_sh_degree < self.max_sh_degree:
             self.active_sh_degree += 1
 
-    def create_from_pcd(self, pcd: BasicPointCloud, spatial_lr_scale: float, deivce):
-        self.spatial_lr_scale = spatial_lr_scale
+    def create_from_pcd(self, pcd: BasicPointCloud, deivce):
         fused_point_cloud = torch.tensor(np.asarray(pcd.points)).float().to(deivce)
         fused_color = RGB2SH(torch.tensor(np.asarray(pcd.colors)).float().to(deivce))
         features = torch.zeros((fused_color.shape[0], 3, (self.max_sh_degree + 1) ** 2)).float().to(deivce)
@@ -134,7 +133,12 @@ class GaussianModel(nn.Module):
         self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1))
         self.denom = torch.zeros((self.get_xyz.shape[0], 1))
 
-    def training_setup(self, training_args):
+    def training_setup(self, training_args, scene_extent: float):
+        self.spatial_lr_scale = scene_extent
+        # override spatial_lr_scale if provided
+        if training_args.spatial_lr_scale > 0:
+            self.spatial_lr_scale = training_args.spatial_lr_scale
+
         self.percent_dense = training_args.percent_dense
 
         # some tensor may still in CPU, move to the same device as the _xyz
