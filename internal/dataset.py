@@ -48,6 +48,7 @@ class Dataset(torch.utils.data.Dataset):
 
         # undistort image
         if self.undistort_image is True:
+            # TODO: validate this undistortion implementation
             camera = self.image_set.cameras[index]  # get original camera
             distortion = camera.distortion_params
             if distortion is not None and torch.any(distortion != 0.):
@@ -237,7 +238,7 @@ class DataModule(LightningDataModule):
             params: DatasetParams,
             type: Literal["colmap", "blender", "nsvf"] = None,
             distributed: bool = False,
-            undistort_image: bool = True,
+            undistort_image: bool = False,
     ) -> None:
         r"""Load dataset
 
@@ -390,7 +391,7 @@ class DataModule(LightningDataModule):
 
     def test_dataloader(self) -> EVAL_DATALOADERS:
         return CacheDataLoader(
-            Dataset(self.dataparser_outputs.val_set, undistort_image=self.hparams["undistort_image"]),
+            Dataset(self.dataparser_outputs.test_set, undistort_image=self.hparams["undistort_image"]),
             max_cache_num=self.hparams["params"].test_max_num_images_to_cache,
             shuffle=False,
             num_workers=0,
