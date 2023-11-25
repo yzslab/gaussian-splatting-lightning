@@ -12,7 +12,7 @@ model:
       deform_network:
         tcnn: true
       time_encoding:
-        n_frequencies: 10
+        n_frequencies: 6
         n_layers: 2
         n_neurons: 256
       optimization:

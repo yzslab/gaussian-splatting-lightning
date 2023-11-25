@@ -73,16 +73,17 @@ class DeformModel(nn.Module):
         initialized_layers = 0
         n_input_dims = self.input_ch
         for i in self.skips:
+            n_layers = i - initialized_layers + (1 if initialized_layers == 0 else 0)
             skip_layer_list.append(network_factory.get_network(
                 n_input_dims=n_input_dims,
                 n_output_dims=W,
-                n_layers=i - initialized_layers,
+                n_layers=n_layers,
                 n_neurons=W,
                 activation="ReLU",
                 output_activation="ReLU",
             ))
             n_input_dims = W + self.input_ch
-            initialized_layers += i
+            initialized_layers += n_layers
         self.skip_layers = nn.ModuleList(skip_layer_list)
         self.output_linear = network_factory.get_network(
             n_input_dims=n_input_dims,

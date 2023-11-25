@@ -11,7 +11,7 @@ model:
         tcnn: false
         is_6dof: true
       time_encoding:
-        n_frequencies: 6
+        n_frequencies: 10
         n_layers: 0
         n_neurons: 0
       optimization:
