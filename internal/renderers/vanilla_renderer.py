@@ -174,7 +174,7 @@ class VanillaRenderer(Renderer):
         means2D = screenspace_points
 
         # Rasterize visible Gaussians to image, obtain their radii (on screen).
-        rendered_image, radii = rasterizer(
+        rasterize_result = rasterizer(
             means3D=means3D,
             means2D=means2D,
             shs=features,
@@ -184,11 +184,17 @@ class VanillaRenderer(Renderer):
             rotations=rotations,
             cov3D_precomp=cov3D_precomp,
         )
+        if len(rasterize_result) == 2:
+            rendered_image, radii = rasterize_result
+            depth_image = None
+        else:
+            rendered_image, radii, depth_image = rasterize_result
 
         # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
         # They will be excluded from value updates used in the splitting criteria.
         return {
             "render": rendered_image,
+            "depth": depth_image,
             "viewspace_points": screenspace_points,
             "visibility_filter": radii > 0,
             "radii": radii,
