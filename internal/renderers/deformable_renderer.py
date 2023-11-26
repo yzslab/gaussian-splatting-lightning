@@ -46,7 +46,7 @@ class TimeEncodingConfig:
 class DeformableRendererOptimizationConfig:
     lr: float = 0.0008
     max_steps: int = 40_000
-    lr_delay_mult: float = 0.002
+    lr_final_factor: float = 0.002
     eps: float = 1e-15
     warm_up: int = 3_000
     enable_ast: bool = True
@@ -261,7 +261,7 @@ class DeformableRenderer(Renderer):
         )
         scheduler = torch.optim.lr_scheduler.LambdaLR(
             optimizer=optimizer,
-            lr_lambda=lambda iter: self.optimization_config.lr_delay_mult ** min(iter / self.optimization_config.max_steps, 1),
+            lr_lambda=lambda iter: self.optimization_config.lr_final_factor ** min(iter / self.optimization_config.max_steps, 1),
             verbose=False,
         )
 
