@@ -222,9 +222,11 @@ class GaussianSplatting(LightningModule):
         self.log("train/ssim", ssim_metric, on_step=True, on_epoch=False, prog_bar=False, batch_size=self.batch_size)
         self.log("train/loss", loss, on_step=True, on_epoch=False, prog_bar=True, batch_size=self.batch_size)
 
-        # log learning rate every 100 iterations
-        if (global_step - 1) % 100 == 0:
-            metrics_to_log = {}
+        # log learning rate and gaussian count every 100 iterations (without plus one step)
+        if self.trainer.global_step % 100 == 0:
+            metrics_to_log = {
+                "train/gaussians_count": self.gaussian_model.get_xyz.shape[0],
+            }
             for opt_idx, opt in enumerate(optimizers):
                 if opt is None:
                     continue
@@ -233,7 +235,7 @@ class GaussianSplatting(LightningModule):
                     metrics_to_log["lr/{}_{}".format(opt_idx, param_group_name)] = param_group["lr"]
             self.logger.log_metrics(
                 metrics_to_log,
-                step=global_step - 1,
+                step=self.trainer.global_step,
             )
 
         # backward
