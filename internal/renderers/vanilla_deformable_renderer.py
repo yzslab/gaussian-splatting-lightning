@@ -39,7 +39,10 @@ class VanillaDeformableRenderer(Renderer):
 
         self.deform_model = self.deform_model.to(device)
 
-        self.deform_network_config = Namespace(is_6dof=cfg_args.is_6dof)
+        self.deform_network_config = Namespace(
+            rotate_xyz=False,
+            is_6dof=cfg_args.is_6dof,
+        )
 
         self.compute_cov3D_python = False
         self.convert_SHs_python = False
