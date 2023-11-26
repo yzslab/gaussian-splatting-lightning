@@ -1,18 +1,18 @@
 from dataclasses import dataclass
 from typing import Tuple, Optional, Any
 
-import math
 import lightning
 import torch
-from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
-from internal.utils.sh_utils import eval_sh
 from .renderer import Renderer
+from .vanilla_renderer import VanillaRenderer
 from ..cameras import Camera
 from ..models.gaussian_model import GaussianModel
 from ..models.deform_model import DeformModel
 from ..utils.network_factory import NetworkFactory
 from ..utils.general_utils import get_linear_noise_func
 from ..utils.rigid_utils import from_homogenous, to_homogenous
+from ..utils.rotation import qvec2rot
+from ..utils.gaussian_utils import GaussianTransformUtils
 
 
 @dataclass
@@ -26,6 +26,7 @@ class DeformNetworkConfig:
     n_layers: int = 8
     n_neurons: int = 256
     is_6dof: bool = False
+    rotate_xyz: bool = False
     chunk: int = -1  # avoid CUDA oom
 
 
@@ -66,9 +67,6 @@ class DeformableRenderer(Renderer):
         self.xyz_encoding_config = xyz_encoding
         self.time_encoding_config = time_encoding
         self.optimization_config = optimization
-
-        self.compute_cov3D_python = False
-        self.convert_SHs_python = False
 
     def forward(
             self,
@@ -134,100 +132,44 @@ class DeformableRenderer(Renderer):
             bg_color: torch.Tensor,
             scaling_modifier=1.0,
     ):
-        """
-        Render the scene.
-
-        Background tensor (bg_color) must be on GPU!
-        """
-
-        override_color = None
-
-        # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
-        screenspace_points = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True,
-                                              device=bg_color.device) + 0
-        try:
-            screenspace_points.retain_grad()
-        except:
-            pass
-
-        # Set up rasterization configuration
-        tanfovx = math.tan(viewpoint_camera.fov_x * 0.5)
-        tanfovy = math.tan(viewpoint_camera.fov_y * 0.5)
-
-        raster_settings = GaussianRasterizationSettings(
-            image_height=int(viewpoint_camera.height),
-            image_width=int(viewpoint_camera.width),
-            tanfovx=tanfovx,
-            tanfovy=tanfovy,
-            bg=bg_color,
-            scale_modifier=scaling_modifier,
-            viewmatrix=viewpoint_camera.world_to_camera,
-            projmatrix=viewpoint_camera.full_projection,
-            sh_degree=pc.active_sh_degree,
-            campos=viewpoint_camera.camera_center,
-            prefiltered=False,
-            debug=False
-        )
-
-        rasterizer = GaussianRasterizer(raster_settings=raster_settings)
-
-        if self.deform_network_config.is_6dof is True:
-            if torch.is_tensor(d_xyz) is False:
-                means3D = pc.get_xyz
+        if self.deform_network_config.rotate_xyz is True:
+            if torch.is_tensor(d_xyz) is True:
+                normalized_qvec = torch.nn.functional.normalize(d_rotation)
+                # rotate gaussians
+                rotations = GaussianTransformUtils.quat_multiply(pc.get_rotation, normalized_qvec)
+                # transform xyz
+                so3 = qvec2rot(normalized_qvec)
+                means3D = torch.matmul(pc.get_xyz.unsqueeze(1), torch.transpose(so3, 1, 2)).squeeze(1) + d_xyz
             else:
-                means3D = from_homogenous(torch.bmm(d_xyz, to_homogenous(pc.get_xyz).unsqueeze(-1)).squeeze(-1))
+                # in warm up
+                means3D = pc.get_xyz
+                rotations = pc.get_rotation
         else:
-            means3D = pc.get_xyz + d_xyz
-        means2D = screenspace_points
-        opacity = pc.get_opacity
-
-        # If precomputed 3d covariance is provided, use it. If not, then it will be computed from
-        # scaling / rotation by the rasterizer.
-        scales = None
-        rotations = None
-        cov3D_precomp = None
-        if self.compute_cov3D_python is True:
-            cov3D_precomp = pc.get_covariance(scaling_modifier)
-        else:
-            scales = pc.get_scaling + d_scaling
+            # original processing
+            if self.deform_network_config.is_6dof is True:
+                if torch.is_tensor(d_xyz) is False:
+                    means3D = pc.get_xyz
+                else:
+                    means3D = from_homogenous(torch.bmm(d_xyz, to_homogenous(pc.get_xyz).unsqueeze(-1)).squeeze(-1))
+            else:
+                means3D = pc.get_xyz + d_xyz
             rotations = pc.get_rotation + d_rotation
 
-        # If precomputed colors are provided, use them. Otherwise, if it is desired to precompute colors
-        # from SHs in Python, do it. If not, then SH -> RGB conversion will be done by rasterizer.
-        shs = None
-        colors_precomp = None
-        if override_color is None:
-            if self.convert_SHs_python is True:
-                shs_view = pc.get_features.transpose(1, 2).view(-1, 3, (pc.max_sh_degree + 1) ** 2)
-                dir_pp = (pc.get_xyz - viewpoint_camera.camera_center.repeat(pc.get_features.shape[0], 1))
-                dir_pp_normalized = dir_pp / dir_pp.norm(dim=1, keepdim=True)
-                sh2rgb = eval_sh(pc.active_sh_degree, shs_view, dir_pp_normalized)
-                colors_precomp = torch.clamp_min(sh2rgb + 0.5, 0.0)
-            else:
-                shs = pc.get_features
-        else:
-            colors_precomp = override_color
+        opacity = pc.get_opacity
+        scales = pc.get_scaling + d_scaling
+        features = pc.get_features
 
-        # Rasterize visible Gaussians to image, obtain their radii (on screen).
-        rendered_image, radii = rasterizer(
+        return VanillaRenderer.render(
             means3D=means3D,
-            means2D=means2D,
-            shs=shs,
-            colors_precomp=colors_precomp,
-            opacities=opacity,
+            opacity=opacity,
             scales=scales,
             rotations=rotations,
-            cov3D_precomp=cov3D_precomp,
+            features=features,
+            active_sh_degree=pc.active_sh_degree,
+            viewpoint_camera=viewpoint_camera,
+            bg_color=bg_color,
+            scaling_modifier=scaling_modifier,
         )
-
-        # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
-        # They will be excluded from value updates used in the splitting criteria.
-        return {
-            "render": rendered_image,
-            "viewspace_points": screenspace_points,
-            "visibility_filter": radii > 0,
-            "radii": radii,
-        }
 
     def setup(self, stage: str, lightning_module, *args: Any, **kwargs: Any) -> Any:
         if stage == "fit":

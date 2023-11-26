@@ -1,0 +1,23 @@
+max_steps: 40000
+trainer:
+  check_val_every_n_epoch: 10
+data:
+  params:
+    val_max_num_images_to_cache: -1
+    test_max_num_images_to_cache: -1
+model:
+  renderer:
+    class_path: internal.renderers.deformable_renderer.DeformableRenderer
+    init_args:
+      deform_network:
+        tcnn: false
+        rotate_xyz: true
+      time_encoding:
+        n_frequencies: 6
+        n_layers: 2
+        n_neurons: 256
+      optimization:
+        enable_ast: false
+  gaussian:
+    optimization:
+      spatial_lr_scale: 5
