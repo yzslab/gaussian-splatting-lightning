@@ -1,24 +1,15 @@
 import os.path
-from argparse import Namespace
-from dataclasses import dataclass
-from typing import Tuple, Optional, Any
-
-import math
-import lightning
 import torch
-from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
-from internal.utils.sh_utils import eval_sh
 from .renderer import Renderer
-from .deformable_renderer import DeformableRenderer
+from .vanilla_renderer import VanillaRenderer
 from ..cameras import Camera
 from ..models.gaussian_model import GaussianModel
 from ..models.vanilla_deform_model import VanillaDeformNetwork
 from ..utils.rigid_utils import from_homogenous, to_homogenous
+from ..utils.common import parse_cfg_args
 
 
 class VanillaDeformableRenderer(Renderer):
-    _render = DeformableRenderer._render
-
     def __init__(
             self,
             model_path: str,
@@ -39,19 +30,11 @@ class VanillaDeformableRenderer(Renderer):
 
         self.deform_model = self.deform_model.to(device)
 
-        self.deform_network_config = Namespace(
-            rotate_xyz=False,
-            is_6dof=cfg_args.is_6dof,
-        )
-
-        self.compute_cov3D_python = False
-        self.convert_SHs_python = False
+        self.is_6dof = cfg_args.is_6dof
 
     @classmethod
     def _parse_cfg_args(cls, model_path):
-        with open(os.path.join(model_path, "cfg_args"), "r") as f:
-            cfg_args = f.read()
-        return eval(cfg_args)
+        return parse_cfg_args(os.path.join(model_path, "cfg_args"))
 
     def forward(
             self,
@@ -72,6 +55,41 @@ class VanillaDeformableRenderer(Renderer):
             d_scaling,
             viewpoint_camera=viewpoint_camera,
             pc=pc,
+            bg_color=bg_color,
+            scaling_modifier=scaling_modifier,
+        )
+
+    def _render(
+            self,
+            d_xyz,
+            d_rotation,
+            d_scaling,
+            viewpoint_camera: Camera,
+            pc: GaussianModel,
+            bg_color: torch.Tensor,
+            scaling_modifier=1.0,
+    ):
+        if self.is_6dof is True:
+            if torch.is_tensor(d_xyz) is False:
+                means3D = pc.get_xyz
+            else:
+                means3D = from_homogenous(torch.bmm(d_xyz, to_homogenous(pc.get_xyz).unsqueeze(-1)).squeeze(-1))
+        else:
+            means3D = pc.get_xyz + d_xyz
+
+        opacity = pc.get_opacity
+        scales = pc.get_scaling + d_scaling
+        rotations = pc.get_rotation + d_rotation
+        features = pc.get_features
+
+        return VanillaRenderer.render(
+            means3D=means3D,
+            opacity=opacity,
+            scales=scales,
+            rotations=rotations,
+            features=features,
+            active_sh_degree=pc.active_sh_degree,
+            viewpoint_camera=viewpoint_camera,
             bg_color=bg_color,
             scaling_modifier=scaling_modifier,
         )
