@@ -63,6 +63,13 @@ def get_center_and_diag(cam_centers):
 
 
 def getNerfppNorm(R_list, T_list):
+    """
+    world-to-camera = [R.transpose() T]
+    :param R_list: transposed
+    :param T_list:
+    :return:
+    """
+
     cam_centers = []
 
     for R, T in zip(R_list, T_list):
