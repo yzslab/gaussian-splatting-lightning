@@ -88,11 +88,13 @@ class Dataset(torch.utils.data.Dataset):
                     os.makedirs(os.path.dirname(image_save_path), exist_ok=True)
                     undistorted_pil_image.save(image_save_path, quality=100)
 
-        image = torch.from_numpy(numpy_image.astype("float32") / 255.0)
+        image = torch.from_numpy(numpy_image.astype(np.float64) / 255.0)
         # remove alpha channel
         if image.shape[2] == 4:
             # TODO: sync background color with model.background_color
-            image = image[..., :3]
+            background_color = torch.tensor([0., 0., 0.])
+            image = image[:, :, :3] * image[:, :, 3:4] + background_color * (1 - image[:, :, 3:4])
+        image = image.to(torch.float)
 
         mask = None
         if self.image_set.mask_paths[index] is not None:

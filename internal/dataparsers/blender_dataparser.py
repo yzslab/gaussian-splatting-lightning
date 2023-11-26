@@ -48,10 +48,10 @@ class BlenderDataParser(DataParser):
                 time_list.append(frame["time"])
             else:
                 time_list.append(0.)
-        camera_to_world = torch.tensor(camera_to_world_list, dtype=torch.float32)
+        camera_to_world = torch.tensor(camera_to_world_list, dtype=torch.float64)
         # change from OpenGL/Blender camera axes (Y up, Z back) to COLMAP (Y down, Z forward)
         camera_to_world[:, :3, 1:3] *= -1
-        world_to_camera = torch.linalg.inv(camera_to_world)
+        world_to_camera = torch.linalg.inv(camera_to_world).to(torch.float)
 
         R = world_to_camera[:, :3, :3]
         T = world_to_camera[:, :3, 3]
@@ -129,7 +129,7 @@ class BlenderDataParser(DataParser):
         R_list = []
         T_list = []
         for i in train_set.cameras:
-            R_list.append(i.R.numpy())
+            R_list.append(i.R.T.numpy())
             T_list.append(i.T.numpy())
         norm = getNerfppNorm(R_list=R_list, T_list=T_list)
 
