@@ -50,15 +50,15 @@ python main.py fit \
     -n EXPERIMENT_NAME
 ```
 * With mask 
-```
+```bash
 --data.params.colmap.mask_dir MASK_DIR_PATH
 ```
 * Load large dataset without OOM
-```
+```bash
 --data.params.train_max_num_images_to_cache 1024
 ```
 * Enable appearance model to train on appearance variation images
-```
+```bash
 # 1. Generate appearance groups
 python generate_image_apperance_groups.py PATH_TO_DATASET \
     --camera \
@@ -71,6 +71,29 @@ python main.py fit \
     --data.params.colmap.appearance_groups appearance_group_by_camera \
     ...
 ```
+
+## Evaluation
+
+### Evaluate on validation set
+```bash
+python main.py validate \
+    --config outputs/lego/config.yaml
+```
+
+### On test set
+```bash
+python main.py test \
+    --config outputs/lego/config.yaml
+```
+
+### Save images that rendered during evaluation
+```bash
+python main.py <validate or test> \
+    --config outputs/lego/config.yaml \
+    --model.save_val_output true
+```
+Then you can find the images in `outputs/lego/<val or test>`.
+
 ### Blender Dataset
 <b>[IMPORTANT]</b> Use config file `configs/blender.yaml` when training on blender dataset.
 ```bash
@@ -99,13 +122,13 @@ python main.py fit \
     --trainer configs/ddp.yaml \
     --data.path DATASET_PATH \
     --max_steps 30000 \
-    --ckpt_path CHECKPOINT_FILE_PATH
+    --ckpt_path last  # find latest checkpoint automatically, or provide a path to checkpoint file
 ```
 
 ### <a href="https://ingra14m.github.io/Deformable-Gaussians/">Deformable 3D Gaussians</a>
 <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/177b3fbf-fdd2-490f-b446-433a4d929502"></video>
 
-```
+```bash
 python main.py fit \
     --config configs/deformable_blender.yaml \
     --data.path ...
@@ -140,7 +163,7 @@ python viewer.py \
 
 * <a href="https://github.com/ingra14m/Deformable-3D-Gaussians">ingra14m/Deformable-3D-Gaussians</a>
 
-```
+```bash
 python viewer.py \
     Deformable-3D-Gaussians/outputs/lego \
     --vanilla_deformable \
@@ -149,7 +172,7 @@ python viewer.py \
 
 * <a href="https://github.com/hustvl/4DGaussians">hustvl/4DGaussians</a>
 
-```
+```bash
 python viewer.py \
     4DGaussians/outputs/lego \
     --vanilla_gs4d

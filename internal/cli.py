@@ -30,6 +30,13 @@ class CLI(LightningCLI):
         # parser.link_arguments("logger", "trainer.logger", apply_on="instantiate")
         parser.link_arguments("save_iterations", "model.save_iterations")
 
+    def _search_checkpoint(self, path: str) -> str:
+        from internal.utils.gaussian_model_loader import GaussianModelLoader
+        ckpt_path = GaussianModelLoader.search_load_file(path)
+        assert ckpt_path.endswith(".ckpt"), "not a checkpoint can be found in {}".format(path)
+        print("Auto select checkpoint file: {}".format(ckpt_path))
+        return ckpt_path
+
     def before_instantiate_classes(self) -> None:
         config = getattr(self.config, self.config.subcommand)
         if config.name is None:
@@ -49,11 +56,25 @@ class CLI(LightningCLI):
         os.makedirs(output_path, exist_ok=True)
         print("output path: {}".format(output_path))
         config.model.output_path = output_path
+
+        # search checkpoint
+        if config.ckpt_path == "last":
+            config.ckpt_path = self._search_checkpoint(output_path)
+
         if self.config.subcommand == "fit":
-            assert os.path.exists(
-                os.path.join(output_path, "point_cloud")
-            ) is False, ("point cloud output already exists in {}, \n"
-                         "please specific a different experiment name (-n) or version (-v)").format(output_path)
+            if config.ckpt_path is None:
+                assert os.path.exists(
+                    os.path.join(output_path, "point_cloud")
+                ) is False, ("point cloud output already exists in {}, \n"
+                             "please specific a different experiment name (-n) or version (-v)").format(output_path)
+        else:
+            # disable logger
+            config.logger = "None"
+            # disable config saveing
+            self.save_config_callback = None
+            # find checkpoint automatically if not provided
+            if config.ckpt_path is None:
+                config.ckpt_path = self._search_checkpoint(output_path)
 
         # build logger
         logger_config = Namespace(
@@ -72,6 +93,8 @@ class CLI(LightningCLI):
                 wandb_name = "{}_{}".format(wandb_name, config.version)
             setattr(logger_config.init_args, "name", wandb_name)
             setattr(logger_config.init_args, "project", config.project)
+        elif config.logger == "none" or config.logger == "None" or config.logger == "false" or config.logger == "False":
+            logger_config = False
         else:
             logger_config.class_path = config.logger
 

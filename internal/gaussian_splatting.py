@@ -61,6 +61,8 @@ class GaussianSplatting(LightningModule):
         self.background_color = torch.tensor(background_color, dtype=torch.float32)
 
         self.batch_size = 1
+        self.restored_epoch = 0
+        self.restored_global_step = 0
 
     def _l1_loss(self, predict: torch.Tensor, gt: torch.Tensor):
         return torch.abs(predict - gt).mean()
@@ -100,6 +102,11 @@ class GaussianSplatting(LightningModule):
             # for previous version
             if "active_sh_degree" not in checkpoint["gaussian_model_extra_state_dict"]:
                 self.gaussian_model.active_sh_degree = self.gaussian_model.max_sh_degree
+
+        # get epoch and global_step, which used in the output path of the validation and test images
+        self.restored_epoch = checkpoint["epoch"]
+        self.restored_global_step = checkpoint["global_step"]
+
         super().on_load_checkpoint(checkpoint)
 
     def on_save_checkpoint(self, checkpoint) -> None:
@@ -285,17 +292,17 @@ class GaussianSplatting(LightningModule):
         for scheduler in schedulers:
             scheduler.step()
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, batch_idx, name: str = "val"):
         camera, image_info = batch
         gt_image = image_info[1]
 
         # forward
         outputs, loss, rgb_diff_loss, ssim_metric = self.forward_with_loss_calculation(camera, image_info)
 
-        self.log("val/rgb_diff", rgb_diff_loss, on_epoch=True, prog_bar=False, batch_size=self.batch_size)
-        self.log("val/ssim", ssim_metric, on_epoch=True, prog_bar=False, batch_size=self.batch_size)
-        self.log("val/loss", loss, on_epoch=True, prog_bar=True, batch_size=self.batch_size)
-        self.log("val/psnr", self.psnr(outputs["render"], gt_image), on_epoch=True, prog_bar=True,
+        self.log(f"{name}/rgb_diff", rgb_diff_loss, on_epoch=True, prog_bar=False, batch_size=self.batch_size)
+        self.log(f"{name}/ssim", ssim_metric, on_epoch=True, prog_bar=False, batch_size=self.batch_size)
+        self.log(f"{name}/loss", loss, on_epoch=True, prog_bar=True, batch_size=self.batch_size)
+        self.log(f"{name}/psnr", self.psnr(outputs["render"], gt_image), on_epoch=True, prog_bar=True,
                  batch_size=self.batch_size)
 
         # write validation image
@@ -305,14 +312,17 @@ class GaussianSplatting(LightningModule):
             if self.log_image is not None:
                 grid = torchvision.utils.make_grid(torch.concat([outputs["render"], gt_image], dim=-1))
                 self.log_image(
-                    tag="val_images/{}".format(image_info[0].replace("/", "_")),
+                    tag="{}_images/{}".format(name, image_info[0].replace("/", "_")),
                     image_tensor=grid,
                 )
 
             image_output_path = os.path.join(
                 self.hparams["output_path"],
-                "val",
-                "epoch_{}".format(self.trainer.current_epoch),
+                name,
+                "epoch={}-step={}".format(
+                    max(self.trainer.current_epoch, self.restored_epoch),
+                    max(self.trainer.global_step, self.restored_global_step),
+                ),
                 "{}.png".format(image_info[0].replace("/", "_"))
             )
             os.makedirs(os.path.dirname(image_output_path), exist_ok=True)
@@ -322,7 +332,7 @@ class GaussianSplatting(LightningModule):
             )
 
     def test_step(self, batch, batch_idx):
-        return self.validation_step(batch, batch_idx)
+        return self.validation_step(batch, batch_idx, name="test")
 
     def configure_optimizers(self):
         self.cameras_extent = self.trainer.datamodule.dataparser_outputs.camera_extent
