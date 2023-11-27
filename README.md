@@ -72,28 +72,6 @@ python main.py fit \
     ...
 ```
 
-## Evaluation
-
-### Evaluate on validation set
-```bash
-python main.py validate \
-    --config outputs/lego/config.yaml
-```
-
-### On test set
-```bash
-python main.py test \
-    --config outputs/lego/config.yaml
-```
-
-### Save images that rendered during evaluation
-```bash
-python main.py <validate or test> \
-    --config outputs/lego/config.yaml \
-    --model.save_val_output true
-```
-Then you can find the images in `outputs/lego/<val or test>`.
-
 ### Blender Dataset
 <b>[IMPORTANT]</b> Use config file `configs/blender.yaml` when training on blender dataset.
 ```bash
@@ -133,6 +111,28 @@ python main.py fit \
     --config configs/deformable_blender.yaml \
     --data.path ...
 ```
+
+## Evaluation
+
+### Evaluate on validation set
+```bash
+python main.py validate \
+    --config outputs/lego/config.yaml
+```
+
+### On test set
+```bash
+python main.py test \
+    --config outputs/lego/config.yaml
+```
+
+### Save images that rendered during evaluation
+```bash
+python main.py <validate or test> \
+    --config outputs/lego/config.yaml \
+    --model.save_val_output true
+```
+Then you can find the images in `outputs/lego/<val or test>`.
 
 ## Web Viewer
 | Transform | Camera Path | Edit |
