@@ -15,7 +15,7 @@ class NerfiesDataparser(DataParser):
         self.global_rank = global_rank
         self.params = params
 
-    def _get_image_set(self, ids: list, time: dict, scene: dict) -> tuple[ImageSet, float]:
+    def _get_image_set(self, ids: list, time: dict, scene: dict) -> ImageSet:
         image_name_list = []
         image_path_list = []
         c2w_list = []
@@ -74,8 +74,8 @@ class NerfiesDataparser(DataParser):
         distortion = torch.stack(distortion_list)
         time = torch.tensor(time_list)
 
-        _, diagonal = get_center_and_diag_from_hstacked_xyz(c2w[:, :3, 3].T.numpy())
-        diagonal *= 1.1
+        # _, diagonal = get_center_and_diag_from_hstacked_xyz(c2w[:, :3, 3].T.numpy())
+        # diagonal *= 1.1
 
         # resize
         if self.params.down_sample_factor != 1:
@@ -112,7 +112,7 @@ class NerfiesDataparser(DataParser):
                 camera_type=torch.zeros_like(width),
                 time=time,
             )
-        ), diagonal
+        )
 
     def get_outputs(self) -> DataParserOutputs:
         with open(os.path.join(self.path, "dataset.json"), "r") as f:
@@ -150,8 +150,8 @@ class NerfiesDataparser(DataParser):
             time_dict[i] = metadata[i]["warp_id"] / max_time
 
         # parse camera parameters
-        train_set, radius = self._get_image_set(train_ids, time_dict, scene)
-        val_set, _ = self._get_image_set(val_ids, time_dict, scene)
+        train_set = self._get_image_set(train_ids, time_dict, scene)
+        val_set = self._get_image_set(val_ids, time_dict, scene)
 
         xyz = np.load(os.path.join(self.path, "points.npy"))
         xyz = (xyz - np.asarray(scene["center"])) * scene["scale"]
@@ -165,6 +165,6 @@ class NerfiesDataparser(DataParser):
                 rgb=np.ones_like(xyz) * 127,
                 # rgb=np.random.random(xyz.shape) * 127,
             ),
-            camera_extent=radius,
+            # camera_extent=radius,
             appearance_group_ids=None,
         )

@@ -100,12 +100,12 @@ class NSVFDataParser(DataParser):
 
         train_set = self._parse(intrinsics_matrix, "train")
 
-        R_list = []
-        T_list = []
-        for i in train_set.cameras:
-            R_list.append(i.R.numpy())
-            T_list.append(i.T.numpy())
-        norm = getNerfppNorm(R_list=R_list, T_list=T_list)
+        # R_list = []
+        # T_list = []
+        # for i in train_set.cameras:
+        #     R_list.append(i.R.numpy())
+        #     T_list.append(i.T.numpy())
+        # norm = getNerfppNorm(R_list=R_list, T_list=T_list)
 
         return DataParserOutputs(
             train_set=train_set,
@@ -115,7 +115,7 @@ class NSVFDataParser(DataParser):
                 xyz=xyz,
                 rgb=rgb,
             ),
-            camera_extent=norm["radius"],
+            # camera_extent=norm["radius"],
             appearance_group_ids=None,
         )
 

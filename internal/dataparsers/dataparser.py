@@ -2,6 +2,7 @@ from typing import Tuple, Optional
 from dataclasses import dataclass
 
 import numpy as np
+import torch
 
 from internal.cameras.cameras import Cameras
 
@@ -52,9 +53,17 @@ class DataParserOutputs:
 
     # ply_path: str
 
-    camera_extent: float
-
     appearance_group_ids: Optional[dict]
+
+    camera_extent: Optional[float] = None
+
+    def __post_init__(self):
+        if self.camera_extent is None:
+            camera_centers = self.train_set.cameras.camera_center
+            average_camera_center = torch.mean(camera_centers, dim=0)
+            camera_distance = torch.linalg.norm(camera_centers - average_camera_center, dim=-1)
+            max_distance = torch.max(camera_distance)
+            self.camera_extent = float(max_distance * 1.1)
 
 
 class DataParser:

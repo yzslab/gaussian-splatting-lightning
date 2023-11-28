@@ -281,7 +281,7 @@ class ColmapDataParser(DataParser):
             ))
 
         # calculate norm
-        norm = getNerfppNorm(R_list, T_list)
+        # norm = getNerfppNorm(R_list, T_list)
 
         # convert data to tensor
         R = torch.tensor(np.stack(R_list, axis=0), dtype=torch.float32)
@@ -355,7 +355,7 @@ class ColmapDataParser(DataParser):
                 xyz *= self.params.scene_scale
 
                 # rescale scene extent
-                norm["radius"] *= self.params.scene_scale
+                # norm["radius"] *= self.params.scene_scale
 
             # convert back to world-to-camera
             w2c = torch.linalg.inv(c2w)
@@ -423,6 +423,6 @@ class ColmapDataParser(DataParser):
                 xyz=xyz,
                 rgb=rgb,
             ),
-            camera_extent=norm["radius"],
+            # camera_extent=norm["radius"],
             appearance_group_ids=appearance_group_name_to_appearance_id,
         )

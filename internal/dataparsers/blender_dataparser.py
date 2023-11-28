@@ -126,12 +126,12 @@ class BlenderDataParser(DataParser):
 
         train_set = self._parse_transforms_json("train")
 
-        R_list = []
-        T_list = []
-        for i in train_set.cameras:
-            R_list.append(i.R.T.numpy())
-            T_list.append(i.T.numpy())
-        norm = getNerfppNorm(R_list=R_list, T_list=T_list)
+        # R_list = []
+        # T_list = []
+        # for i in train_set.cameras:
+        #     R_list.append(i.R.T.numpy())
+        #     T_list.append(i.T.numpy())
+        # norm = getNerfppNorm(R_list=R_list, T_list=T_list)
 
         return DataParserOutputs(
             train_set=train_set,
@@ -141,6 +141,6 @@ class BlenderDataParser(DataParser):
                 xyz=xyz,
                 rgb=rgb,
             ),
-            camera_extent=norm["radius"],
+            # camera_extent=norm["radius"],
             appearance_group_ids=None,
         )
