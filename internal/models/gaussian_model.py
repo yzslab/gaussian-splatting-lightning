@@ -392,8 +392,8 @@ class GaussianModel(nn.Module):
         self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling,
                                    new_rotation)
 
-    def densify_and_prune(self, max_grad, min_opacity, extent, prune_extent, max_screen_size):
-        grads = self.xyz_gradient_accum / self.denom
+    def densify_and_prune(self, max_grad, min_opacity, extent, prune_extent, max_screen_size, accum_grad_batches: int):
+        grads = self.xyz_gradient_accum / (self.denom / accum_grad_batches)
         grads[grads.isnan()] = 0.0
 
         self.densify_and_clone(grads, max_grad, extent)

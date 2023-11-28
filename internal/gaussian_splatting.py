@@ -31,6 +31,7 @@ class GaussianSplatting(LightningModule):
             output_path: str = None,
             save_val_output: bool = False,
             max_save_val_output: int = -1,
+            accumulate_grad_batches: int = 1,
             renderer: Renderer = lazy_instance(VanillaRenderer),
     ) -> None:
         super().__init__()
@@ -59,6 +60,8 @@ class GaussianSplatting(LightningModule):
         self.psnr = PeakSignalNoiseRatio()
 
         self.background_color = torch.tensor(background_color, dtype=torch.float32)
+        assert accumulate_grad_batches > 0
+        self.accumulate_grad_batches = accumulate_grad_batches
 
         self.batch_size = 1
         self.restored_epoch = 0
@@ -205,6 +208,8 @@ class GaussianSplatting(LightningModule):
         super().on_train_start()
 
     def training_step(self, batch, batch_idx):
+        is_final_accumulate_grad_batch = batch_idx % self.accumulate_grad_batches == 0
+
         camera, image_info = batch
         # image_name, gt_image, masked_pixels = image_info
 
@@ -217,7 +222,7 @@ class GaussianSplatting(LightningModule):
         self.renderer.before_training_step(global_step, self)
 
         # Every 1000 its we increase the levels of SH up to a maximum degree
-        if global_step % 1000 == 0:
+        if global_step % 1000 == 0 and is_final_accumulate_grad_batch:
             self.gaussian_model.oneupSHdegree()
 
         # forward
@@ -230,7 +235,7 @@ class GaussianSplatting(LightningModule):
         self.log("train/loss", loss, on_step=True, on_epoch=False, prog_bar=True, batch_size=self.batch_size)
 
         # log learning rate and gaussian count every 100 iterations (without plus one step)
-        if self.trainer.global_step % 100 == 0:
+        if self.trainer.global_step % 100 == 0 and is_final_accumulate_grad_batch:
             metrics_to_log = {
                 "train/gaussians_count": self.gaussian_model.get_xyz.shape[0],
             }
@@ -246,12 +251,10 @@ class GaussianSplatting(LightningModule):
             )
 
         # backward
-        for optimizer in optimizers:
-            optimizer.zero_grad(set_to_none=True)
-        self.manual_backward(loss)
+        self.manual_backward(loss / self.accumulate_grad_batches)
 
         # save before densification
-        if global_step in self.hparams["save_iterations"]:
+        if global_step in self.hparams["save_iterations"] and is_final_accumulate_grad_batch:
             # TODO: save on training end
             self.save_gaussian_to_ply()
 
@@ -266,31 +269,37 @@ class GaussianSplatting(LightningModule):
                 )
                 gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
-                if global_step > self.optimization_hparams.densify_from_iter and global_step % self.optimization_hparams.densification_interval == 0:
-                    size_threshold = 20 if global_step > self.optimization_hparams.opacity_reset_interval else None
-                    gaussians.densify_and_prune(
-                        self.hparams["gaussian"].optimization.densify_grad_threshold,
-                        0.005,
-                        extent=self.cameras_extent,
-                        prune_extent=self.prune_extent,
-                        max_screen_size=size_threshold,
-                    )
+                if is_final_accumulate_grad_batch:
+                    if global_step > self.optimization_hparams.densify_from_iter and global_step % self.optimization_hparams.densification_interval == 0:
+                        size_threshold = 20 if global_step > self.optimization_hparams.opacity_reset_interval else None
+                        gaussians.densify_and_prune(
+                            self.hparams["gaussian"].optimization.densify_grad_threshold,
+                            0.005,
+                            extent=self.cameras_extent,
+                            prune_extent=self.prune_extent,
+                            max_screen_size=size_threshold,
+                            accum_grad_batches=self.accumulate_grad_batches,
+                        )
 
-                if global_step % self.hparams["gaussian"].optimization.opacity_reset_interval == 0 or \
-                        (
-                                torch.all(self.background_color == 1.) and global_step == self.hparams[
-                            "gaussian"].optimization.densify_from_iter
-                        ):
-                    gaussians.reset_opacity()
+                    if global_step % self.hparams["gaussian"].optimization.opacity_reset_interval == 0 or \
+                            (
+                                    torch.all(self.background_color == 1.) and global_step == self.hparams[
+                                "gaussian"].optimization.densify_from_iter
+                            ):
+                        gaussians.reset_opacity()
 
-        # optimize
-        for optimizer in optimizers:
-            optimizer.step()
+        if is_final_accumulate_grad_batch:
+            # optimize
+            for optimizer in optimizers:
+                optimizer.step()
 
-        # schedule lr
-        self.gaussian_model.update_learning_rate(global_step)
-        for scheduler in schedulers:
-            scheduler.step()
+            # schedule lr
+            self.gaussian_model.update_learning_rate(global_step)
+            for scheduler in schedulers:
+                scheduler.step()
+
+            for optimizer in optimizers:
+                optimizer.zero_grad(set_to_none=True)
 
     def validation_step(self, batch, batch_idx, name: str = "val"):
         camera, image_info = batch
