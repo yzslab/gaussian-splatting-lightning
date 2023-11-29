@@ -58,7 +58,7 @@ def parse_camera_poses(camera_path: dict):
     c2w[..., :3, 1:3] *= -1
     w2c = torch.linalg.inv(c2w)
     fov = torch.deg2rad(torch.tensor(fov_list, dtype=torch.float))
-    fx = width / (2 * torch.atan(fov / 2))
+    fx = width / (2 * torch.tan(fov / 2))
     fy = fx
 
     return Cameras(
