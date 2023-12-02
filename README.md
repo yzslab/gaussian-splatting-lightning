@@ -178,6 +178,19 @@ python viewer.py \
     --vanilla_gs4d
 ```
 
+## F.A.Q.
+<b>Q: </b> The viewer shows my scene in unexpected orientation, how to rotate the camera, like the `U` and `O` key in the SIBR_viewer?
+
+<b>A: </b> You can click the 'Reset up direction' button on the right panel. Then the viewer will use your current orientation as the reference.
+* First use mouse to rotate your camera to the orientation you want
+* Then click the 'Reset up direction' button
+
+##
+
+<b>Q: </b> The web viewer is slow (or low fps, far from real-time).
+
+<b>A: </b> This is expected because of the overhead of the image transfer over network. You can get around 10fps in 1080P resolution, which is enough for you to view the reconstruction quality.
+
 # License
 This repository is licensed under MIT license. Except some thirdparty dependencies (e.g. files in `submodules` directory), files and codes copied from other repositories, which are separately licensed.
 ```text
