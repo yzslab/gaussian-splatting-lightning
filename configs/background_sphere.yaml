@@ -1,4 +1,5 @@
 data:
-  add_background_sphere: true
-  background_sphere_distance: 2.2
-  background_sphere_points: 204800
+  params:
+    add_background_sphere: true
+    background_sphere_distance: 2.2
+    background_sphere_points: 204800
