@@ -14,10 +14,14 @@ class ImageSet:
     image_paths: list
     """ Full path to the image file """
 
-    mask_paths: Optional[list]
-    """ Full path to the mask file """
-
     cameras: Cameras
+    """ Camera intrinscis and extrinsics """
+
+    depth_paths: Optional[list] = None
+    """ Full path to the depth file """
+
+    mask_paths: Optional[list] = None
+    """ Full path to the mask file """
 
     def __len__(self):
         return len(self.image_names)

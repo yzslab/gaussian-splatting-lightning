@@ -75,6 +75,24 @@ class NerfiesParams:
 
 
 @dataclass
+class MatrixCityParams:
+    train: list[str] = None
+
+    test: list[str] = None
+
+    scale: float = 0.01
+
+    depth_read_step: int = 1
+
+    depth_scale: float = 0.01
+
+    max_depth: float = 65_000
+    """ Using to remove sky, multiply with scale and depth_scale automatically """
+
+    max_points: int = 3_840_000
+
+
+@dataclass
 class DatasetParams:
     """
         Args:
@@ -90,6 +108,8 @@ class DatasetParams:
     nsvf: NSVFParams
 
     nerfies: NerfiesParams
+
+    matrix_city: MatrixCityParams
 
     image_scale_factor: float = 1.  # TODO
 
