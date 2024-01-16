@@ -82,12 +82,12 @@ class MatrixCityParams:
 
     scale: float = 0.01
 
-    depth_read_step: int = 1
-
     depth_scale: float = 0.01
 
     max_depth: float = 65_000
     """ Using to remove sky, multiply with scale and depth_scale automatically """
+
+    depth_read_step: int = 1
 
     max_points: int = 3_840_000
 
