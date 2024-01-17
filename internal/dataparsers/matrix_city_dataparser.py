@@ -54,7 +54,7 @@ class MatrixCityDataParser(DataParser):
             c2w_list = []
             for frame in transforms["frames"]:
                 frame_id = frame["frame_index"]
-                image_names.append("{:4d}".format(frame_id))
+                image_names.append("{:04d}".format(frame_id))
                 image_paths.append(os.path.join(
                     os.path.dirname(path),
                     "rgb",
