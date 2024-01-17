@@ -21,6 +21,7 @@ from internal.dataparsers.colmap_dataparser import ColmapDataParser
 from internal.dataparsers.blender_dataparser import BlenderDataParser
 from internal.dataparsers.nsvf_dataparser import NSVFDataParser
 from internal.dataparsers.nerfies_dataparser import NerfiesDataparser
+from internal.dataparsers.matrix_city_dataparser import MatrixCityDataParser
 from internal.utils.graphics_utils import store_ply, BasicPointCloud
 
 from tqdm import tqdm
@@ -238,7 +239,7 @@ class DataModule(LightningDataModule):
             self,
             path: str,
             params: DatasetParams,
-            type: Literal["colmap", "blender", "nsvf"] = None,
+            type: Literal["colmap", "blender", "nsvf", "nerfies", "matrixcity"] = None,
             distributed: bool = False,
             undistort_image: bool = False,
     ) -> None:
@@ -289,6 +290,8 @@ class DataModule(LightningDataModule):
             dataparser = NSVFDataParser(params=self.hparams["params"].nsvf, **dataparser_params)
         elif self.hparams["type"] == "nerfies":
             dataparser = NerfiesDataparser(params=self.hparams["params"].nerfies, **dataparser_params)
+        elif self.hparams["type"] == "matrixcity":
+            dataparser = MatrixCityDataParser(params=self.hparams["params"].matrix_city, **dataparser_params)
         else:
             raise ValueError("unsupported dataset type {}".format(self.hparams["type"]))
 
