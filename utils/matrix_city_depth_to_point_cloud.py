@@ -106,6 +106,12 @@ def build_point_cloud(frames: list[dict], max_point_per_image: int, max_depth: f
 
         # convert to world coordination
         points_3d_in_camera = homogenous_coordinate * depth[:, None]
+        """
+        convert to right-handed coordinates
+        see:
+            https://github.com/bmild/nerf/blob/18b8aebda6700ed659cb27a0c348b737a5f6ab60/run_nerf_helpers.py#L137
+            https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-generating-camera-rays/generating-camera-rays.html
+        """
         points_3d_in_camera[:, 1] *= -1
         points_3d_in_camera[:, 2] *= -1
         points_3d_in_world = np.matmul(points_3d_in_camera, c2w[:3, :3].T) + c2w[:3, 3]
