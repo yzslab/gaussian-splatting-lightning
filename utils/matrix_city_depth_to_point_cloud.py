@@ -18,6 +18,8 @@ def parse_args():
                         help="list of the path of the transforms.json")
     parser.add_argument("--output", type=str, required=True,
                         help="path to the output ply file")
+    parser.add_argument("--rgb", type=str, default="rgb",
+                        help="rgb image dirname")
     parser.add_argument("--scale", type=float, default=1.,
                         help="scene scale factor")
     parser.add_argument("--depth-scale", type=float, default=0.01,
@@ -46,7 +48,7 @@ def read_rgb(path: str):
     return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
 
-def build_point_cloud(frames: list[dict], max_point_per_image: int, max_depth: float, scene_scale: float, depth_scale: float):
+def build_point_cloud(frames: list[dict], max_point_per_image: int, max_depth: float, scene_scale: float, depth_scale: float, rgb_dirname: str):
     xyz_array_list = []
     rgb_array_list = []
 
@@ -56,7 +58,7 @@ def build_point_cloud(frames: list[dict], max_point_per_image: int, max_depth: f
     for frame in tqdm(frames):
         # build intrinsics matrix
         fov_x = frame["camera_angle_x"]
-        rgb = read_rgb(os.path.join(frame["base_dir"], "rgb", "{:04d}.png".format(frame["frame_index"])))
+        rgb = read_rgb(os.path.join(frame["base_dir"], rgb_dirname, "{:04d}.png".format(frame["frame_index"])))
         image_shape = rgb.shape
         height, width = image_shape[0], image_shape[1]
         fx = float(.5 * width / np.tan(.5 * fov_x))
@@ -154,7 +156,14 @@ def main():
     if args.max_points > 0:
         max_point_per_image = math.ceil(args.max_points / len(frames))
 
-    xyz, rgb = build_point_cloud(frames, max_point_per_image=max_point_per_image, max_depth=args.max_depth, scene_scale=args.scale, depth_scale=args.depth_scale)
+    xyz, rgb = build_point_cloud(
+        frames,
+        max_point_per_image=max_point_per_image,
+        max_depth=args.max_depth,
+        scene_scale=args.scale,
+        depth_scale=args.depth_scale,
+        rgb_dirname=args.rgb,
+    )
     final_pcd = o3d.geometry.PointCloud()
     final_pcd.points = o3d.utility.Vector3dVector(xyz)
     final_pcd.colors = o3d.utility.Vector3dVector(rgb / 255.)
