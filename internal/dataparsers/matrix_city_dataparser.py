@@ -116,8 +116,19 @@ class MatrixCityDataParser(DataParser):
             camera_type=torch.zeros_like(width),
         )
         if build_point_cloud is True:
-            ply_file_path = os.path.join(self.path, "point_cloud.ply")
             import open3d as o3d
+            import hashlib
+            import dataclasses
+
+            # check whether need to regenerate point cloud based on params
+            params_dict = dataclasses.asdict(self.params)
+            del params_dict["test"]  # ignore test set
+            params_json = json.dumps(params_dict, indent=4, ensure_ascii=False)
+            print(params_json)
+            ply_file_path = os.path.join(
+                self.path,
+                "{}.ply".format(hashlib.sha1(params_json.encode("utf-8")).hexdigest()),
+            )
             if os.path.exists(ply_file_path):
                 final_pcd = o3d.io.read_point_cloud(ply_file_path)
                 point_cloud = PointCloud(
@@ -206,6 +217,8 @@ class MatrixCityDataParser(DataParser):
                 final_pcd.points = o3d.utility.Vector3dVector(point_cloud.xyz)
                 final_pcd.colors = o3d.utility.Vector3dVector(point_cloud.rgb / 255.)
                 o3d.io.write_point_cloud(ply_file_path, final_pcd)
+                with open("{}.config.json".format(ply_file_path), "w") as f:
+                    f.write(params_json)
         else:
             point_cloud = None
         return ImageSet(
