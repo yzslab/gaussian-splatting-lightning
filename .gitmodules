@@ -1,12 +1,6 @@
-[submodule "submodules/diff-gaussian-rasterization"]
-	path = submodules/diff-gaussian-rasterization
-	url = https://github.com/graphdeco-inria/diff-gaussian-rasterization
 [submodule "submodules/simple-knn"]
 	path = submodules/simple-knn
 	url = https://gitlab.inria.fr/bkerbl/simple-knn.git
-[submodule "submodules/depth-diff-gaussian-rasterization"]
-	path = submodules/depth-diff-gaussian-rasterization
-	url = https://github.com/ingra14m/depth-diff-gaussian-rasterization.git
 [submodule "submodules/tiny-cuda-nn-fp32"]
 	path = submodules/tiny-cuda-nn-fp32
 	url = https://github.com/yzslab/tiny-cuda-nn-fp32.git
