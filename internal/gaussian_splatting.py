@@ -117,6 +117,7 @@ class GaussianSplatting(LightningModule):
             "denom": self.gaussian_model.denom,
             "spatial_lr_scale": self.gaussian_model.spatial_lr_scale,
             "active_sh_degree": self.gaussian_model.active_sh_degree,
+            "filter_3D": self.gaussian_model.filter_3D,
         }
         super().on_save_checkpoint(checkpoint)
 
@@ -198,6 +199,15 @@ class GaussianSplatting(LightningModule):
 
         return schedulers
 
+    def is_final_step(self):
+        if self.trainer.max_steps > 0 and self.trainer.global_step + 1 == self.trainer.max_steps:
+            return True
+        # TODO: make it works when max_epochs set
+        return False
+
+    def compute_3D_filter(self):
+        self.gaussian_model.compute_3D_filter(cameras=self.trainer.datamodule.dataparser_outputs.train_set.cameras)
+
     def on_train_start(self) -> None:
         global_step = self.trainer.global_step + 1
         if global_step < self.hparams["gaussian"].optimization.densify_until_iter and self.trainer.world_size > 1:
@@ -275,6 +285,7 @@ class GaussianSplatting(LightningModule):
                         prune_extent=self.prune_extent,
                         max_screen_size=size_threshold,
                     )
+                    self.compute_3D_filter()
 
                 if global_step % self.hparams["gaussian"].optimization.opacity_reset_interval == 0 or \
                         (
@@ -282,6 +293,10 @@ class GaussianSplatting(LightningModule):
                             "gaussian"].optimization.densify_from_iter
                         ):
                     gaussians.reset_opacity()
+
+            if global_step % 100 == 0 and global_step > self.optimization_hparams.densify_until_iter:
+                if self.is_final_step() is False:
+                    self.compute_3D_filter()
 
         # optimize
         for optimizer in optimizers:
@@ -337,6 +352,7 @@ class GaussianSplatting(LightningModule):
     def configure_optimizers(self):
         self.cameras_extent = self.trainer.datamodule.dataparser_outputs.camera_extent
         self.prune_extent = self.trainer.datamodule.prune_extent
+        self.compute_3D_filter()
         # gaussian_model.training_setup() must be called here, where parameters have been moved to GPUs
         self.gaussian_model.training_setup(self.hparams["gaussian"].optimization, self.cameras_extent)
         # scale after optimizer being configured, avoid lr scaling

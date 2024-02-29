@@ -1,4 +1,4 @@
-from typing import Optional, Literal
+from typing import Optional, Literal, List
 from dataclasses import dataclass
 
 
@@ -76,9 +76,9 @@ class NerfiesParams:
 
 @dataclass
 class MatrixCityParams:
-    train: list[str] = None
+    train: List[str] = None
 
-    test: list[str] = None
+    test: List[str] = None
 
     scale: float = 0.01
 

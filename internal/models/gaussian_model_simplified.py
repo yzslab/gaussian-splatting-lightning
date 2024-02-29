@@ -13,6 +13,7 @@ class GaussianModelSimplified(nn.Module):
             scaling: torch.Tensor,
             rotation: torch.Tensor,
             opacity: torch.Tensor,
+            filter_3D: torch.Tensor,
             sh_degree: int,
             device,
     ) -> None:
@@ -29,6 +30,8 @@ class GaussianModelSimplified(nn.Module):
 
         self._opacity_origin = None
 
+        self.filter_3D = filter_3D.to(device)
+
         self.max_sh_degree = sh_degree
         self.active_sh_degree = sh_degree
 
@@ -38,11 +41,13 @@ class GaussianModelSimplified(nn.Module):
         self._rotation = self._rotation.to(device)
         self._opacity = self._opacity.to(device)
         self._features = self._features.to(device)
+        self.filter_3D = self.filter_3D.to(device)
         return self
 
     @classmethod
-    def construct_from_state_dict(cls, state_dict, active_sh_degree, device):
+    def construct_from_state_dict(cls, state_dict, filter_3D, active_sh_degree, device):
         init_args = {
+            "filter_3D": filter_3D,
             "sh_degree": active_sh_degree,
             "device": device,
         }
@@ -71,6 +76,14 @@ class GaussianModelSimplified(nn.Module):
         return self._scaling
 
     @property
+    def get_scaling_with_3D_filter(self):
+        scales = self.get_scaling
+
+        scales = torch.square(scales) + torch.square(self.filter_3D)
+        scales = torch.sqrt(scales)
+        return scales
+
+    @property
     def get_rotation(self):
         return self._rotation
 
@@ -85,6 +98,20 @@ class GaussianModelSimplified(nn.Module):
     @property
     def get_opacity(self):
         return self._opacity
+
+    @property
+    def get_opacity_with_3D_filter(self):
+        opacity = self.get_opacity
+        # apply 3D filter
+        scales = self.get_scaling
+
+        scales_square = torch.square(scales)
+        det1 = scales_square.prod(dim=1)
+
+        scales_after_square = scales_square + torch.square(self.filter_3D)
+        det2 = scales_after_square.prod(dim=1)
+        coef = torch.sqrt(det1 / det2)
+        return opacity * coef[..., None]
 
     def select(self, mask: torch.tensor):
         if self._opacity_origin is None:

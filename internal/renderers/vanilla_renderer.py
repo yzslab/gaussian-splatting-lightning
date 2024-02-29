@@ -16,11 +16,17 @@ from internal.utils.sh_utils import eval_sh
 
 
 class VanillaRenderer(Renderer):
-    def __init__(self, compute_cov3D_python: bool = False, convert_SHs_python: bool = False):
+    def __init__(
+            self,
+            compute_cov3D_python: bool = False,
+            convert_SHs_python: bool = False,
+            kernel_size: float = 0.1,
+    ):
         super().__init__()
 
         self.compute_cov3D_python = compute_cov3D_python
         self.convert_SHs_python = convert_SHs_python
+        self.kernel_size = kernel_size
 
     def forward(
             self,
@@ -48,11 +54,15 @@ class VanillaRenderer(Renderer):
         tanfovx = math.tan(viewpoint_camera.fov_x * 0.5)
         tanfovy = math.tan(viewpoint_camera.fov_y * 0.5)
 
+        subpixel_offset = torch.zeros((int(viewpoint_camera.height), int(viewpoint_camera.width), 2), dtype=torch.float32, device="cuda")
+
         raster_settings = GaussianRasterizationSettings(
             image_height=int(viewpoint_camera.height),
             image_width=int(viewpoint_camera.width),
             tanfovx=tanfovx,
             tanfovy=tanfovy,
+            kernel_size=self.kernel_size,
+            subpixel_offset=subpixel_offset,
             bg=bg_color,
             scale_modifier=scaling_modifier,
             viewmatrix=viewpoint_camera.world_to_camera,
@@ -67,7 +77,7 @@ class VanillaRenderer(Renderer):
 
         means3D = pc.get_xyz
         means2D = screenspace_points
-        opacity = pc.get_opacity
+        opacity = pc.get_opacity_with_3D_filter
 
         # If precomputed 3d covariance is provided, use it. If not, then it will be computed from
         # scaling / rotation by the rasterizer.
@@ -77,7 +87,7 @@ class VanillaRenderer(Renderer):
         if self.compute_cov3D_python is True:
             cov3D_precomp = pc.get_covariance(scaling_modifier)
         else:
-            scales = pc.get_scaling
+            scales = pc.get_scaling_with_3D_filter
             rotations = pc.get_rotation
 
         # If precomputed colors are provided, use them. Otherwise, if it is desired to precompute colors

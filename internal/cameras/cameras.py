@@ -1,4 +1,4 @@
-from typing import Optional, Union
+from typing import Optional, Union, List
 from dataclasses import dataclass, field
 
 import torch
@@ -61,7 +61,7 @@ class Cameras:
     height: Tensor  # [n_cameras]
     appearance_id: Tensor  # [n_cameras]
     normalized_appearance_id: Optional[Tensor]  # [n_cameras]
-    distortion_params: Optional[Union[Tensor, list[Tensor]]]  # [n_cameras, 2 or 4 or 5 or 8 or 12 or 14], (k1,k2,p1,p2[,k3[,k4,k5,k6[,s1,s2,s3,s4[,τx,τy]]]]) of 4, 5, 8, 12 or 14 elements
+    distortion_params: Optional[Union[Tensor, List[Tensor]]]  # [n_cameras, 2 or 4 or 5 or 8 or 12 or 14], (k1,k2,p1,p2[,k3[,k4,k5,k6[,s1,s2,s3,s4[,τx,τy]]]]) of 4, 5, 8, 12 or 14 elements
     camera_type: Tensor  # Int[n_cameras]
 
     world_to_camera: Tensor = field(init=False)  # [n_cameras, 4, 4], transposed

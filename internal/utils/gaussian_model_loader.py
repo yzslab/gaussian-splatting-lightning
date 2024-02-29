@@ -51,7 +51,7 @@ class GaussianModelLoader:
         sh_degree = hparams["gaussian"].sh_degree
 
         # initialize gaussian and renderer model
-        model = GaussianModelSimplified.construct_from_state_dict(checkpoint["state_dict"], sh_degree, device)
+        model = GaussianModelSimplified.construct_from_state_dict(checkpoint["state_dict"], checkpoint["gaussian_model_extra_state_dict"]["filter_3D"], sh_degree, device)
         # extract state dict of renderer
         renderer = hparams["renderer"]
         renderer_state_dict = {}

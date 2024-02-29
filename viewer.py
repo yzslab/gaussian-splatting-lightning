@@ -23,7 +23,7 @@ DROPDOWN_USE_DIRECT_APPEARANCE_EMBEDDING_VALUE = "@Direct"
 class Viewer:
     def __init__(
             self,
-            model_paths: list[str],
+            model_paths: List[str],
             host: str = "0.0.0.0",
             port: int = 8080,
             background_color: Tuple = (0, 0, 0),
