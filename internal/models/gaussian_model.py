@@ -53,11 +53,11 @@ class GaussianModel(nn.Module):
 
         self.setup_functions()
 
-    def extra_params_to(self, device, dtype):
-        self.max_radii2D = self.max_radii2D.to(device=device, dtype=dtype)
-        self.xyz_gradient_accum = self.xyz_gradient_accum.to(device=device, dtype=dtype)
-        self.denom = self.denom.to(device=device, dtype=dtype)
-        self.filter_3D = self.filter_3D.to(device=device, dtype=dtype)
+    def extra_params_to(self, *args, **kwargs):
+        self.max_radii2D = self.max_radii2D.to(*args, **kwargs)
+        self.xyz_gradient_accum = self.xyz_gradient_accum.to(*args, **kwargs)
+        self.denom = self.denom.to(*args, **kwargs)
+        self.filter_3D = self.filter_3D.to(*args, **kwargs)
 
     @property
     def get_scaling(self):
@@ -230,7 +230,7 @@ class GaussianModel(nn.Module):
         self.percent_dense = training_args.percent_dense
 
         # some tensor may still in CPU, move to the same device as the _xyz
-        self.extra_params_to(self._xyz.device, self._xyz.dtype)
+        # self.extra_params_to(self._xyz.device, self._xyz.dtype)
 
         l = [
             {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
