@@ -1,5 +1,6 @@
 import os.path
-from typing import Tuple, List, Union
+from typing import Tuple, List, Union, Any
+from typing_extensions import Self
 
 import torch.optim
 import torchvision
@@ -401,3 +402,8 @@ class GaussianSplatting(LightningModule):
         os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
         self.trainer.save_checkpoint(checkpoint_path)
         print("checkpoint save to {}".format(checkpoint_path))
+
+    def to(self, *args: Any, **kwargs: Any) -> Self:
+        return_value = super().to(*args, **kwargs)
+        self.gaussian_model.extra_params_to(*args, **kwargs)
+        return return_value
