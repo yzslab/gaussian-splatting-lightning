@@ -8,6 +8,7 @@
 * Deformable Gaussians
   * <a href="https://ingra14m.github.io/Deformable-Gaussians/">Deformable 3D Gaussians</a>
   * <a href="https://guanjunwu.github.io/4dgs/index.html">4D Gaussian</a> (Viewer Only)
+* Mip-Splatting (On the dedicated branch: <a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/mip_splatting">mip_splatting</a>)
 * Load arbitrary number of images without OOM
 * Interactive web viewer
   * Load multiple models
