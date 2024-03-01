@@ -69,6 +69,7 @@ class GaussianModelSimplified(nn.Module):
             features_rest=gaussians.features_extra,
             scaling=gaussians.scales,
             rotation=gaussians.rotations,
+            filter_3D=gaussians.filter_3D,
         )
 
     @property

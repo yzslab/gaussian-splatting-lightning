@@ -16,6 +16,7 @@ class Gaussian:
     features_extra: Union[np.ndarray, torch.Tensor]  # [n, 3, 15], or [n, 15, 3]
     scales: Union[np.ndarray, torch.Tensor]  # [n, 3]
     rotations: Union[np.ndarray, torch.Tensor]  # [n, 4]
+    filter_3D: Union[np.ndarray, torch.Tensor]  # [n, ]
 
     @classmethod
     def load_from_ply(cls, path: str, sh_degrees: int):
@@ -27,6 +28,8 @@ class Gaussian:
             np.asarray(plydata.elements[0]["z"]),
         ), axis=1)
         opacities = np.asarray(plydata.elements[0]["opacity"])[..., np.newaxis]
+
+        filter_3D = np.asarray(plydata.elements[0]["filter_3D"])[..., np.newaxis]
 
         features_dc = np.zeros((xyz.shape[0], 3, 1))
         features_dc[:, 0, 0] = np.asarray(plydata.elements[0]["f_dc_0"])
@@ -62,10 +65,13 @@ class Gaussian:
             features_extra=features_extra,
             scales=scales,
             rotations=rots,
+            filter_3D=filter_3D,
         )
 
     @classmethod
     def load_from_state_dict(cls, sh_degrees: int, state_dict: dict, key_prefix: str = "gaussian_model._"):
+        raise NotImplementedError()
+
         init_args = {
             "sh_degrees": sh_degrees,
         }
@@ -91,6 +97,7 @@ class Gaussian:
             features_extra=torch.tensor(self.features_extra, dtype=torch.float).transpose(1, 2),
             scales=torch.tensor(self.scales, dtype=torch.float),
             rotations=torch.tensor(self.rotations, dtype=torch.float),
+            filter_3D=torch.tensor(self.filter_3D, dtype=torch.float),
         )
 
     def to_ply_format(self):
@@ -103,6 +110,7 @@ class Gaussian:
             features_extra=self.features_extra.transpose(1, 2).cpu().numpy(),
             scales=self.scales.cpu().numpy(),
             rotations=self.rotations.cpu().numpy(),
+            filter_3D=self.filter_3D.cpu().numpy(),
         )
 
     def save_to_ply(self, path: str):
@@ -124,7 +132,7 @@ class Gaussian:
         scale = gaussian.scales
         rotation = gaussian.rotations
 
-        def construct_list_of_attributes():
+        def construct_list_of_attributes(exclude_filter=False):
             l = ['x', 'y', 'z', 'nx', 'ny', 'nz']
             # All channels except the 3 DC
             for i in range(gaussian.features_dc.shape[1] * gaussian.features_dc.shape[2]):
@@ -137,12 +145,14 @@ class Gaussian:
                 l.append('scale_{}'.format(i))
             for i in range(gaussian.rotations.shape[1]):
                 l.append('rot_{}'.format(i))
+            if not exclude_filter:
+                l.append('filter_3D')
             return l
 
         dtype_full = [(attribute, 'f4') for attribute in construct_list_of_attributes()]
 
         elements = np.empty(xyz.shape[0], dtype=dtype_full)
-        attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
+        attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation, self.filter_3D), axis=1)
         elements[:] = list(map(tuple, attributes))
         el = PlyElement.describe(elements, 'vertex')
         PlyData([el]).write(path)
