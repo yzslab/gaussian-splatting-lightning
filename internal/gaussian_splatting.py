@@ -225,6 +225,9 @@ class GaussianSplatting(LightningModule):
         image, viewspace_point_tensor, visibility_filter, radii = outputs["render"], outputs["viewspace_points"], \
             outputs["visibility_filter"], outputs["radii"]
 
+        # retrieve viewspace_points_grad_scale if provided
+        viewspace_points_grad_scale = outputs.get("viewspace_points_grad_scale", None)
+
         self.log("train/rgb_diff", rgb_diff_loss, on_step=True, on_epoch=False, prog_bar=False, batch_size=self.batch_size)
         self.log("train/ssim", ssim_metric, on_step=True, on_epoch=False, prog_bar=False, batch_size=self.batch_size)
         self.log("train/loss", loss, on_step=True, on_epoch=False, prog_bar=True, batch_size=self.batch_size)
@@ -264,7 +267,7 @@ class GaussianSplatting(LightningModule):
                     gaussians.max_radii2D[visibility_filter],
                     radii[visibility_filter]
                 )
-                gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
+                gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter, scale=viewspace_points_grad_scale)
 
                 if global_step > self.optimization_hparams.densify_from_iter and global_step % self.optimization_hparams.densification_interval == 0:
                     size_threshold = 20 if global_step > self.optimization_hparams.opacity_reset_interval else None

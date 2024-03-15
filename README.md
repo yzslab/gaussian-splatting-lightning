@@ -38,8 +38,12 @@ pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https
 
 # install other requirements
 pip install -r requirements.txt
-# optional one, you can skip this one unless you want to train with appearance variation images
+
+# below requirements are optional
+#   if you want to train with appearance variation images
 pip install ./submodules/tiny-cuda-nn-fp32/bindings/torch
+#   if you want to use nerfstudio-project/gsplat
+pip install gsplat==0.1.8
 ```
 
 ## Training
@@ -81,6 +85,15 @@ python main.py fit \
     --data.path DATASET_PATH \
     -n EXPERIMENT_NAME
 ```
+
+### Use <a hrrf="https://github.com/nerfstudio-project/gsplat">nerfstudio-project/gsplat</a>
+Make sure that command `which nvcc` can produce output, or gsplat will be disabled automatically.
+```bash
+python main.py fit \
+    --config configs/gsplat.yaml \
+    ...
+```
+
 ### Multi-GPU training
 <b>[NOTE]</b> Multi-GPU training can only be enabled after densification. You can start a single GPU training at the beginning, and save a checkpoint after densification finishing. Then resume from this checkpoint and enable multi-GPU training.
 
