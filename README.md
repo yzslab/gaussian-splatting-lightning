@@ -86,7 +86,7 @@ python main.py fit \
     -n EXPERIMENT_NAME
 ```
 
-### Use <a hrrf="https://github.com/nerfstudio-project/gsplat">nerfstudio-project/gsplat</a>
+### Use <a href="https://github.com/nerfstudio-project/gsplat">nerfstudio-project/gsplat</a>
 Make sure that command `which nvcc` can produce output, or gsplat will be disabled automatically.
 ```bash
 python main.py fit \
