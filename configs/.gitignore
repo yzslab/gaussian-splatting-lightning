@@ -12,3 +12,4 @@
 !deformable_blender_rotate_xyz.yaml
 !deformable_real.yaml
 !deformable_6dof_real.yaml
+!gsplat.yaml
