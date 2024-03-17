@@ -110,9 +110,10 @@ def project_gaussians(
     ], device=radius.device).long()
     block = torch.tensor([block_width, block_height, 1], dtype=torch.int, device=radius.device)
     block_xy = block[0:2].unsqueeze(0)  # [1, 2[xy]]
-    ## get rect
+    ## get rect, inclusive min, exclusive max (differ to the vanilla version)
     rect_min = ((means_2d_on_image_plane[:, 0:2] - radius) / block_xy).int()
-    rect_max = ((means_2d_on_image_plane[:, 0:2] + radius + block_xy - 1) / block_xy).int()
+    # rect_max = ((means_2d_on_image_plane[:, 0:2] + radius + block_xy - 1) / block_xy).int()  # this will report CUDA memory access error
+    rect_max = ((means_2d_on_image_plane[:, 0:2] + radius) / block_xy).int() + 1
     for rect in [rect_min, rect_max]:
         for i in range(2):
             rect[:, i] = torch.clamp(rect[:, i], min=0, max=tile_grid[i])
