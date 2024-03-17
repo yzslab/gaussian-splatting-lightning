@@ -16,7 +16,8 @@
   * Scene editor
   * Video camera path editor
 * Video renderer
-## Installation
+* Switch between diff-gaussian-rasterization and <a href="https://github.com/nerfstudio-project/gsplat">nerfstudio-project/gsplat</a>
+## 1. Installation
 ```bash
 # clone repository
 git clone --recursive https://github.com/yzslab/gaussian-splatting-lightning.git
@@ -46,23 +47,42 @@ pip install ./submodules/tiny-cuda-nn-fp32/bindings/torch
 pip install gsplat==0.1.8
 ```
 
-## Training
-### Colmap Dataset
-* Base
+## 2. Training
+### 2.1 Basic command
 ```bash
+# Dataset type will be detected automatically
 python main.py fit \
     --data.path DATASET_PATH \
     -n EXPERIMENT_NAME
 ```
-* With mask 
+### 2.2 Some useful options
+* It is recommended to use config file `configs/blender.yaml` when training on blender dataset.
 ```bash
+python main.py fit \
+    --config configs/blender.yaml \
+    ...
+```
+* With mask (colmap dataset only)
+```bash
+# the requirements of mask
+#   * must be single channel
+#   * zero(black) represent the masked pixel (won't be used to supervise learning)
+#   * the filename of the mask file must be image filename + '.png', 
+#     e.g.: the mask of '001.jpg' is '001.jpg.png'
 --data.params.colmap.mask_dir MASK_DIR_PATH
+```
+* Use downsampled images (colmap dataset only)
+
+You can use `utils/image_downsample.py` to downsample your images, e.g. 4x downsample: `python utils/image_downsample.py PATH_TO_DIRECTORY_THAT_STORE_IMAGES --factor 4`
+```bash
+# it will load images from `images_4` directory
+--data.params.colmap.down_sample_factor 4
 ```
 * Load large dataset without OOM
 ```bash
 --data.params.train_max_num_images_to_cache 1024
 ```
-* Enable appearance model to train on appearance variation images
+* Enable appearance model to train on appearance variation images (colmap dataset only)
 ```bash
 # 1. Generate appearance groups
 python generate_image_apperance_groups.py PATH_TO_DATASET \
@@ -77,16 +97,7 @@ python main.py fit \
     ...
 ```
 
-### Blender Dataset
-<b>[IMPORTANT]</b> Use config file `configs/blender.yaml` when training on blender dataset.
-```bash
-python main.py fit \
-    --config configs/blender.yaml \
-    --data.path DATASET_PATH \
-    -n EXPERIMENT_NAME
-```
-
-### Use <a href="https://github.com/nerfstudio-project/gsplat">nerfstudio-project/gsplat</a>
+### 2.3 Use <a href="https://github.com/nerfstudio-project/gsplat">nerfstudio-project/gsplat</a>
 Make sure that command `which nvcc` can produce output, or gsplat will be disabled automatically.
 ```bash
 python main.py fit \
@@ -94,7 +105,7 @@ python main.py fit \
     ...
 ```
 
-### Multi-GPU training
+### 2.4 Multi-GPU training
 <b>[NOTE]</b> Multi-GPU training can only be enabled after densification. You can start a single GPU training at the beginning, and save a checkpoint after densification finishing. Then resume from this checkpoint and enable multi-GPU training.
 
 You will get improved PSNR and SSIM with more GPUs:
@@ -117,7 +128,7 @@ python main.py fit \
     --ckpt_path last  # find latest checkpoint automatically, or provide a path to checkpoint file
 ```
 
-### <a href="https://ingra14m.github.io/Deformable-Gaussians/">Deformable 3D Gaussians</a>
+### 2.5 <a href="https://ingra14m.github.io/Deformable-Gaussians/">Deformable 3D Gaussians</a>
 <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/177b3fbf-fdd2-490f-b446-433a4d929502"></video>
 
 ```bash
@@ -126,7 +137,7 @@ python main.py fit \
     --data.path ...
 ```
 
-## Evaluation
+## 3. Evaluation
 
 ### Evaluate on validation set
 ```bash
@@ -148,13 +159,13 @@ python main.py <validate or test> \
 ```
 Then you can find the images in `outputs/lego/<val or test>`.
 
-## Web Viewer
+## 4. Web Viewer
 | Transform | Camera Path | Edit |
 | --- | --- | --- |
 | <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/de1ff3c3-a27a-4600-8c76-ab6551df6fca"></video> | <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/3f87243d-d9a1-41e2-9d51-225735925db4"></video> | <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/7cf0ccf2-44e9-4fc9-87cc-740b7bbda488"></video> |
 
 
-### Base
+### 4.1 Basic usage
 * Also works for <a href="https://github.com/graphdeco-inria/gaussian-splatting">graphdeco-inria/gaussian-splatting</a>'s ply output
 ```bash
 python viewer.py TRAINING_OUTPUT_PATH
@@ -163,7 +174,7 @@ python viewer.py TRAINING_OUTPUT_PATH
 #   python viewer.py outputs/lego/checkpoints/epoch=300-step=30000.ckpt
 #   python viewer.py outputs/lego/baseline/point_cloud/iteration_30000/point_cloud.ply  # only works with VanillaRenderer
 ```
-### Load multiple models and enable transform options
+### 4.2 Load multiple models and enable transform options
 ```bash
 python viewer.py \
     outputs/garden \
@@ -172,7 +183,7 @@ python viewer.py \
     --enable_transform
 ```
 
-### Load model trained by other implementations
+### 4.3 Load model trained by other implementations
 <b>[NOTE]</b> The commands in this section only design for third-party outputs
 
 * <a href="https://github.com/ingra14m/Deformable-3D-Gaussians">ingra14m/Deformable-3D-Gaussians</a>
@@ -192,7 +203,7 @@ python viewer.py \
     --vanilla_gs4d
 ```
 
-## F.A.Q.
+## 5. F.A.Q.
 <b>Q: </b> The viewer shows my scene in unexpected orientation, how to rotate the camera, like the `U` and `O` key in the SIBR_viewer?
 
 <b>A: </b> You can click the 'Reset up direction' button on the right panel. Then the viewer will use your current orientation as the reference.
