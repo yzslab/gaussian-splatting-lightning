@@ -27,6 +27,7 @@ class PythonPreprocessGSplatRenderer(Renderer):
         #     scale_modifier=scaling_modifier,
         #     quaternions=pc.get_rotation / pc.get_rotation.norm(dim=-1, keepdim=True),
         #     world_to_camera=viewpoint_camera.world_to_camera,
+        #     full_ndc_projection=viewpoint_camera.full_projection,
         #     fx=viewpoint_camera.fx,
         #     fy=viewpoint_camera.fy,
         #     cx=viewpoint_camera.cx,
