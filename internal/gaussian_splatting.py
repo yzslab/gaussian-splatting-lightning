@@ -262,6 +262,18 @@ class GaussianSplatting(LightningModule):
         with torch.no_grad():
             # Densification
             if global_step < self.hparams["gaussian"].optimization.densify_until_iter:
+                # if viewspace_point_tensor.shape[0] != visibility_filter.shape[0]:
+                #     # viewspace_point_tensor and radii only contain visible gaussians
+                #
+                #     original_viewspace_point_tensor = viewspace_point_tensor
+                #     original_radii = radii
+                #
+                #     viewspace_point_tensor = torch.zeros((visibility_filter.shape[0], 2), dtype=original_viewspace_point_tensor.dtype, device=original_viewspace_point_tensor.device)
+                #     viewspace_point_tensor.grad = torch.zeros_like(viewspace_point_tensor)
+                #     viewspace_point_tensor.grad[visibility_filter] = original_viewspace_point_tensor.grad
+                #     radii = torch.zeros((visibility_filter.shape[0],), dtype=original_radii.dtype, device=original_radii.device)
+                #     radii[visibility_filter] = original_radii
+
                 gaussians = self.gaussian_model
                 gaussians.max_radii2D[visibility_filter] = torch.max(
                     gaussians.max_radii2D[visibility_filter],

@@ -13,3 +13,4 @@
 !deformable_real.yaml
 !deformable_6dof_real.yaml
 !gsplat.yaml
+!pypreprocess_gsplat.yaml

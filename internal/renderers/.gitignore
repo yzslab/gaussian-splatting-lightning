@@ -9,3 +9,4 @@
 !vanilla_deformable_renderer.py
 !vanilla_gs4d_renderer.py
 !gsplat_renderer.py
+!pypreprocess_gsplat_renderer.py
