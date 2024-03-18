@@ -110,8 +110,8 @@ def project_gaussians(
 
     # calculate touched tiles
     tile_grid = torch.tensor([
-        (img_width + block_width - 1) / block_width,
-        (img_height + block_height - 1) / block_height,
+        (img_width + block_width - 1) // block_width,
+        (img_height + block_height - 1) // block_height,
         1,
     ], device=radius.device).long()
     block = torch.tensor([block_width, block_height, 1], dtype=torch.int, device=radius.device)
