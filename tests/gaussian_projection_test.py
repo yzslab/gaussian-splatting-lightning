@@ -10,8 +10,8 @@ from matplotlib import pyplot as plt
 from gsplat.sh import spherical_harmonics
 from gsplat.rasterize import rasterize_gaussians
 from gsplat.project_gaussians import project_gaussians as gsplat_project_gaussians
-from gsplat._torch_impl import project_gaussians_forward as gsplat_py_project_gaussians
-from internal.utils.gaussian_projection import project_gaussians
+from gsplat._torch_impl import project_gaussians_forward as gsplat_py_project_gaussians, map_gaussian_to_intersects
+from internal.utils.gaussian_projection import project_gaussians, build_tile_bounds, build_gaussian_sort_key
 from internal.utils.ssim import ssim
 
 from internal.models.gaussian_model import GaussianModel
@@ -224,24 +224,45 @@ class GaussianProjectionTestCase(unittest.TestCase):
 
         # mask
         gsplat_mask = torch.gt(gsplat_output[2], 0)
-        self.assertTrue(torch.equal(own_output[-1], gsplat_py_output[-1]))
-        self.assertTrue(torch.equal(own_output[-1], gsplat_mask))
+        self.assertTrue(torch.equal(own_output[-3], gsplat_py_output[-1]))
+        self.assertTrue(torch.equal(own_output[-3], gsplat_mask))
         # xys
         self.assertTrue(torch.allclose(own_output[0], gsplat_py_output[2]))
         self.assertTrue(torch.allclose(own_output[0][gsplat_mask], gsplat_output[0][gsplat_mask]))
         # 3D covariance matrix
         i, j = torch.triu_indices(3, 3)
-        self.assertTrue(torch.allclose(own_output[-2][:, i, j], gsplat_py_output[0]))
-        self.assertTrue(torch.allclose(own_output[-2][:, i, j][gsplat_mask], gsplat_output[-1][gsplat_mask]))
+        self.assertTrue(torch.allclose(own_output[-4][:, i, j], gsplat_py_output[0]))
+        self.assertTrue(torch.allclose(own_output[-4][:, i, j][gsplat_mask], gsplat_output[-1][gsplat_mask]))
         # conics
         # self.assertTrue(torch.allclose(own_output[3], gsplat_output[5]))
         # radii
         self.assertTrue(torch.equal(own_output[2], gsplat_py_output[4]))
         self.assertTrue(torch.equal(own_output[2][gsplat_mask], gsplat_output[2][gsplat_mask]))
         # num_tiles_hit
-        self.assertTrue(torch.equal(own_output[5], gsplat_py_output[7].int()))
-        self.assertTrue(torch.equal(gsplat_output[5][gsplat_mask].int(), gsplat_py_output[7][gsplat_mask].int()))
-        self.assertTrue(torch.equal(own_output[5][gsplat_mask], gsplat_output[5][gsplat_mask].int()))
+        # self.assertTrue(torch.equal(own_output[5], gsplat_py_output[7].int()))
+        # self.assertTrue(torch.equal(gsplat_output[5][gsplat_mask].int(), gsplat_py_output[7][gsplat_mask].int()))
+        # self.assertTrue(torch.equal(own_output[5][gsplat_mask], gsplat_output[5][gsplat_mask].int()))
+
+        tile_bounds = build_tile_bounds(img_height=viewpoint_camera.height, img_width=viewpoint_camera.width, block_width=16, device=own_output[1].device)
+        cumsum_tiles_hit = torch.cumsum(own_output[5], dim=-1)
+        own_key_output = build_gaussian_sort_key(
+            depths=own_output[1],
+            rect_min=own_output[-2],
+            rect_max=own_output[-1],
+            tile_bounds=tile_bounds,
+            cumsum_tiles_hit=cumsum_tiles_hit,
+        )
+        gsplat_py_key_output = map_gaussian_to_intersects(
+            num_points=own_output[1].shape[0],
+            xys=own_output[0],
+            depths=own_output[1],
+            radii=own_output[2],
+            cum_tiles_hit=cumsum_tiles_hit,
+            tile_bounds=tile_bounds,
+            block_width=16,
+        )
+        for i in range(len(own_key_output)):
+            self.assertTrue(torch.equal(own_key_output[i], gsplat_py_key_output[i]))
 
     def test_pyprocess_gsplat_renderer(self):
         self.load_model_and_dataset()

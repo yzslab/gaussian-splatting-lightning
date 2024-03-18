@@ -1,5 +1,6 @@
 from typing import Tuple
 import torch
+import struct
 
 
 def project_gaussians(
@@ -17,7 +18,7 @@ def project_gaussians(
         img_width: torch.Tensor,
         block_width: int,
         min_depth: float = 0.01,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Args
        means_3d (Tensor): xyzs of gaussians.
@@ -137,7 +138,7 @@ def project_gaussians(
     num_tiles_hit = torch.where(invert_mask, 0, touched_tile_count)
     depths = torch.where(invert_mask, 0, means_3d_in_camera_space[:, 2])
 
-    return xys, depths, radii, conic, compensation, num_tiles_hit, cov3d, mask
+    return xys, depths, radii, conic, compensation, num_tiles_hit, cov3d, mask, rect_min, rect_max
 
     # # build masks
     # with torch.no_grad():
@@ -156,6 +157,58 @@ def project_gaussians(
     #     touched_tile_count[is_touched_any_tiles_after_min_depth_filter], \
     #     cov_3d[is_touched_any_tiles_after_min_depth_filter], \
     #     is_touched_any_tiles
+
+
+def build_tile_bounds(
+        img_height: torch.Tensor,
+        img_width: torch.Tensor,
+        block_width: int,
+        device,
+):
+    block_height = block_width
+    return torch.tensor([
+        (img_width + block_width - 1) // block_width,
+        (img_height + block_height - 1) // block_height,
+        1,
+    ], device=device).int()
+
+
+def build_gaussian_sort_key(
+        depths: torch.Tensor,  # [n]
+        rect_min: torch.Tensor,  # [n, 2-xy]
+        rect_max: torch.Tensor,  # [n, 2-xy]
+        tile_bounds: torch.Tensor,  # [3]
+        cumsum_tiles_hit: torch.Tensor,  # [n]
+):
+    total_tiles_hit = cumsum_tiles_hit[-1].item()
+    sort_key = torch.zeros((total_tiles_hit,), dtype=torch.int64, device=depths.device)
+    gaussian_ids = torch.zeros((total_tiles_hit,), dtype=torch.int32, device=depths.device)
+
+    # the cumsum of the previous gaussian is the base index
+    base_index_list = torch.concat([
+        torch.tensor([0], dtype=cumsum_tiles_hit.dtype, device=cumsum_tiles_hit.device),
+        cumsum_tiles_hit,
+    ], dim=0)
+
+    for gaussian_idx in range(depths.shape[0]):
+        # Get raw byte representation of the float value at the given index
+        raw_bytes = struct.pack("f", depths[gaussian_idx])
+
+        # Interpret those bytes as an int32_t
+        depth_id_n = struct.unpack("i", raw_bytes)[0]
+
+        index = base_index_list[gaussian_idx].item()
+
+        for i in range(rect_min[gaussian_idx][1], rect_max[gaussian_idx][1]):
+            row_tile_id_offset = tile_bounds[0] * i
+            for j in range(rect_min[gaussian_idx][0], rect_max[gaussian_idx][0]):
+                tile_id = row_tile_id_offset + j
+                sort_key[index] = (tile_id << 32) | depth_id_n
+                gaussian_ids[index] = gaussian_idx
+
+                index += 1
+
+    return sort_key, gaussian_ids
 
 
 def build_rotation_matrix(quaternions):
