@@ -3,6 +3,14 @@
 * Multi-GPU training can only be enabled after densification
 ## Features
 * Multi-GPU/Node training (only after densification)
+* Switch between diff-gaussian-rasterization and <a href="https://github.com/nerfstudio-project/gsplat">nerfstudio-project/gsplat</a>
+* Multiple dataset types support
+  * <a href="https://drive.google.com/drive/folders/1JDdLGDruGNXWnM1eqY1FNL9PlStjaKWi">Blender (nerf_synthetic)</a>
+  * Colmap
+  * <a href="https://github.com/google/nerfies?tab=readme-ov-file#datasets">Nerfies</a>
+  * <a href="https://github.com/facebookresearch/NSVF?tab=readme-ov-file#dataset">NSVF (Synthetic only)</a>
+  * <a href="https://city-super.github.io/matrixcity/">MatrixCity</a>
+  * <a href="https://www.cs.ubc.ca/~kmyi/imw2020/data.html">PhotoTourism</a>
 * Dynamic object mask
 * Appearance variation support
 * Deformable Gaussians
@@ -16,7 +24,6 @@
   * Scene editor
   * Video camera path editor
 * Video renderer
-* Switch between diff-gaussian-rasterization and <a href="https://github.com/nerfstudio-project/gsplat">nerfstudio-project/gsplat</a>
 ## 1. Installation
 ```bash
 # clone repository
