@@ -24,7 +24,7 @@ class SWAGRenderer(Renderer):
         self.temperature = temperature
         self.eps = eps
 
-    def _get_normalize_xyz(self, gaussian_model):
+    def _get_normalized_xyz(self, gaussian_model):
         xyz = gaussian_model.get_xyz.detach()
         normalized_xyz = (xyz - self.bbox_min.to(xyz.device)) / self.bbox_size.to(xyz.device)
         return normalized_xyz
@@ -38,7 +38,7 @@ class SWAGRenderer(Renderer):
             u=None,
     ):
         colors = eval_gaussian_model_sh(viewpoint_camera, pc)  # [n, 3]
-        image_conditioned_colors, image_conditioned_delta_alpha = self.swag_model(colors, self._get_normalize_xyz(gaussian_model=pc), viewpoint_camera.appearance_id)
+        image_conditioned_colors, image_conditioned_delta_alpha = self.swag_model(colors, self._get_normalized_xyz(gaussian_model=pc), viewpoint_camera.appearance_id)
 
         # fix U at 0.5 during the evaluation
         if u is None:
@@ -89,7 +89,7 @@ class SWAGRenderer(Renderer):
             xyz = torch.tensor(lightning_module.trainer.datamodule.dataparser_outputs.point_cloud.xyz)
             self.bbox_min = torch.min(xyz, dim=0).values
             self.bbox_max = torch.max(xyz, dim=0).values
-            self.bbox_size = self.bbox_max - self.bbox_min * 1.1
+            self.bbox_size = (self.bbox_max - self.bbox_min) * 1.1
 
             print("bbox_size={}".format(self.bbox_size.cpu().numpy()))
 
