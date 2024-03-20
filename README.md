@@ -57,11 +57,11 @@ pip install gsplat==0.1.8
 ## 2. Training
 ### 2.1 Basic command
 ```bash
-# Dataset type will be detected automatically
 python main.py fit \
     --data.path DATASET_PATH \
     -n EXPERIMENT_NAME
 ```
+It can detect some dataset type automatically. You can also specify type with option `--data.type`. Possible values are: `colmap`, `blender`, `nsvf`, `nerfies`, `matrixcity`, `phototourism`.
 ### 2.2 Some useful options
 * It is recommended to use config file `configs/blender.yaml` when training on blender dataset.
 ```bash
