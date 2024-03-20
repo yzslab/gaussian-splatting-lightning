@@ -1,0 +1,14 @@
+# SWAG: Splatting in the Wild images with Appearance-conditioned Gaussians
+# [NOTE] This is not an official implementation, and can not reach the metrics in the paper
+data:
+  type: phototourism
+  params:
+    phototourism:
+      split_mode: experiment
+      down_sample_factor: 2
+model:
+  renderer:
+    class_path: internal.renderers.swag_renderer.SWAGRenderer
+    init_args:
+      embedding:
+        num_embeddings: 1536  # make sure this value larger than max_image_id+1 (or max_image_num+1)

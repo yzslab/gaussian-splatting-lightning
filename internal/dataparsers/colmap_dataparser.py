@@ -363,25 +363,7 @@ class ColmapDataParser(DataParser):
             T = w2c[:, :3, 3]
 
         # build split indices
-        assert self.params.eval_step > 1, "eval_step must > 1"
-        eval_step = self.params.eval_step
-        if self.params.eval_image_select_mode == "ratio":
-            eval_image_num = max(math.ceil(self.params.eval_ratio * len(image_name_list)), 1)
-            eval_step = len(image_name_list) // eval_image_num
-
-        if self.params.split_mode == "experiment":
-            # split train set and val set
-            training_set_indices = []
-            validation_set_indices = []
-            for i in range(len(image_name_list)):
-                if i % eval_step == 0:
-                    validation_set_indices.append(i)
-                else:
-                    training_set_indices.append(i)
-        else:
-            # train set contains val set
-            training_set_indices = list(range(len(image_name_list)))
-            validation_set_indices = training_set_indices[::eval_step]
+        training_set_indices, validation_set_indices = self.build_split_indices(image_name_list)
 
         # split
         image_set = []
@@ -426,3 +408,26 @@ class ColmapDataParser(DataParser):
             # camera_extent=norm["radius"],
             appearance_group_ids=appearance_group_name_to_appearance_id,
         )
+
+    def build_split_indices(self, image_name_list) -> Tuple[list, list]:
+        assert self.params.eval_step > 1, "eval_step must > 1"
+        eval_step = self.params.eval_step
+        if self.params.eval_image_select_mode == "ratio":
+            eval_image_num = max(math.ceil(self.params.eval_ratio * len(image_name_list)), 1)
+            eval_step = len(image_name_list) // eval_image_num
+
+        if self.params.split_mode == "experiment":
+            # split train set and val set
+            training_set_indices = []
+            validation_set_indices = []
+            for i in range(len(image_name_list)):
+                if i % eval_step == 0:
+                    validation_set_indices.append(i)
+                else:
+                    training_set_indices.append(i)
+        else:
+            # train set contains val set
+            training_set_indices = list(range(len(image_name_list)))
+            validation_set_indices = training_set_indices[::eval_step]
+
+        return training_set_indices, validation_set_indices

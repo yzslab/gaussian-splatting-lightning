@@ -93,6 +93,11 @@ class MatrixCityParams:
 
 
 @dataclass
+class PhotoTourismParams(ColmapParams):
+    pass
+
+
+@dataclass
 class DatasetParams:
     """
         Args:
@@ -110,6 +115,8 @@ class DatasetParams:
     nerfies: NerfiesParams
 
     matrix_city: MatrixCityParams
+
+    phototourism: PhotoTourismParams
 
     image_scale_factor: float = 1.  # TODO
 
