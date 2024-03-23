@@ -1,0 +1,2 @@
+model:
+  renderer: internal.renderers.mip_splatting_gsplat_renderer.MipSplattingGSplatRenderer
