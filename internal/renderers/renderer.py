@@ -41,8 +41,18 @@ class Renderer(torch.nn.Module):
     ):
         return
 
+    def after_training_step(
+            self,
+            step: int,
+            module,
+    ):
+        return
+
     def setup(self, stage: str, *args: Any, **kwargs: Any) -> Any:
         pass
 
-    def training_setup(self) -> Tuple[Optional[torch.optim.Optimizer], Optional[torch.optim.lr_scheduler.LRScheduler]]:
+    def training_setup(self, module: lightning.LightningModule) -> Tuple[Optional[torch.optim.Optimizer], Optional[torch.optim.lr_scheduler.LRScheduler]]:
         return None, None
+
+    def on_load_checkpoint(self, module, checkpoint):
+        pass

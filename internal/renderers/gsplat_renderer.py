@@ -70,3 +70,78 @@ class GSPlatRenderer(Renderer):
             "visibility_filter": radii > 0,
             "radii": radii,
         }
+
+    @staticmethod
+    def render(
+            means3D: torch.Tensor,  # xyz
+            opacities: torch.Tensor,
+            scales: Optional[torch.Tensor],
+            rotations: Optional[torch.Tensor],  # remember to normalize them yourself
+            features: Optional[torch.Tensor],  # shs
+            active_sh_degree: int,
+            viewpoint_camera,
+            bg_color: torch.Tensor,
+            scaling_modifier=1.0,
+            anti_aliased: bool = True,
+            colors_precomp: Optional[torch.Tensor] = None,
+            block_size: int = 16,
+            extra_projection_kwargs: dict = None,
+    ):
+        img_height = int(viewpoint_camera.height.item())
+        img_width = int(viewpoint_camera.width.item())
+
+        xys, depths, radii, conics, comp, num_tiles_hit, cov3d = project_gaussians(  # type: ignore
+            means3d=means3D,
+            scales=scales,
+            glob_scale=scaling_modifier,
+            quats=rotations,
+            viewmat=viewpoint_camera.world_to_camera.T[:3, :],
+            projmat=viewpoint_camera.full_projection.T,
+            fx=viewpoint_camera.fx.item(),
+            fy=viewpoint_camera.fy.item(),
+            cx=viewpoint_camera.cx.item(),
+            cy=viewpoint_camera.cy.item(),
+            img_height=img_height,
+            img_width=img_width,
+            block_width=block_size,
+            **({} if extra_projection_kwargs is None else extra_projection_kwargs),
+        )
+
+        try:
+            xys.retain_grad()
+        except:
+            pass
+
+        if colors_precomp is None:
+            viewdirs = means3D.detach() - viewpoint_camera.camera_center  # (N, 3)
+            viewdirs = viewdirs / viewdirs.norm(dim=-1, keepdim=True)
+            rgbs = spherical_harmonics(active_sh_degree, viewdirs, features)
+            rgbs = torch.clamp(rgbs + 0.5, min=0.0)  # type: ignore
+        else:
+            rgbs = colors_precomp
+
+        if anti_aliased is True:
+            opacities = opacities * comp[:, None]
+
+        rgb = rasterize_gaussians(  # type: ignore
+            xys,
+            depths,
+            radii,
+            conics,
+            num_tiles_hit,  # type: ignore
+            rgbs,
+            opacities,
+            img_height=img_height,
+            img_width=img_width,
+            block_width=block_size,
+            background=bg_color,
+            return_alpha=False,
+        )  # type: ignore
+
+        return {
+            "render": rgb.permute(2, 0, 1),
+            "viewspace_points": xys,
+            "viewspace_points_grad_scale": 0.5 * max(img_height, img_width),
+            "visibility_filter": radii > 0,
+            "radii": radii,
+        }

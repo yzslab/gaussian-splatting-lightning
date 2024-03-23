@@ -99,7 +99,7 @@ class SWAGRenderer(Renderer):
             embedding=self.embedding_config,
         )
 
-    def training_setup(self) -> Tuple[Optional[torch.optim.Optimizer], Optional[torch.optim.lr_scheduler.LRScheduler]]:
+    def training_setup(self, module) -> Tuple[Optional[torch.optim.Optimizer], Optional[torch.optim.lr_scheduler.LRScheduler]]:
         params = list(self.swag_model.parameters())
 
         self.uniform_sampler = Uniform(

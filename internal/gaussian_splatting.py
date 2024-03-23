@@ -1,5 +1,5 @@
 import os.path
-from typing import Tuple, List, Union
+from typing import Tuple, List, Union, Any
 
 import torch.optim
 import torchvision
@@ -7,7 +7,7 @@ import wandb
 from lightning.pytorch.core.module import MODULE_OPTIMIZERS
 from torchmetrics.image import PeakSignalNoiseRatio
 from lightning.pytorch import LightningDataModule, LightningModule
-from lightning.pytorch.utilities.types import OptimizerLRScheduler, LRSchedulerPLType
+from lightning.pytorch.utilities.types import OptimizerLRScheduler, LRSchedulerPLType, STEP_OUTPUT
 import lightning.pytorch.loggers
 
 from internal.configs.model import ModelParams
@@ -107,6 +107,9 @@ class GaussianSplatting(LightningModule):
         self.restored_epoch = checkpoint["epoch"]
         self.restored_global_step = checkpoint["global_step"]
 
+        # call for renderer
+        self.renderer.on_load_checkpoint(self, checkpoint)
+
         super().on_load_checkpoint(checkpoint)
 
     def on_save_checkpoint(self, checkpoint) -> None:
@@ -198,6 +201,14 @@ class GaussianSplatting(LightningModule):
 
         return schedulers
 
+    def is_final_step(self, step: int = None):
+        if step is None:
+            step = self.trainer.global_step
+        if self.trainer.max_steps > 0 and step >= self.trainer.max_steps:
+            return True
+        # TODO: make it works when max_epochs set
+        return False
+
     def on_train_start(self) -> None:
         global_step = self.trainer.global_step + 1
         if global_step < self.hparams["gaussian"].optimization.densify_until_iter and self.trainer.world_size > 1:
@@ -254,8 +265,8 @@ class GaussianSplatting(LightningModule):
         self.manual_backward(loss)
 
         # save before densification
-        if global_step in self.hparams["save_iterations"]:
-            # TODO: save on training end
+        # checkpoint will always be saved after final step, so do not save for final step here
+        if global_step in self.hparams["save_iterations"] and self.is_final_step(global_step) is False:
             self.save_gaussian_to_ply()
 
         # before gradient descend
@@ -306,6 +317,10 @@ class GaussianSplatting(LightningModule):
         self.gaussian_model.update_learning_rate(global_step)
         for scheduler in schedulers:
             scheduler.step()
+
+    def on_train_batch_end(self, outputs: STEP_OUTPUT, batch: Any, batch_idx: int) -> None:
+        self.renderer.after_training_step(self.trainer.global_step, self)
+        super().on_train_batch_end(outputs, batch, batch_idx)
 
     def validation_step(self, batch, batch_idx, name: str = "val"):
         camera, image_info = batch
@@ -365,7 +380,7 @@ class GaussianSplatting(LightningModule):
         schedulers = []
 
         # renderer optimizer and scheduler setup
-        renderer_optimizer, renderer_scheduler = self.renderer.training_setup()
+        renderer_optimizer, renderer_scheduler = self.renderer.training_setup(self)
         if renderer_optimizer is not None:
             optimizers.append(renderer_optimizer)
         if renderer_scheduler is not None:

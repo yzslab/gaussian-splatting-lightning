@@ -71,7 +71,7 @@ class RGBMLPRenderer(VanillaRenderer):
         ], dim=-1)).to(torch.float)
         return super().forward(viewpoint_camera, pc, bg_color, scaling_modifier, override_color)
 
-    def training_setup(self) -> Tuple[Optional[torch.optim.Optimizer], Optional[torch.optim.lr_scheduler.LRScheduler]]:
+    def training_setup(self, module) -> Tuple[Optional[torch.optim.Optimizer], Optional[torch.optim.lr_scheduler.LRScheduler]]:
         optimizer = torch.optim.Adam(
             params=[
                 {"params": list(self.rgb_network.parameters()), "name": "mlp_renderer"},

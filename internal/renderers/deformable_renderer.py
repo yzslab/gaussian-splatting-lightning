@@ -192,7 +192,7 @@ class DeformableRenderer(Renderer):
         )
         self.smooth_term = get_linear_noise_func(lr_init=0.1, lr_final=1e-15, lr_delay_mult=0.01, max_steps=20000)
 
-    def training_setup(self) -> Tuple[Optional[torch.optim.Optimizer], Optional[torch.optim.lr_scheduler.LRScheduler]]:
+    def training_setup(self, module) -> Tuple[Optional[torch.optim.Optimizer], Optional[torch.optim.lr_scheduler.LRScheduler]]:
         optimizer = torch.optim.Adam(
             [{
                 "params": list(self.deform_model.parameters()),

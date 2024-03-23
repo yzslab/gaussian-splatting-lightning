@@ -78,7 +78,7 @@ class AppearanceMLPRenderer(VanillaRenderer):
             gamma_activation=appearance.gamma_activation,
         )
 
-    def training_setup(self) -> Tuple[Optional[torch.optim.Optimizer], Optional[torch.optim.lr_scheduler.LRScheduler]]:
+    def training_setup(self, module) -> Tuple[Optional[torch.optim.Optimizer], Optional[torch.optim.lr_scheduler.LRScheduler]]:
         appearance_optimizer = torch.optim.Adam(
             [
                 {"params": list(self.appearance_model.parameters()), "name": "appearance"}
