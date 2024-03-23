@@ -11,3 +11,4 @@
 !gsplat_renderer.py
 !pypreprocess_gsplat_renderer.py
 !swag_renderer.py
+!mip_splatting_gsplat_renderer.py

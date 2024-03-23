@@ -15,3 +15,4 @@
 !gsplat.yaml
 !pypreprocess_gsplat.yaml
 !swag_baseline.yaml
+!mip_splatting_gsplat.yaml
