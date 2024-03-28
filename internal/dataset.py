@@ -229,6 +229,10 @@ class CacheDataLoader(torch.utils.data.DataLoader):
                     del not_cached[:self.max_cache_num]
 
                     # cache
+                    try:
+                        del cached
+                    except:
+                        pass
                     cached = self._cache_data(to_cache)
 
                     for i in cached:
