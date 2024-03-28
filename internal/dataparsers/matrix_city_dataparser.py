@@ -41,8 +41,11 @@ class MatrixCityDataParser(DataParser):
             fov_x = transforms["camera_angle_x"]
 
             # get image shape, assert all image use same shape
+            base_dir = os.path.dirname(path)
+            if "path" in transforms["frames"][0]:
+                base_dir = os.path.join(base_dir, transforms["frames"][0]["path"])
             image = Image.open(os.path.join(
-                os.path.dirname(path),
+                base_dir,
                 "rgb",
                 "{:04d}.png".format(0),
             ))
@@ -53,15 +56,19 @@ class MatrixCityDataParser(DataParser):
             # build image name list and camera poses
             c2w_list = []
             for frame in transforms["frames"]:
+                # TODO: load fov provided by frame
                 frame_id = frame["frame_index"]
                 image_names.append("{:04d}".format(frame_id))
+                base_dir = os.path.dirname(path)
+                if "path" in frame:
+                    base_dir = os.path.join(base_dir, frame["path"])
                 image_paths.append(os.path.join(
-                    os.path.dirname(path),
+                    base_dir,
                     "rgb",
                     "{:04d}.png".format(frame_id),
                 ))
                 depth_paths.append(os.path.join(
-                    os.path.dirname(path),
+                    base_dir,
                     "depth",
                     "{:04d}.exr".format(frame_id),
                 ))
@@ -224,6 +231,7 @@ class MatrixCityDataParser(DataParser):
         return ImageSet(
             image_names=image_names,
             image_paths=image_paths,
+            depth_paths=depth_paths,
             mask_paths=None,
             cameras=cameras,
         ), point_cloud
