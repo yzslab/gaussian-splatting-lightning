@@ -5,6 +5,7 @@ import multiprocessing.pool
 import argparse
 import json
 import numpy as np
+import lightning
 import torch
 import torchvision
 from tqdm import tqdm
