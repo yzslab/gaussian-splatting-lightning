@@ -51,7 +51,7 @@ pip install -r requirements.txt
 #   if you want to train with appearance variation images
 pip install ./submodules/tiny-cuda-nn-fp32/bindings/torch
 #   if you want to use nerfstudio-project/gsplat
-pip install gsplat==0.1.8
+pip install gsplat==0.1.10
 ```
 
 ## 2. Training
