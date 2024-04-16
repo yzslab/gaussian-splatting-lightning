@@ -1,5 +1,5 @@
 """
-using colmap sparse model to undistort mask images,
+using colmap sparse model to undistort mask images
 """
 
 import add_pypath
@@ -63,7 +63,7 @@ with open(txt_file_path, "w") as f:
                 continue
             # create output directory
             os.makedirs(os.path.dirname(os.path.join(args.output_path, mask_name)), exist_ok=True)
-            # get undistortion parameter string
+            # get camera parameter string
             camera_id = image.camera_id
             camera_param_string = camera_param_string_key_by_camera_id[camera_id]
 
