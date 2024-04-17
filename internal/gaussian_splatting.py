@@ -28,6 +28,7 @@ class GaussianSplatting(LightningModule):
             camera_extent_factor: float = 1.,
             # enable_appearance_model: bool = False,
             background_color: Tuple[float, float, float] = (0., 0., 0.),
+            random_background: bool = False,
             output_path: str = None,
             save_val_output: bool = False,
             max_save_val_output: int = -1,
@@ -59,6 +60,10 @@ class GaussianSplatting(LightningModule):
         self.psnr = PeakSignalNoiseRatio()
 
         self.background_color = torch.tensor(background_color, dtype=torch.float32)
+        if random_background is True:
+            self.get_background_color = self._random_background_color
+        else:
+            self.get_background_color = self._fixed_background_color
 
         self.batch_size = 1
         self.restored_epoch = 0
@@ -69,6 +74,12 @@ class GaussianSplatting(LightningModule):
 
     def _l2_loss(self, predict: torch.Tensor, gt: torch.Tensor):
         return torch.mean((predict - gt) ** 2)
+
+    def _fixed_background_color(self):
+        return self.background_color
+
+    def _random_background_color(self):
+        return torch.rand(3)
 
     def setup(self, stage: str):
         if stage == "fit":
@@ -146,12 +157,12 @@ class GaussianSplatting(LightningModule):
                 self,
                 camera,
                 self.gaussian_model,
-                bg_color=self.background_color.to(camera.R.device),
+                bg_color=self.get_background_color().to(camera.R.device),
             )
         return self.renderer(
             camera,
             self.gaussian_model,
-            bg_color=self.background_color.to(camera.R.device),
+            bg_color=self._fixed_background_color().to(camera.R.device),
         )
 
     def forward_with_loss_calculation(self, camera, image_info):
