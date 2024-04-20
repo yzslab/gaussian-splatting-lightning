@@ -1,11 +1,13 @@
 import os.path
 from typing import Tuple, List, Union, Any
+from typing_extensions import Self
 
 import torch.optim
 import torchvision
 import wandb
 from lightning.pytorch.core.module import MODULE_OPTIMIZERS
 from torchmetrics.image import PeakSignalNoiseRatio
+from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 from lightning.pytorch import LightningDataModule, LightningModule
 from lightning.pytorch.utilities.types import OptimizerLRScheduler, LRSchedulerPLType, STEP_OUTPUT
 import lightning.pytorch.loggers
@@ -18,6 +20,8 @@ from internal.models.gaussian_model import GaussianModel
 from internal.renderers import Renderer, VanillaRenderer
 from internal.utils.ssim import ssim
 from jsonargparse import lazy_instance
+
+lpips: LearnedPerceptualImagePatchSimilarity
 
 
 class GaussianSplatting(LightningModule):
@@ -58,6 +62,8 @@ class GaussianSplatting(LightningModule):
         # metrics
         self.lambda_dssim = gaussian.optimization.lambda_dssim
         self.psnr = PeakSignalNoiseRatio()
+        global lpips  # prevent from storing in state_dict
+        lpips = LearnedPerceptualImagePatchSimilarity(normalize=True)
 
         self.background_color = torch.tensor(background_color, dtype=torch.float32)
         if random_background is True:
@@ -345,6 +351,8 @@ class GaussianSplatting(LightningModule):
         self.log(f"{name}/loss", loss, on_epoch=True, prog_bar=True, batch_size=self.batch_size)
         self.log(f"{name}/psnr", self.psnr(outputs["render"], gt_image), on_epoch=True, prog_bar=True,
                  batch_size=self.batch_size)
+        self.log(f"{name}/lpips", lpips(outputs["render"].clamp(0., 1.).unsqueeze(0), gt_image.unsqueeze(0)), on_epoch=True, prog_bar=True,
+                 batch_size=self.batch_size)
 
         # write validation image
         if self.trainer.global_rank == 0 and self.hparams["save_val_output"] is True and (
@@ -426,3 +434,8 @@ class GaussianSplatting(LightningModule):
         os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
         self.trainer.save_checkpoint(checkpoint_path)
         print("checkpoint save to {}".format(checkpoint_path))
+
+    def to(self, *args: Any, **kwargs: Any) -> Self:
+        global lpips
+        lpips = lpips.to(*args, **kwargs)
+        return super().to(*args, **kwargs)
