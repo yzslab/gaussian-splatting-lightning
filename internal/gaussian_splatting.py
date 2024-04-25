@@ -14,6 +14,7 @@ import lightning.pytorch.loggers
 
 from internal.configs.model import ModelParams
 # from internal.configs.appearance import AppearanceModelParams
+from internal.configs.light_gaussian import LightGaussian
 
 from internal.models.gaussian_model import GaussianModel
 # from internal.models.appearance_model import AppearanceModel
@@ -28,6 +29,7 @@ class GaussianSplatting(LightningModule):
     def __init__(
             self,
             gaussian: ModelParams,
+            light_gaussian: LightGaussian,
             save_iterations: List[int],
             camera_extent_factor: float = 1.,
             # enable_appearance_model: bool = False,
@@ -56,6 +58,7 @@ class GaussianSplatting(LightningModule):
         # )
 
         self.optimization_hparams = self.hparams["gaussian"].optimization
+        self.light_gaussian_hparams = light_gaussian
 
         self.renderer = renderer
 
@@ -335,7 +338,54 @@ class GaussianSplatting(LightningModule):
         for scheduler in schedulers:
             scheduler.step()
 
+    def light_gaussian_prune(self, global_step):
+        """
+        LightGaussian prune
+        """
+        if global_step not in self.light_gaussian_hparams.prune_steps:
+            return
+
+        from internal.utils.light_gaussian import get_count_and_score
+        from internal.utils.light_gaussian import calculate_v_imp_score
+        from internal.utils.light_gaussian import get_prune_mask
+
+        # try to detect whether anti aliased enabled
+        try:
+            anti_aliased = self.renderer.anti_aliased
+        except:
+            anti_aliased = False
+
+        with torch.no_grad():
+            count, score = get_count_and_score(
+                self.gaussian_model,
+                self.trainer.datamodule.dataparser_outputs.train_set.cameras,
+                anti_aliased,
+            )
+            v_list = calculate_v_imp_score(
+                self.gaussian_model.get_scaling,
+                score,
+                self.light_gaussian_hparams.v_pow,
+            )
+
+            # TODO: `self.light_gaussian_hparams.prune_steps` should be sorted
+            prune_step_index = self.light_gaussian_hparams.prune_steps.index(global_step)
+            prune_percent = self.light_gaussian_hparams.prune_percent * (self.light_gaussian_hparams.prune_decay ** prune_step_index)
+            prune_mask = get_prune_mask(prune_percent, v_list)
+
+            print(f"number_of_gaussian={self.gaussian_model.get_xyz.shape[0]}, "
+                  f"number_to_prune={prune_mask.sum().item()}, "
+                  f"prune_percent={prune_percent}, "
+                  f"anti_aliased={anti_aliased}")
+            self.gaussian_model.prune_points(prune_mask)
+            print(f"number_of_gaussian_after_pruning={self.gaussian_model.get_xyz.shape[0]}")
+
     def on_train_batch_end(self, outputs: STEP_OUTPUT, batch: Any, batch_idx: int) -> None:
+        # the value of `trainer.global_step` here
+        # is the same as the local variable `global_step` in training_step
+        global_step = self.trainer.global_step
+
+        self.light_gaussian_prune(global_step)
+
         self.renderer.after_training_step(self.trainer.global_step, self)
         super().on_train_batch_end(outputs, batch, batch_idx)
 

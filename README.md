@@ -16,7 +16,8 @@
 * Deformable Gaussians
   * <a href="https://ingra14m.github.io/Deformable-Gaussians/">Deformable 3D Gaussians</a>
   * <a href="https://guanjunwu.github.io/4dgs/index.html">4D Gaussian</a> (Viewer Only)
-* Mip-Splatting (On the dedicated branch: <a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/mip_splatting">mip_splatting</a>)
+* <a href="https://niujinshuchong.github.io/mip-splatting/">Mip-Splatting</a>
+* <a href="https://lightgaussian.github.io/">LightGaussian</a>
 * Load arbitrary number of images without OOM
 * Interactive web viewer
   * Load multiple models
@@ -25,44 +26,73 @@
   * Video camera path editor
 * Video renderer
 ## 1. Installation
+1.1. Clone repository
+
 ```bash
 # clone repository
 git clone --recursive https://github.com/yzslab/gaussian-splatting-lightning.git
 cd gaussian-splatting-lightning
-# if you forgot the `--recursive` options, you can run below git commands after cloning:
-#   git submodule sync --recursive
-#   git submodule update --init --recursive --force
+```
 
+* If you forgot the `--recursive` options, you can run below git commands after cloning:
 
+  ```bash
+   git submodule sync --recursive
+   git submodule update --init --recursive --force
+  ```
+
+1.2. Create virtual environment
+
+```bash
 # create virtual environment
 conda create -yn gspl python=3.9 pip
 conda activate gspl
-
-# install the PyTorch first, you must install the one match to the version of your nvcc (nvcc --version)
-# for cuda 11.7
-pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2
-# for cuda 11.8
-pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
-
-# install other requirements
-pip install -r requirements.txt
-
-# below requirements are optional
-#   if you want to train with appearance variation images
-pip install ./submodules/tiny-cuda-nn-fp32/bindings/torch
-#   if you want to use nerfstudio-project/gsplat
-pip install gsplat==0.1.10
 ```
 
+1.3. Install PyTorch
+* Tested on `PyTorch==2.0.1`
+* You must install the one match to the version of your nvcc (nvcc --version)
+* For CUDA 11.8
+
+  ```bash
+  pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
+  ```
+
+1.4. Install requirements
+
+```bash
+pip install -r requirements.txt
+```
+
+1.5. Install optional requirements
+* If you want to train with appearance variation images
+
+  ```bash
+  pip install ./submodules/tiny-cuda-nn-fp32/bindings/torch
+  ```
+
+* If you want to use nerfstudio-project/gsplat
+  * Vanilla version
+
+    ```bash
+    pip install gsplat==0.1.10
+    ```
+
+  * If you need MipSplatting, LightGaussian
+
+    ```bash
+    pip install git+https://github.com/yzslab/gsplat.git
+    ```
+
 ## 2. Training
-### 2.1 Basic command
+### 2.1. Basic command
 ```bash
 python main.py fit \
     --data.path DATASET_PATH \
     -n EXPERIMENT_NAME
 ```
 It can detect some dataset type automatically. You can also specify type with option `--data.type`. Possible values are: `colmap`, `blender`, `nsvf`, `nerfies`, `matrixcity`, `phototourism`.
-### 2.2 Some useful options
+### 2.2. Some useful options
 * It is recommended to use config file `configs/blender.yaml` when training on blender dataset.
 ```bash
 python main.py fit \
@@ -104,7 +134,7 @@ python main.py fit \
     ...
 ```
 
-### 2.3 Use <a href="https://github.com/nerfstudio-project/gsplat">nerfstudio-project/gsplat</a>
+### 2.3. Use <a href="https://github.com/nerfstudio-project/gsplat">nerfstudio-project/gsplat</a>
 Make sure that command `which nvcc` can produce output, or gsplat will be disabled automatically.
 ```bash
 python main.py fit \
@@ -112,7 +142,7 @@ python main.py fit \
     ...
 ```
 
-### 2.4 Multi-GPU training
+### 2.4. Multi-GPU training
 <b>[NOTE]</b> Multi-GPU training can only be enabled after densification. You can start a single GPU training at the beginning, and save a checkpoint after densification finishing. Then resume from this checkpoint and enable multi-GPU training.
 
 You will get improved PSNR and SSIM with more GPUs:
@@ -135,7 +165,7 @@ python main.py fit \
     --ckpt_path last  # find latest checkpoint automatically, or provide a path to checkpoint file
 ```
 
-### 2.5 <a href="https://ingra14m.github.io/Deformable-Gaussians/">Deformable 3D Gaussians</a>
+### 2.5. <a href="https://ingra14m.github.io/Deformable-Gaussians/">Deformable 3D Gaussians</a>
 <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/177b3fbf-fdd2-490f-b446-433a4d929502"></video>
 
 ```bash
@@ -143,6 +173,33 @@ python main.py fit \
     --config configs/deformable_blender.yaml \
     --data.path ...
 ```
+
+### 2.6. <a href="https://niujinshuchong.github.io/mip-splatting/">Mip-Splatting</a>
+```bash
+python main.py fit \
+    --config configs/mip_splatting_gsplat.yaml \
+    --data.path ...
+```
+
+### 2.7. <a href="https://lightgaussian.github.io/">LightGaussian</a>
+* Prune only currently
+* Train & densify & prune
+
+  ```bash
+  ... fit \
+      --config configs/light_gaussian/train_densify_prune-gsplat.yaml \
+      --data.path ...
+  ```
+
+* Prune & finetune (make sure to use the same hparams as the input model used)
+
+  ```bash
+  ... fit \
+      --config configs/light_gaussian/prune_finetune-gsplat.yaml \
+      --data.path ... \
+      ... \
+      --ckpt_path YOUR_CHECKPOINT_PATH
+  ```
 
 ## 3. Evaluation
 
