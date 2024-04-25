@@ -25,6 +25,7 @@ class GaussianModelSimplified(nn.Module):
         self._rotation = torch.nn.functional.normalize(rotation).to(device)
         self._opacity = torch.sigmoid(opacity).to(device)
 
+        # TODO: load only specific dimensions correspond to the sh_degree
         self._features = torch.cat([features_dc, features_rest], dim=1).to(device)
 
         self._opacity_origin = None
@@ -73,6 +74,11 @@ class GaussianModelSimplified(nn.Module):
     @property
     def get_rotation(self):
         return self._rotation
+
+    @property
+    def get_normalized_rotation(self):
+        rotations = self.get_rotation
+        return rotations / rotations.norm(dim=-1, keepdim=True)
 
     @property
     def get_xyz(self):
