@@ -66,4 +66,4 @@ class AppearanceModel(nn.Module):
         grayscale_factors = grayscale_factors.reshape((-1, 1, 1))
         gamma = gamma.reshape((-1, 1, 1))
 
-        return grayscale_factors, gamma
+        return grayscale_factors.to(torch.float), gamma.to(torch.float)

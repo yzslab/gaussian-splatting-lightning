@@ -26,7 +26,7 @@
   * Video camera path editor
 * Video renderer
 ## 1. Installation
-1.1. Clone repository
+### 1.1. Clone repository
 
 ```bash
 # clone repository
@@ -41,7 +41,7 @@ cd gaussian-splatting-lightning
    git submodule update --init --recursive --force
   ```
 
-1.2. Create virtual environment
+### 1.2. Create virtual environment
 
 ```bash
 # create virtual environment
@@ -49,7 +49,7 @@ conda create -yn gspl python=3.9 pip
 conda activate gspl
 ```
 
-1.3. Install PyTorch
+### 1.3. Install PyTorch
 * Tested on `PyTorch==2.0.1`
 * You must install the one match to the version of your nvcc (nvcc --version)
 * For CUDA 11.8
@@ -58,17 +58,17 @@ conda activate gspl
   pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
   ```
 
-1.4. Install requirements
+### 1.4. Install requirements
 
 ```bash
 pip install -r requirements.txt
 ```
 
-1.5. Install optional requirements
+### 1.5. Install optional packages
 * If you want to train with appearance variation images
 
   ```bash
-  pip install ./submodules/tiny-cuda-nn-fp32/bindings/torch
+  pip install git+https://github.com/NVlabs/tiny-cuda-nn/#subdirectory=bindings/torch
   ```
 
 * If you want to use nerfstudio-project/gsplat
