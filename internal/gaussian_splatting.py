@@ -39,6 +39,7 @@ class GaussianSplatting(LightningModule):
             save_val_output: bool = False,
             max_save_val_output: int = -1,
             renderer: Renderer = lazy_instance(VanillaRenderer),
+            absgrad: bool = False,
     ) -> None:
         super().__init__()
         self.automatic_optimization = False
@@ -310,6 +311,8 @@ class GaussianSplatting(LightningModule):
                     gaussians.max_radii2D[visibility_filter],
                     radii[visibility_filter]
                 )
+                if self.hparams["absgrad"] is True:
+                    viewspace_point_tensor.grad = viewspace_point_tensor.absgrad
                 gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter, scale=viewspace_points_grad_scale)
 
                 if global_step > self.optimization_hparams.densify_from_iter and global_step % self.optimization_hparams.densification_interval == 0:
