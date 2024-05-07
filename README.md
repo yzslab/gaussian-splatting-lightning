@@ -18,6 +18,7 @@
   * <a href="https://guanjunwu.github.io/4dgs/index.html">4D Gaussian</a> (Viewer Only)
 * <a href="https://niujinshuchong.github.io/mip-splatting/">Mip-Splatting</a>
 * <a href="https://lightgaussian.github.io/">LightGaussian</a>
+* <a href="https://ty424.github.io/AbsGS.github.io/">AbsGS</a> / EfficientGS
 * Load arbitrary number of images without OOM
 * Interactive web viewer
   * Load multiple models
@@ -182,7 +183,7 @@ python main.py fit \
 ```
 
 ### 2.7. <a href="https://lightgaussian.github.io/">LightGaussian</a>
-* Prune only currently
+* Prune & finetune only currently
 * Train & densify & prune
 
   ```bash
@@ -200,6 +201,13 @@ python main.py fit \
       ... \
       --ckpt_path YOUR_CHECKPOINT_PATH
   ```
+  
+### 2.8. <a href="https://ty424.github.io/AbsGS.github.io/">AbsGS</a> / EfficientGS
+```bash
+... fit \
+    --config configs/gsplat-absgrad.yaml \
+    --data.path ...
+```
 
 ## 3. Evaluation
 
