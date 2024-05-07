@@ -149,7 +149,8 @@ class GaussianModel(nn.Module):
         l = [
             {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
             {'params': [self._features_dc], 'lr': training_args.feature_lr, "name": "f_dc"},
-            {'params': [self._features_rest], 'lr': training_args.feature_lr / 20.0, "name": "f_rest"},
+            # {'params': [self._features_rest], 'lr': training_args.feature_lr / 20.0, "name": "f_rest"},
+            {'params': [self._features_rest], 'lr': training_args.feature_rest_lr_init, "name": "f_rest"},
             {'params': [self._opacity], 'lr': training_args.opacity_lr, "name": "opacity"},
             {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
             {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"}
@@ -163,13 +164,23 @@ class GaussianModel(nn.Module):
                                                     lr_delay_mult=training_args.position_lr_delay_mult,
                                                     max_steps=training_args.position_lr_max_steps)
 
+        self.feature_rest_scheduler_args = None
+        if training_args.feature_rest_lr_max_steps > 0:
+            self.feature_rest_scheduler_args = get_expon_lr_func(
+                lr_init=training_args.feature_rest_lr_init,
+                lr_final=training_args.feature_rest_lr_init * training_args.feature_rest_lr_final_factor,
+                lr_delay_mult=training_args.feature_rest_lr_final_factor,
+                max_steps=training_args.feature_rest_lr_max_steps,
+            )
+
     def update_learning_rate(self, iteration):
         ''' Learning rate scheduling per step '''
         for param_group in self.optimizer.param_groups:
             if param_group["name"] == "xyz":
                 lr = self.xyz_scheduler_args(iteration)
                 param_group['lr'] = lr
-                return lr
+            elif param_group["name"] == "f_rest" and self.feature_rest_scheduler_args is not None:
+                param_group['lr'] = self.feature_rest_scheduler_args(iteration)
 
     def construct_list_of_attributes(self):
         l = ['x', 'y', 'z', 'nx', 'ny', 'nz']
