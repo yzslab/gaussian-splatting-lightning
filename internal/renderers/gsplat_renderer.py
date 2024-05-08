@@ -40,7 +40,7 @@ class GSPlatRenderer(Renderer):
             pass
 
         viewdirs = pc.get_xyz.detach() - viewpoint_camera.camera_center  # (N, 3)
-        viewdirs = viewdirs / viewdirs.norm(dim=-1, keepdim=True)
+        # viewdirs = viewdirs / viewdirs.norm(dim=-1, keepdim=True)
         rgbs = spherical_harmonics(pc.active_sh_degree, viewdirs, pc.get_features)
         rgbs = torch.clamp(rgbs + 0.5, min=0.0)  # type: ignore
 
@@ -114,7 +114,7 @@ class GSPlatRenderer(Renderer):
 
         if colors_precomp is None:
             viewdirs = means3D.detach() - viewpoint_camera.camera_center  # (N, 3)
-            viewdirs = viewdirs / viewdirs.norm(dim=-1, keepdim=True)
+            # viewdirs = viewdirs / viewdirs.norm(dim=-1, keepdim=True)
             rgbs = spherical_harmonics(active_sh_degree, viewdirs, features)
             rgbs = torch.clamp(rgbs + 0.5, min=0.0)  # type: ignore
         else:
