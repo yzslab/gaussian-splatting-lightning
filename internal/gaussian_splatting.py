@@ -464,9 +464,15 @@ class GaussianSplatting(LightningModule):
         # renderer optimizer and scheduler setup
         renderer_optimizer, renderer_scheduler = self.renderer.training_setup(self)
         if renderer_optimizer is not None:
-            optimizers.append(renderer_optimizer)
+            if isinstance(renderer_optimizer, list):
+                optimizers += renderer_optimizer
+            else:
+                optimizers.append(renderer_optimizer)
         if renderer_scheduler is not None:
-            schedulers.append(renderer_scheduler)
+            if isinstance(renderer_scheduler, list):
+                schedulers += renderer_scheduler
+            else:
+                schedulers.append(renderer_scheduler)
 
         return optimizers, schedulers
 

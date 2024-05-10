@@ -1,6 +1,6 @@
 import lightning
 import torch
-from typing import Any, Tuple, Optional
+from typing import Any, Union, List, Tuple, Optional
 from internal.cameras.cameras import Camera
 from internal.models.gaussian_model import GaussianModel
 
@@ -51,7 +51,16 @@ class Renderer(torch.nn.Module):
     def setup(self, stage: str, *args: Any, **kwargs: Any) -> Any:
         pass
 
-    def training_setup(self, module: lightning.LightningModule) -> Tuple[Optional[torch.optim.Optimizer], Optional[torch.optim.lr_scheduler.LRScheduler]]:
+    def training_setup(self, module: lightning.LightningModule) -> Tuple[
+        Optional[Union[
+            List[torch.optim.Optimizer],
+            torch.optim.Optimizer,
+        ]],
+        Optional[Union[
+            List[torch.optim.lr_scheduler.LRScheduler],
+            torch.optim.lr_scheduler.LRScheduler,
+        ]]
+    ]:
         return None, None
 
     def on_load_checkpoint(self, module, checkpoint):
