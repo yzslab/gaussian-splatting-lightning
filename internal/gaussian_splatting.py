@@ -46,7 +46,7 @@ class GaussianSplatting(LightningModule):
         self.save_hyperparameters()
 
         # setup models
-        self.gaussian_model = GaussianModel(sh_degree=gaussian.sh_degree)
+        self.gaussian_model = GaussianModel(sh_degree=gaussian.sh_degree, extra_feature_dims=gaussian.extra_feature_dims)
         # self.appearance_model = None if enable_appearance_model is False else AppearanceModel(
         #     n_input_dims=1,
         #     n_grayscale_factors=appearance.n_grayscale_factors,
@@ -123,6 +123,20 @@ class GaussianSplatting(LightningModule):
             # for previous version
             if "active_sh_degree" not in checkpoint["gaussian_model_extra_state_dict"]:
                 self.gaussian_model.active_sh_degree = self.gaussian_model.max_sh_degree
+
+        if "gaussian_model._features_extra" not in checkpoint["state_dict"]:
+            checkpoint["state_dict"]["gaussian_model._features_extra"] = torch.zeros_like(self.gaussian_model._features_extra)
+            # TODO: update 'optimizer_states' to compat with previous version
+            # optimizer_state_append_index = len(checkpoint["optimizer_states"][0]["state"]) + 1
+            # checkpoint["optimizer_states"][0]["state"][optimizer_state_append_index] = {
+            #     "step": checkpoint["optimizer_states"][0]["state"][0]["step"].clone(),
+            #     "exp_avg": torch.zeros_like(self.gaussian_model._features_extra),
+            #     "exp_avg_sq": torch.zeros_like(self.gaussian_model._features_extra),
+            # }
+            # new_param_groups = checkpoint["optimizer_states"][0]["param_groups"][0].copy()
+            # new_param_groups["lr"] = 0.
+            # new_param_groups["params"] = [optimizer_state_append_index]
+            # checkpoint["optimizer_states"][0]["param_groups"].append(new_param_groups)
 
         # get epoch and global_step, which used in the output path of the validation and test images
         self.restored_epoch = checkpoint["epoch"]

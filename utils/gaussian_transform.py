@@ -205,7 +205,7 @@ def main():
 
     if args.sh_factor != 1.:
         gaussian.features_dc *= args.sh_factor
-        gaussian.features_extra *= args.sh_factor
+        gaussian.features_rest *= args.sh_factor
 
     gaussian.save_to_ply(args.output)
 

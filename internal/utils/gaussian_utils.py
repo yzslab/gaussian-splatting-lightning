@@ -9,16 +9,40 @@ from plyfile import PlyData, PlyElement
 
 @dataclass
 class Gaussian:
+    """
+    Load parameters from ply or ckpt file;
+    Convert between ply and ckpt;
+    Save to ply or ckpt;
+    """
+
     sh_degrees: int
     xyz: Union[np.ndarray, torch.Tensor]  # [n, 3]
     opacities: Union[np.ndarray, torch.Tensor]  # [n, 1]
-    features_dc: Union[np.ndarray, torch.Tensor]  # [n, 3, 1], or [n, 1, 3]
-    features_extra: Union[np.ndarray, torch.Tensor]  # [n, 3, 15], or [n, 15, 3]
+    features_dc: Union[np.ndarray, torch.Tensor]  # ndarray[n, 3, 1], or tensor[n, 1, 3]
+    features_rest: Union[np.ndarray, torch.Tensor]  # ndarray[n, 3, 15], or tensor[n, 15, 3]; NOTE: this is features_rest actually!
     scales: Union[np.ndarray, torch.Tensor]  # [n, 3]
     rotations: Union[np.ndarray, torch.Tensor]  # [n, 4]
+    real_features_extra: Union[np.ndarray, torch.Tensor]
+
+    @staticmethod
+    def load_array_from_plyelement(plyelement, name_prefix: str):
+        names = [p.name for p in plyelement.properties if p.name.startswith(name_prefix)]
+        if len(names) == 0:
+            print(f"WARNING: '{name_prefix}' not found in ply, create an empty one")
+            return np.empty((plyelement["x"].shape[0], 0))
+        names = sorted(names, key=lambda x: int(x.split('_')[-1]))
+        v_list = []
+        for idx, attr_name in enumerate(names):
+            v_list.append(np.asarray(plyelement[attr_name]))
+
+        return np.stack(v_list, axis=1)
 
     @classmethod
-    def load_from_ply(cls, path: str, sh_degrees: int):
+    def load_real_feature_extra_from_plyelement(cls, plyelement):
+        return cls.load_array_from_plyelement(plyelement, "f_extra_")
+
+    @classmethod
+    def load_from_ply(cls, path: str, sh_degrees: int = -1):
         plydata = PlyData.read(path)
 
         xyz = np.stack((
@@ -33,35 +57,51 @@ class Gaussian:
         features_dc[:, 1, 0] = np.asarray(plydata.elements[0]["f_dc_1"])
         features_dc[:, 2, 0] = np.asarray(plydata.elements[0]["f_dc_2"])
 
-        extra_f_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("f_rest_")]
-        extra_f_names = sorted(extra_f_names, key=lambda x: int(x.split('_')[-1]))
-        assert len(extra_f_names) == 3 * (sh_degrees + 1) ** 2 - 3  # TODO: remove such a assertion
-        features_extra = np.zeros((xyz.shape[0], len(extra_f_names)))
-        for idx, attr_name in enumerate(extra_f_names):
-            features_extra[:, idx] = np.asarray(plydata.elements[0][attr_name])
-        # Reshape (P,F*SH_coeffs) to (P, F, SH_coeffs except DC)
-        features_extra = features_extra.reshape((features_extra.shape[0], 3, (sh_degrees + 1) ** 2 - 1))
+        # extra_f_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("f_rest_")]
+        # extra_f_names = sorted(extra_f_names, key=lambda x: int(x.split('_')[-1]))
+        # assert len(extra_f_names) == 3 * (sh_degrees + 1) ** 2 - 3  # TODO: remove such a assertion
+        # features_extra = np.zeros((xyz.shape[0], len(extra_f_names)))
+        # for idx, attr_name in enumerate(extra_f_names):
+        #     features_extra[:, idx] = np.asarray(plydata.elements[0][attr_name])
+        # # Reshape (P,F*SH_coeffs) to (P, F, SH_coeffs except DC)
+        # features_rest = features_extra.reshape((features_extra.shape[0], 3, (sh_degrees + 1) ** 2 - 1))
+        features_rest = cls.load_array_from_plyelement(plydata.elements[0], "f_rest_").reshape((xyz.shape[0], 3, -1))
+        if sh_degrees >= 0:
+            assert features_rest.shape[-1] == (sh_degrees + 1) ** 2 - 1  # TODO: remove such a assertion
+        else:
+            # auto determine sh_degrees
+            features_rest_dims = features_rest.shape[-1]
+            for i in range(4):
+                if features_rest_dims == (i + 1) ** 2 - 1:
+                    sh_degrees = i
+                    break
+            assert sh_degrees >= 0, f"invalid sh_degrees={sh_degrees}"
 
-        scale_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("scale_")]
-        scale_names = sorted(scale_names, key=lambda x: int(x.split('_')[-1]))
-        scales = np.zeros((xyz.shape[0], len(scale_names)))
-        for idx, attr_name in enumerate(scale_names):
-            scales[:, idx] = np.asarray(plydata.elements[0][attr_name])
+        # scale_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("scale_")]
+        # scale_names = sorted(scale_names, key=lambda x: int(x.split('_')[-1]))
+        # scales = np.zeros((xyz.shape[0], len(scale_names)))
+        # for idx, attr_name in enumerate(scale_names):
+        #     scales[:, idx] = np.asarray(plydata.elements[0][attr_name])
+        scales = cls.load_array_from_plyelement(plydata.elements[0], "scale_")
 
-        rot_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("rot")]
-        rot_names = sorted(rot_names, key=lambda x: int(x.split('_')[-1]))
-        rots = np.zeros((xyz.shape[0], len(rot_names)))
-        for idx, attr_name in enumerate(rot_names):
-            rots[:, idx] = np.asarray(plydata.elements[0][attr_name])
+        # rot_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("rot")]
+        # rot_names = sorted(rot_names, key=lambda x: int(x.split('_')[-1]))
+        # rots = np.zeros((xyz.shape[0], len(rot_names)))
+        # for idx, attr_name in enumerate(rot_names):
+        #     rots[:, idx] = np.asarray(plydata.elements[0][attr_name])
+        rots = cls.load_array_from_plyelement(plydata.elements[0], "rot_")
+
+        features_extra = cls.load_real_feature_extra_from_plyelement(plydata.elements[0])
 
         return cls(
             sh_degrees=sh_degrees,
             xyz=xyz,
             opacities=opacities,
             features_dc=features_dc,
-            features_extra=features_extra,
+            features_rest=features_rest,
             scales=scales,
             rotations=rots,
+            real_features_extra=features_extra,
         )
 
     @classmethod
@@ -72,12 +112,19 @@ class Gaussian:
         for name_in_dict, name_in_dataclass in [
             ("xyz", "xyz"),
             ("features_dc", "features_dc"),
-            ("features_rest", "features_extra"),
+            ("features_rest", "features_rest"),
             ("scaling", "scales"),
             ("rotation", "rotations"),
             ("opacity", "opacities"),
         ]:
             init_args[name_in_dataclass] = state_dict["{}{}".format(key_prefix, name_in_dict)]
+
+        # compat with previous versions
+        if f"{key_prefix}features_extra" in state_dict:
+            init_args["real_features_extra"] = state_dict[f"{key_prefix}features_extra"]
+        else:
+            print("'features_extra' not found in state_dict, create an empty one")
+            init_args["real_features_extra"] = torch.empty((init_args["xyz"].shape[0], 0), device=init_args["xyz"].device)
 
         return cls(**init_args)
 
@@ -88,9 +135,10 @@ class Gaussian:
             xyz=torch.tensor(self.xyz, dtype=torch.float),
             opacities=torch.tensor(self.opacities, dtype=torch.float),
             features_dc=torch.tensor(self.features_dc, dtype=torch.float).transpose(1, 2),
-            features_extra=torch.tensor(self.features_extra, dtype=torch.float).transpose(1, 2),
+            features_rest=torch.tensor(self.features_rest, dtype=torch.float).transpose(1, 2),
             scales=torch.tensor(self.scales, dtype=torch.float),
             rotations=torch.tensor(self.rotations, dtype=torch.float),
+            real_features_extra=torch.tensor(self.real_features_extra, dtype=torch.float),
         )
 
     def to_ply_format(self):
@@ -100,9 +148,10 @@ class Gaussian:
             xyz=self.xyz.cpu().numpy(),
             opacities=self.opacities.cpu().numpy(),
             features_dc=self.features_dc.transpose(1, 2).cpu().numpy(),
-            features_extra=self.features_extra.transpose(1, 2).cpu().numpy(),
+            features_rest=self.features_rest.transpose(1, 2).cpu().numpy(),
             scales=self.scales.cpu().numpy(),
             rotations=self.rotations.cpu().numpy(),
+            real_features_extra=self.real_features_extra.cpu().numpy(),
         )
 
     def save_to_ply(self, path: str):
@@ -117,12 +166,13 @@ class Gaussian:
         f_dc = gaussian.features_dc.reshape((gaussian.features_dc.shape[0], -1))
         # TODO: change sh degree
         if gaussian.sh_degrees > 0:
-            f_rest = gaussian.features_extra.reshape((gaussian.features_extra.shape[0], -1))
+            f_rest = gaussian.features_rest.reshape((gaussian.features_rest.shape[0], -1))
         else:
             f_rest = np.zeros((f_dc.shape[0], 0))
         opacities = gaussian.opacities
         scale = gaussian.scales
         rotation = gaussian.rotations
+        # f_extra = gaussian.real_features_extra
 
         def construct_list_of_attributes():
             l = ['x', 'y', 'z', 'nx', 'ny', 'nz']
@@ -130,19 +180,23 @@ class Gaussian:
             for i in range(gaussian.features_dc.shape[1] * gaussian.features_dc.shape[2]):
                 l.append('f_dc_{}'.format(i))
             if gaussian.sh_degrees > 0:
-                for i in range(gaussian.features_extra.shape[1] * gaussian.features_extra.shape[2]):
+                for i in range(gaussian.features_rest.shape[1] * gaussian.features_rest.shape[2]):
                     l.append('f_rest_{}'.format(i))
             l.append('opacity')
             for i in range(gaussian.scales.shape[1]):
                 l.append('scale_{}'.format(i))
             for i in range(gaussian.rotations.shape[1]):
                 l.append('rot_{}'.format(i))
+            # for i in range(self.real_features_extra.shape[1]):
+            #     l.append('f_extra_{}'.format(i))
             return l
 
         dtype_full = [(attribute, 'f4') for attribute in construct_list_of_attributes()]
 
         elements = np.empty(xyz.shape[0], dtype=dtype_full)
         attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
+        # do not save 'features_extra' for ply
+        # attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation, f_extra), axis=1)
         elements[:] = list(map(tuple, attributes))
         el = PlyElement.describe(elements, 'vertex')
         PlyData([el]).write(path)
