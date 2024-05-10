@@ -76,11 +76,6 @@ class GaussianModelSimplified(nn.Module):
         return self._rotation
 
     @property
-    def get_normalized_rotation(self):
-        rotations = self.get_rotation
-        return rotations / rotations.norm(dim=-1, keepdim=True)
-
-    @property
     def get_xyz(self):
         return self._xyz
 

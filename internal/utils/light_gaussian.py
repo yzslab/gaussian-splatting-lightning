@@ -30,7 +30,7 @@ def get_count_and_score(
             means3D=gaussian_model.get_xyz,
             opacities=gaussian_model.get_opacity,
             scales=gaussian_model.get_scaling,
-            rotations=gaussian_model.get_normalized_rotation,
+            rotations=gaussian_model.get_rotation,
             viewpoint_camera=camera.to_device(device),
             anti_aliased=anti_aliased,
         )
