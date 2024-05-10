@@ -161,6 +161,88 @@ class GaussianModelTestCase(unittest.TestCase):
         # `features_extra` is excluded in ply file
         self.assertEqual(model_from_ply.get_features_extra.shape[-1], 0)
 
+    def test_densification_and_pruning(self):
+        device = torch.device("cuda")
+        num_points = 256
+        pcd = self._generate_point_cloud(num_points)
+
+        model = GaussianModel(sh_degree=3, extra_feature_dims=64)
+        model.create_from_pcd(pcd, device)
+
+        xyz_value = torch.rand_like(model.get_xyz)
+        scales_value = torch.rand_like(model.get_scaling)
+        rotations_value = torch.rand_like(model.get_rotation)
+        features_dc_value = torch.rand_like(model._features_dc)
+        features_rest_value = torch.rand_like(model._features_rest)
+        opacities_value = torch.rand_like(model.get_opacity)
+        features_extra_value = torch.rand_like(model.get_features_extra)
+
+        with torch.no_grad():
+            model._xyz.copy_(xyz_value)
+            model._scaling.copy_(scales_value)
+            model._rotation.copy_(rotations_value)
+            model._features_dc.copy_(features_dc_value)
+            model._features_rest.copy_(features_rest_value)
+            model._opacity.copy_(opacities_value)
+            model._features_extra.copy_(features_extra_value)
+
+        model.training_setup(OptimizationParams(), 10.)
+
+        # clone
+        gaussian_to_clone = torch.rand((num_points,), device=device) > 0.6  # clone which > 0.6
+        model.densify_and_clone(
+            torch.ones((num_points, 1), device=device) * gaussian_to_clone.unsqueeze(-1),
+            1e-5,
+            1e5,  # allow clone large gaussian
+        )
+        num_cloned_gaussians = gaussian_to_clone.sum().item()
+        # check number of the cloned gaussians
+        self.assertEqual(model.get_xyz.shape[0], num_points + num_cloned_gaussians)
+        # check all the new gaussians have correct parameter values
+        self.assertTrue(torch.all(xyz_value[gaussian_to_clone] == model._xyz[-num_cloned_gaussians:]))
+        self.assertTrue(torch.all(scales_value[gaussian_to_clone] == model._scaling[-num_cloned_gaussians:]))
+        self.assertTrue(torch.all(rotations_value[gaussian_to_clone] == model._rotation[-num_cloned_gaussians:]))
+        self.assertTrue(torch.all(features_dc_value[gaussian_to_clone] == model._features_dc[-num_cloned_gaussians:]))
+        self.assertTrue(torch.all(features_rest_value[gaussian_to_clone] == model._features_rest[-num_cloned_gaussians:]))
+        self.assertTrue(torch.all(opacities_value[gaussian_to_clone] == model._opacity[-num_cloned_gaussians:]))
+        self.assertTrue(torch.all(features_extra_value[gaussian_to_clone] == model._features_extra[-num_cloned_gaussians:]))
+
+        # split and prune
+        xyz_value = model._xyz.detach().clone()
+        scales_value = model._scaling.detach().clone()
+        rotations_value = model._rotation.detach().clone()
+        features_dc_value = model._features_dc.detach().clone()
+        features_rest_value = model._features_rest.detach().clone()
+        opacities_value = model._opacity.detach().clone()
+        features_extra_value = model._features_extra.detach().clone()
+
+        current_num_points = xyz_value.shape[0]
+        gaussian_to_split = torch.rand((current_num_points,), device=device) > 0.6  # clone which > 0.6
+        model.densify_and_split(
+            torch.ones((current_num_points, 1), device=device) * gaussian_to_split.unsqueeze(-1),
+            1e-5,
+            0.,  # allow split small gaussian
+        )
+        num_split_gaussians = gaussian_to_split.sum().item()
+        # check number of the split gaussians
+        self.assertEqual(model.get_xyz.shape[0], current_num_points + num_split_gaussians)
+        # check all the new gaussians have correct parameter values
+        # TODO: check xyz and scale
+        # self.assertTrue(torch.all(xyz_value[gaussian_to_split] == model._xyz[-num_cloned_gaussians:]))
+        # self.assertTrue(torch.all(scales_value[gaussian_to_split] == model._scaling[-num_cloned_gaussians:]))
+        # the first part
+        self.assertTrue(torch.all(rotations_value[gaussian_to_split] == model._rotation[-num_split_gaussians:]))
+        self.assertTrue(torch.all(features_dc_value[gaussian_to_split] == model._features_dc[-num_split_gaussians:]))
+        self.assertTrue(torch.all(features_rest_value[gaussian_to_split] == model._features_rest[-num_split_gaussians:]))
+        self.assertTrue(torch.all(opacities_value[gaussian_to_split] == model._opacity[-num_split_gaussians:]))
+        self.assertTrue(torch.all(features_extra_value[gaussian_to_split] == model._features_extra[-num_split_gaussians:]))
+        # the second part
+        self.assertTrue(torch.all(rotations_value[gaussian_to_split] == model._rotation[-2 * num_split_gaussians:-num_split_gaussians]))
+        self.assertTrue(torch.all(features_dc_value[gaussian_to_split] == model._features_dc[-2 * num_split_gaussians:-num_split_gaussians]))
+        self.assertTrue(torch.all(features_rest_value[gaussian_to_split] == model._features_rest[-2 * num_split_gaussians:-num_split_gaussians]))
+        self.assertTrue(torch.all(opacities_value[gaussian_to_split] == model._opacity[-2 * num_split_gaussians:-num_split_gaussians]))
+        self.assertTrue(torch.all(features_extra_value[gaussian_to_split] == model._features_extra[-2 * num_split_gaussians:-num_split_gaussians]))
+
 
 if __name__ == '__main__':
     unittest.main()
