@@ -125,18 +125,14 @@ class GaussianSplatting(LightningModule):
                 self.gaussian_model.active_sh_degree = self.gaussian_model.max_sh_degree
 
         if "gaussian_model._features_extra" not in checkpoint["state_dict"]:
+            # create an empty `_features_extra`
             checkpoint["state_dict"]["gaussian_model._features_extra"] = torch.zeros_like(self.gaussian_model._features_extra)
-            # TODO: update 'optimizer_states' to compat with previous version
-            # optimizer_state_append_index = len(checkpoint["optimizer_states"][0]["state"]) + 1
-            # checkpoint["optimizer_states"][0]["state"][optimizer_state_append_index] = {
-            #     "step": checkpoint["optimizer_states"][0]["state"][0]["step"].clone(),
-            #     "exp_avg": torch.zeros_like(self.gaussian_model._features_extra),
-            #     "exp_avg_sq": torch.zeros_like(self.gaussian_model._features_extra),
-            # }
-            # new_param_groups = checkpoint["optimizer_states"][0]["param_groups"][0].copy()
-            # new_param_groups["lr"] = 0.
-            # new_param_groups["params"] = [optimizer_state_append_index]
-            # checkpoint["optimizer_states"][0]["param_groups"].append(new_param_groups)
+            # create an optimizer param group
+            new_param_groups = checkpoint["optimizer_states"][0]["param_groups"][0].copy()
+            new_param_groups["name"] = "f_extra"
+            new_param_groups["lr"] = 0.
+            new_param_groups["params"] = [len(checkpoint["optimizer_states"][0]["param_groups"])]
+            checkpoint["optimizer_states"][0]["param_groups"].append(new_param_groups)
 
         # get epoch and global_step, which used in the output path of the validation and test images
         self.restored_epoch = checkpoint["epoch"]
