@@ -74,6 +74,7 @@ class SimplifiedGaussianModelManager:
         # TODO: avoid memory copy if no rotation or scaling happened compared to previous state
         scaling = model.get_scaling.to(self.device)
         rotation = model.get_rotation.to(self.device)
+        features = model.get_features.to(self.device)  # consume a lot of memory
 
         # rescale
         xyz, scaling = gaussian_utils.GaussianTransformUtils.rescale(
@@ -82,9 +83,10 @@ class SimplifiedGaussianModelManager:
             scale
         )
         # rotate
-        xyz, rotation = gaussian_utils.GaussianTransformUtils.rotate_by_wxyz_quaternions(
+        xyz, rotation, new_features = gaussian_utils.GaussianTransformUtils.rotate_by_wxyz_quaternions(
             xyz=xyz,
             rotations=rotation,
+            features=features,
             quaternions=torch.tensor(r_wxyz).to(xyz),
         )
         # translate
@@ -93,6 +95,7 @@ class SimplifiedGaussianModelManager:
         self._xyz[begin:end] = xyz
         self._scaling[begin:end] = scaling
         self._rotation[begin:end] = rotation
+        self._features[begin:end] = new_features
 
     def transform(
             self,

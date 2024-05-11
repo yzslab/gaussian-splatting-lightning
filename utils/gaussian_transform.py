@@ -83,6 +83,33 @@ class Gaussian(internal.utils.gaussian_utils.Gaussian):
         if keep_sh_degree is False:
             print("set sh_degree=0 when rotation transform enabled")
             self.sh_degrees = 0
+        else:
+            """
+            If the scene has been rotated, 
+            in order to get the correct color as without rotation,
+            we should rotate the view direction opposite.
+            E.g., 
+                the scene is rotated by R: means3D' = R @ means3D, 
+                then when calculating colors, 
+                the correct view direction should be: R.T @ (means3D' - camera_center).
+                
+            Based on the how the SHs multiple with view directions, we know how to rotate the SHs.
+            """
+            # rotate sh_degree=1 if exists
+            if self.sh_degrees > 0:
+                print("rotate sh_degree=1")
+                degree_1 = self.features_rest[..., :3]  # [n, 3-rgb, 3-coefficients], 3 coefficients per-channel
+                rotation_matrix_inverse = rotation_matrix.T
+                rotation_matrix_inverse_reorder = rotation_matrix_inverse[[1, 2, 0], :][:, [1, 2, 0]]
+                sign_matrix = np.asarray([
+                    [-1, 0, 0],
+                    [0, 1, 0],
+                    [0, 0, -1],
+                ], dtype=np.float32)
+                rotated_degree_1 = degree_1 @ sign_matrix @ rotation_matrix_inverse_reorder @ sign_matrix
+                self.features_rest[..., :3] = rotated_degree_1
+
+                # TODO: rotate higher degree SHs
 
     def translation(self, x: float, y: float, z: float):
         if x == 0. and y == 0. and z == 0.:
@@ -148,7 +175,7 @@ def main():
             gray_scale_factor = torch.reshape(gray_scale_factor, (1, -1, 1))
             rgb = SH2RGB(gaussian.features_dc).clip(min=0.)  # [n, 3, 1]
             rgb *= gray_scale_factor.cpu().numpy()
-            rgb = np.power(rgb + 1e-5, float(gamma.reshape((-1, ))[0].cpu()))
+            rgb = np.power(rgb + 1e-5, float(gamma.reshape((-1,))[0].cpu()))
             gaussian.features_dc = RGB2SH(rgb)
 
     if args.auto_reorient is True:

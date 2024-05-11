@@ -203,13 +203,13 @@ class GaussianTransformUtils:
         return xyz, rotation
 
     @classmethod
-    def rotate_by_wxyz_quaternions(cls, xyz, rotations, quaternions: torch.tensor):
+    def rotate_by_wxyz_quaternions(cls, xyz, rotations, features, quaternions: torch.tensor):
         if torch.all(quaternions == 0.) or torch.all(quaternions == torch.tensor(
                 [1., 0., 0., 0.],
                 dtype=quaternions.dtype,
                 device=quaternions.device,
         )):
-            return xyz, rotations
+            return xyz, rotations, features
 
         # convert quaternions to rotation matrix
         rotation_matrix = torch.tensor(qvec2rotmat(quaternions.cpu().numpy()), dtype=torch.float, device=xyz.device)
@@ -221,7 +221,22 @@ class GaussianTransformUtils:
             quaternions,
         ))
 
-        return xyz, rotations
+        # rotate sh_degree=1 if exists
+        if features.shape[1] > 1:
+            features = features.clone()
+
+            degree_1 = features[:, 1:4, :].transpose(1, 2)  # [n, 3-rgb, 3-coefficients], 3 coefficients per-channel
+            rotation_matrix_inverse = rotation_matrix.T
+            rotation_matrix_inverse_reorder = rotation_matrix_inverse[[1, 2, 0], :][:, [1, 2, 0]]
+            sign_matrix = torch.tensor([
+                [-1, 0, 0],
+                [0, 1, 0],
+                [0, 0, -1],
+            ], device=features.device, dtype=torch.float)
+            rotated_degree_1 = degree_1 @ sign_matrix @ rotation_matrix_inverse_reorder @ sign_matrix
+            features[:, 1:4, :] = rotated_degree_1.transpose(1, 2)
+
+        return xyz, rotations, features
 
     @staticmethod
     def quat_multiply(quaternion0, quaternion1):
