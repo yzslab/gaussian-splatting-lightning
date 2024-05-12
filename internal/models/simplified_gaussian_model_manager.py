@@ -39,6 +39,7 @@ class SimplifiedGaussianModelManager:
         self._features = torch.zeros([total_gaussian_num] + list(simplified_gaussian_models[0].get_features.shape[1:]), **tensor_initialize_params)
         self._scaling = torch.zeros((total_gaussian_num, 3), **tensor_initialize_params)
         self._rotation = torch.zeros((total_gaussian_num, 4), **tensor_initialize_params)
+        self._features_extra = torch.zeros((total_gaussian_num, simplified_gaussian_models[0].get_features_extra.shape[-1]), **tensor_initialize_params)
 
         # merge gaussians
         for idx, model in enumerate(simplified_gaussian_models):
@@ -48,6 +49,7 @@ class SimplifiedGaussianModelManager:
             self._features[begin:end] = model.get_features.to(device)
             self._scaling[begin:end] = model.get_scaling.to(device)
             self._rotation[begin:end] = model.get_rotation.to(device)
+            self._features_extra[begin:end] = model.get_features_extra.to(device)
 
         self.max_sh_degree = simplified_gaussian_models[0].max_sh_degree
         self.active_sh_degree = simplified_gaussian_models[0].max_sh_degree
@@ -158,6 +160,10 @@ class SimplifiedGaussianModelManager:
     @property
     def get_opacity(self):
         return self._opacity
+
+    @property
+    def get_features_extra(self):
+        return self._features_extra
 
     def delete_gaussians(self, mask: torch.tensor):
         # delete form each model, build new indices
