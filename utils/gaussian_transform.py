@@ -79,7 +79,6 @@ class Gaussian(internal.utils.gaussian_utils.Gaussian):
         # rotations_from_matrix = wxyz_quaternions
         # self.rotations = rotations_from_matrix
 
-        # TODO: rotate shs
         if keep_sh_degree is False:
             print("set sh_degree=0 when rotation transform enabled")
             self.sh_degrees = 0
@@ -93,7 +92,7 @@ class Gaussian(internal.utils.gaussian_utils.Gaussian):
                 then when calculating colors, 
                 the correct view direction should be: R.T @ (means3D' - camera_center).
                 
-            Based on the how the SHs multiple with view directions, we know how to rotate the SHs.
+            Based on the how the SHs multiply with view directions, we know how to rotate the SHs.
             """
             # rotate sh_degree=1 if exists
             if self.sh_degrees > 0:
