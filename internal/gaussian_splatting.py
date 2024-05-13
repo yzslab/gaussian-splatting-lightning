@@ -22,6 +22,9 @@ from internal.renderers import Renderer, VanillaRenderer
 from internal.utils.ssim import ssim
 from jsonargparse import lazy_instance
 
+from internal.utils.sh_utils import eval_sh
+from internal.utils.graphics_utils import store_ply
+
 lpips: LearnedPerceptualImagePatchSimilarity
 
 
@@ -40,6 +43,7 @@ class GaussianSplatting(LightningModule):
             max_save_val_output: int = -1,
             renderer: Renderer = lazy_instance(VanillaRenderer),
             absgrad: bool = False,
+            save_ply: bool = False,
     ) -> None:
         super().__init__()
         self.automatic_optimization = False
@@ -256,6 +260,16 @@ class GaussianSplatting(LightningModule):
         optimizers = self.optimizers()
         schedulers = self.lr_schedulers()
 
+        # zero grad
+        for optimizer in optimizers:
+            optimizer.zero_grad(set_to_none=True)
+
+        # save checkpoint
+        # checkpoint will always be saved after final step, so do not save for final step here
+        if global_step in self.hparams["save_iterations"] and self.is_final_step(global_step) is False and self.trainer.global_step != self.restored_global_step:
+            self.save_gaussians()
+
+        # call renderer hook
         self.renderer.before_training_step(global_step, self)
 
         # Every 1000 its we increase the levels of SH up to a maximum degree
@@ -291,14 +305,7 @@ class GaussianSplatting(LightningModule):
             )
 
         # backward
-        for optimizer in optimizers:
-            optimizer.zero_grad(set_to_none=True)
         self.manual_backward(loss)
-
-        # save before densification
-        # checkpoint will always be saved after final step, so do not save for final step here
-        if global_step in self.hparams["save_iterations"] and self.is_final_step(global_step) is False:
-            self.save_gaussian_to_ply()
 
         # before gradient descend
         with torch.no_grad():
@@ -476,23 +483,24 @@ class GaussianSplatting(LightningModule):
 
         return optimizers, schedulers
 
-    def save_gaussian_to_ply(self):
+    def save_gaussians(self):
         if self.trainer.global_rank != 0:
             return
 
-        # save ply file
-        filename = "point_cloud.ply"
-        # if self.trainer.global_rank != 0:
-        #     filename = "point_cloud_{}.ply".format(self.trainer.global_rank)
-        with torch.no_grad():
-            output_dir = os.path.join(self.hparams["output_path"], "point_cloud",
-                                      "iteration_{}".format(self.trainer.global_step))
-            os.makedirs(output_dir, exist_ok=True)
-            output_path = os.path.join(output_dir, filename)
-            self.gaussian_model.save_ply(output_path + ".tmp")
-            os.rename(output_path + ".tmp", output_path)
+        if self.hparams["save_ply"] is True:
+            # save ply file
+            filename = "point_cloud.ply"
+            # if self.trainer.global_rank != 0:
+            #     filename = "point_cloud_{}.ply".format(self.trainer.global_rank)
+            with torch.no_grad():
+                output_dir = os.path.join(self.hparams["output_path"], "point_cloud",
+                                          "iteration_{}".format(self.trainer.global_step))
+                os.makedirs(output_dir, exist_ok=True)
+                output_path = os.path.join(output_dir, filename)
+                self.gaussian_model.save_ply(output_path + ".tmp")
+                os.rename(output_path + ".tmp", output_path)
 
-        print("Gaussians saved to {}".format(output_path))
+            print("Gaussians saved to {}".format(output_path))
 
         # save checkpoint
         checkpoint_path = os.path.join(
@@ -502,7 +510,15 @@ class GaussianSplatting(LightningModule):
         )
         os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
         self.trainer.save_checkpoint(checkpoint_path)
-        print("checkpoint save to {}".format(checkpoint_path))
+        with torch.no_grad():
+            xyz = self.gaussian_model.get_xyz
+            rgb = eval_sh(0, self.gaussian_model.get_features[:, :1, :].transpose(1, 2), None)
+            store_ply(os.path.join(
+                self.hparams["output_path"],
+                "checkpoints",
+                "epoch={}-step={}-preview.ply".format(self.trainer.current_epoch, self.trainer.global_step),
+            ), xyz.cpu().numpy(), ((rgb + 0.5).clamp(min=0., max=1.) * 255).to(torch.int).cpu().numpy())
+        print("Checkpoint saved to {}".format(checkpoint_path))
 
     def to(self, *args: Any, **kwargs: Any) -> Self:
         global lpips
