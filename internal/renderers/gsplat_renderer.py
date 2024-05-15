@@ -175,3 +175,52 @@ class GSPlatRenderer(Renderer):
             block_width=block_size,
             **({} if extra_projection_kwargs is None else extra_projection_kwargs),
         )
+
+    @staticmethod
+    def rasterize(
+            opacities,
+            rgbs,
+            bg_color,
+            project_results: Tuple,
+            viewpoint_camera,
+            xys_retain_grad: bool = True,
+            block_size: int = DEFAULT_BLOCK_SIZE,
+            anti_aliased: bool = DEFAULT_ANTI_ALIASED_STATUS,
+    ):
+        img_height = int(viewpoint_camera.height.item())
+        img_width = int(viewpoint_camera.width.item())
+
+        xys, depths, radii, conics, comp, num_tiles_hit, cov3d = project_results
+
+        if xys_retain_grad is True:
+            try:
+                xys.retain_grad()
+            except:
+                pass
+
+        if anti_aliased is True:
+            opacities = opacities * comp[:, None]
+
+        rgb = rasterize_gaussians(  # type: ignore
+            xys,
+            depths,
+            radii,
+            conics,
+            num_tiles_hit,  # type: ignore
+            rgbs,
+            opacities,
+            img_height=img_height,
+            img_width=img_width,
+            block_width=block_size,
+            background=bg_color,
+            return_alpha=False,
+        )  # type: ignore
+
+        return {
+            "render": rgb.permute(2, 0, 1),
+            "viewspace_points": xys,
+            # "viewspace_points_grad_scale": 0.5 * torch.tensor([[img_height, img_width]]).to(xys),
+            "viewspace_points_grad_scale": 0.5 * max(img_height, img_width),
+            "visibility_filter": radii > 0,
+            "radii": radii,
+        }
