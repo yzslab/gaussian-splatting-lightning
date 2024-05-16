@@ -76,7 +76,7 @@ pip install -r requirements.txt
   * Vanilla version
 
     ```bash
-    pip install gsplat==0.1.10
+    pip install gsplat==0.1.11
     ```
 
   * If you need MipSplatting, LightGaussian
