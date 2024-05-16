@@ -154,7 +154,7 @@ class Gaussian:
             real_features_extra=self.real_features_extra.cpu().numpy(),
         )
 
-    def save_to_ply(self, path: str):
+    def save_to_ply(self, path: str, with_colors: bool = False):
         assert isinstance(self.xyz, np.ndarray) is True
 
         gaussian = self
@@ -192,9 +192,17 @@ class Gaussian:
             return l
 
         dtype_full = [(attribute, 'f4') for attribute in construct_list_of_attributes()]
+        attribute_list = [xyz, normals, f_dc, f_rest, opacities, scale, rotation]
+        if with_colors is True:
+            from internal.utils.sh_utils import eval_sh
+            rgbs = np.clip((eval_sh(0, self.features_dc, None) + 0.5), 0., 1.)
+            rgbs = (rgbs * 255).astype(np.uint8)
+
+            dtype_full += [('red', 'u1'), ('green', 'u1'), ('blue', 'u1')]
+            attribute_list.append(rgbs)
 
         elements = np.empty(xyz.shape[0], dtype=dtype_full)
-        attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
+        attributes = np.concatenate(attribute_list, axis=1)
         # do not save 'features_extra' for ply
         # attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation, f_extra), axis=1)
         elements[:] = list(map(tuple, attributes))
