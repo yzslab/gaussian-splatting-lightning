@@ -3,13 +3,12 @@ from gsplat.rasterize import rasterize_gaussians
 from gsplat.sh import spherical_harmonics
 from .renderer import *
 
+DEFAULT_BLOCK_SIZE: int = 16
+DEFAULT_ANTI_ALIASED_STATUS: bool = True
+
 
 class GSPlatRenderer(Renderer):
-    block_size: int
-
-    anti_aliased: bool
-
-    def __init__(self, block_size: int = 16, anti_aliased: bool = True) -> None:
+    def __init__(self, block_size: int = DEFAULT_BLOCK_SIZE, anti_aliased: bool = DEFAULT_ANTI_ALIASED_STATUS) -> None:
         super().__init__()
         self.block_size = block_size
         self.anti_aliased = anti_aliased
@@ -82,9 +81,10 @@ class GSPlatRenderer(Renderer):
             viewpoint_camera,
             bg_color: torch.Tensor,
             scaling_modifier=1.0,
-            anti_aliased: bool = True,
+            anti_aliased: bool = DEFAULT_ANTI_ALIASED_STATUS,
             colors_precomp: Optional[torch.Tensor] = None,
-            block_size: int = 16,
+            color_computer: Optional = None,
+            block_size: int = DEFAULT_BLOCK_SIZE,
             extra_projection_kwargs: dict = None,
     ):
         img_height = int(viewpoint_camera.height.item())
@@ -112,13 +112,15 @@ class GSPlatRenderer(Renderer):
         except:
             pass
 
-        if colors_precomp is None:
+        if colors_precomp is not None:
+            rgbs = colors_precomp
+        elif color_computer is not None:
+            rgbs = color_computer(locals())
+        else:
             viewdirs = means3D.detach() - viewpoint_camera.camera_center  # (N, 3)
             # viewdirs = viewdirs / viewdirs.norm(dim=-1, keepdim=True)
             rgbs = spherical_harmonics(active_sh_degree, viewdirs, features)
             rgbs = torch.clamp(rgbs + 0.5, min=0.0)  # type: ignore
-        else:
-            rgbs = colors_precomp
 
         if anti_aliased is True:
             opacities = opacities * comp[:, None]
@@ -141,6 +143,7 @@ class GSPlatRenderer(Renderer):
         return {
             "render": rgb.permute(2, 0, 1),
             "viewspace_points": xys,
+            # "viewspace_points_grad_scale": 0.5 * torch.tensor([[img_height, img_width]]).to(xys),
             "viewspace_points_grad_scale": 0.5 * max(img_height, img_width),
             "visibility_filter": radii > 0,
             "radii": radii,
@@ -153,7 +156,7 @@ class GSPlatRenderer(Renderer):
             rotations: Optional[torch.Tensor],  # remember to normalize them yourself
             viewpoint_camera,
             scaling_modifier=1.0,
-            block_size: int = 16,
+            block_size: int = DEFAULT_BLOCK_SIZE,
             extra_projection_kwargs: dict = None,
     ):
         img_height = int(viewpoint_camera.height.item())
