@@ -35,6 +35,12 @@ class Viewer:
             cameras_json: str = None,
             vanilla_deformable: bool = False,
             vanilla_gs4d: bool = False,
+            up: list[float] = None,
+            default_camera_position: List[float] = None,
+            default_camera_look_at: List[float] = None,
+            no_edit_panel: bool = False,
+            no_render_panel: bool = False,
+            gsplat: bool = False,
     ):
         self.device = torch.device("cuda")
 
@@ -48,12 +54,21 @@ class Viewer:
         self.show_cameras = show_cameras
 
         self.up_direction = np.asarray([0., 0., 1.])
+        self.camera_center = np.asarray([0., 0., 0.])
+        self.default_camera_position = default_camera_position
+        self.default_camera_look_at = default_camera_look_at
+
+        self.use_gsplat = gsplat
 
         load_from = self._search_load_file(model_paths[0])
 
         self.simplified_model = True
         self.show_edit_panel = True
+        if no_edit_panel is True:
+            self.show_edit_panel = False
         self.show_render_panel = True
+        if no_render_panel is True:
+            self.show_render_panel = False
         # whether model is trained by other implementations
         if vanilla_gs4d is True:
             self.simplified_model = False
@@ -90,8 +105,17 @@ class Viewer:
         if cameras_json_path is None:
             cameras_json_path = os.path.join(training_output_base_dir, "cameras.json")
         self.camera_transform = self._reorient(cameras_json_path, mode=reorient, dataset_type=dataset_type)
+        if up is not None:
+            self.camera_transform = torch.eye(4, dtype=torch.float)
+            up = torch.tensor(args.up)
+            up = -up / torch.linalg.norm(up)
+            self.up_direction = up
+
         # load camera poses
         self.camera_poses = self.load_camera_poses(cameras_json_path)
+        # calculate camera center
+        if len(self.camera_poses) > 0:
+            self.camera_center = np.mean(np.asarray([i["position"] for i in self.camera_poses]), axis=0)
 
         self.available_appearance_options = None
 
@@ -282,6 +306,10 @@ class Viewer:
         elif load_from.endswith(".ply") is True:
             model, renderer = self._initialize_models_from_point_cloud(load_from)
             training_output_base_dir = os.path.dirname(os.path.dirname(os.path.dirname(load_from)))
+            if self.use_gsplat is True:
+                from internal.renderers.gsplat_renderer import GSPlatRenderer
+                print("Use GSPlat renderer for ply file")
+                renderer = GSPlatRenderer()
         else:
             raise ValueError("unsupported file {}".format(load_from))
 
@@ -311,6 +339,15 @@ class Viewer:
             def _(event: viser.GuiEvent) -> None:
                 assert event.client is not None
                 event.client.camera.up_direction = vtf.SO3(event.client.camera.wxyz) @ np.array([0.0, -1.0, 0.0])
+
+            go_to_scene_center = server.add_gui_button(
+                "Go to scene center",
+            )
+
+            @go_to_scene_center.on_click
+            def _(event: viser.GuiEvent) -> None:
+                assert event.client is not None
+                event.client.camera.position = self.camera_center
 
             # add cameras
             if self.show_cameras is True:
@@ -561,7 +598,20 @@ if __name__ == "__main__":
     parser.add_argument("--cameras-json", "--cameras_json", type=str, default=None)
     parser.add_argument("--vanilla_deformable", action="store_true", default=False)
     parser.add_argument("--vanilla_gs4d", action="store_true", default=False)
+    parser.add_argument("--up", nargs=3, required=False, type=float, default=None)
+    parser.add_argument("--default_camera_position", "--dcp", nargs=3, required=False, type=float, default=None)
+    parser.add_argument("--default_camera_look_at", "--dcla", nargs=3, required=False, type=float, default=None)
+    parser.add_argument("--no_edit_panel", action="store_true", default=False)
+    parser.add_argument("--no_render_panel", action="store_true", default=False)
+    parser.add_argument("--gsplat", action="store_true", default=False,
+                        help="Use GSPlat renderer for ply file")
+    parser.add_argument("--float32_matmul_precision", "--fp", type=str, default=None)
     args = parser.parse_args()
+
+    # set torch float32_matmul_precision
+    if args.float32_matmul_precision is not None:
+        torch.set_float32_matmul_precision(args.float32_matmul_precision)
+    del args.float32_matmul_precision
 
     # arguments post process
     if len(args.background_color) == 1 and isinstance(args.background_color[0], str):
