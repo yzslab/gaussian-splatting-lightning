@@ -109,7 +109,7 @@ class Viewer:
             self.camera_transform = torch.eye(4, dtype=torch.float)
             up = torch.tensor(args.up)
             up = -up / torch.linalg.norm(up)
-            self.up_direction = up
+            self.up_direction = up.numpy()
 
         # load camera poses
         self.camera_poses = self.load_camera_poses(cameras_json_path)
@@ -194,7 +194,7 @@ class Viewer:
         up = -up / torch.linalg.norm(up)
 
         print("up vector = {}".format(up))
-        self.up_direction = up
+        self.up_direction = up.numpy()
 
         return transform
 
@@ -329,25 +329,8 @@ class Viewer:
         tabs = server.add_gui_tab_group()
 
         with tabs.add_tab("General"):
-            reset_up_button = server.add_gui_button(
-                "Reset up direction",
-                icon=viser.Icon.ARROW_AUTOFIT_UP,
-                hint="Reset the orbit up direction.",
-            )
-
-            @reset_up_button.on_click
-            def _(event: viser.GuiEvent) -> None:
-                assert event.client is not None
-                event.client.camera.up_direction = vtf.SO3(event.client.camera.wxyz) @ np.array([0.0, -1.0, 0.0])
-
-            go_to_scene_center = server.add_gui_button(
-                "Go to scene center",
-            )
-
-            @go_to_scene_center.on_click
-            def _(event: viser.GuiEvent) -> None:
-                assert event.client is not None
-                event.client.camera.position = self.camera_center
+            from internal.viewer.ui.up_direction_folder import UpDirectionFolder
+            UpDirectionFolder(self, server)
 
             # add cameras
             if self.show_cameras is True:
@@ -457,6 +440,16 @@ class Viewer:
                     initial_value=0.,
                 )
                 self.time_slider.on_update(self._handle_option_updated)
+
+            go_to_scene_center = server.add_gui_button(
+                "Go to scene center",
+            )
+
+            @go_to_scene_center.on_click
+            def _(event: viser.GuiEvent) -> None:
+                assert event.client is not None
+                event.client.camera.position = self.camera_center + np.asarray([2., 0., 0.])
+                event.client.camera.look_at = self.camera_center
 
         if self.show_edit_panel is True:
             with tabs.add_tab("Edit") as edit_tab:

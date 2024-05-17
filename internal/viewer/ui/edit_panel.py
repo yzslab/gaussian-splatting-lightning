@@ -183,13 +183,13 @@ class EditPanel:
                             name = name_text.value
                             match = re.search("^[a-zA-Z0-9_\-]+$", name)
                             if match:
-                                # save ply
-                                ply_save_path = os.path.join("edited", "{}.ply".format(name))
-                                self.viewer.gaussian_model.to_ply_structure().save_to_ply(ply_save_path)
-                                message_text = "Saved to {}".format(ply_save_path)
-
-                                # save as a checkpoint if viewer started from a checkpoint
-                                if self.viewer.checkpoint is not None:
+                                if self.viewer.checkpoint is None:
+                                    # save ply
+                                    ply_save_path = os.path.join("edited", "{}.ply".format(name))
+                                    self.viewer.gaussian_model.to_ply_structure().save_to_ply(ply_save_path)
+                                    message_text = "Saved to {}".format(ply_save_path)
+                                else:
+                                    # save as a checkpoint if viewer started from a checkpoint
                                     checkpoint_save_path = os.path.join("edited", "{}.ckpt".format(name))
                                     checkpoint = self.viewer.checkpoint
                                     # update state dict of the checkpoint
@@ -197,17 +197,18 @@ class EditPanel:
                                     for name_in_dict, name_in_dataclass in [
                                         ("xyz", "xyz"),
                                         ("features_dc", "features_dc"),
-                                        ("features_rest", "features_extra"),
+                                        ("features_rest", "features_rest"),
                                         ("scaling", "scales"),
                                         ("rotation", "rotations"),
                                         ("opacity", "opacities"),
+                                        ("features_extra", "real_features_extra"),
                                     ]:
                                         dict_key = "gaussian_model._{}".format(name_in_dict)
                                         assert dict_key in checkpoint["state_dict"]
                                         checkpoint["state_dict"][dict_key] = getattr(state_dict_value, name_in_dataclass)
                                     # save
                                     torch.save(checkpoint, checkpoint_save_path)
-                                    message_text += " & {}".format(checkpoint_save_path)
+                                    message_text = "Saved to {}".format(checkpoint_save_path)
                             else:
                                 message_text = "Invalid name"
                         except:
