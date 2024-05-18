@@ -59,6 +59,10 @@ class TrainingViewer(viewer.Viewer):
         self.cameras = cameras
         self.up_direction = up_direction
         self.camera_center = camera_center
+
+        if available_appearance_options is not None:
+            # convert key type to str
+            available_appearance_options = {str(i): available_appearance_options[i] for i in available_appearance_options}
         self.available_appearance_options = available_appearance_options
 
         self.camera_queue = Queue()
