@@ -4,7 +4,7 @@ from jsonargparse import lazy_instance
 
 from internal.gaussian_splatting import GaussianSplatting
 from internal.dataset import DataModule
-from internal.callbacks import SaveGaussian
+from internal.callbacks import SaveGaussian, KeepRunningIfWebViewerEnabled
 import lightning.pytorch.loggers
 
 
@@ -26,6 +26,7 @@ def cli_main():
             "enable_checkpointing": False,
             "callbacks": [
                 lazy_instance(SaveGaussian),
+                lazy_instance(KeepRunningIfWebViewerEnabled),
             ],
         },
         save_config_kwargs={"overwrite": True},

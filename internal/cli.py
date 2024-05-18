@@ -23,6 +23,7 @@ class CLI(LightningCLI):
             "outputs",
         ), help="the base directory of the output")
         parser.add_argument("--float32_matmul_precision", "-f", type=Optional[Literal["medium", "high", "highest"]], default=None)
+        parser.add_argument("--viewer", action="store_true", default=False)
 
         # parser.link_arguments("iterations", "trainer.max_steps")
         # parser.link_arguments("epochs", "trainer.max_epochs")
@@ -106,3 +107,6 @@ class CLI(LightningCLI):
         # set torch float32_matmul_precision
         if config.float32_matmul_precision is not None:
             torch.set_float32_matmul_precision(config.float32_matmul_precision)
+
+        # set web viewer
+        config.model.web_viewer = config.viewer

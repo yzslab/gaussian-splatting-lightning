@@ -315,18 +315,21 @@ class Viewer:
 
         return model, renderer, training_output_base_dir, dataset_type, checkpoint
 
-    def start(self):
+    def start(self, block: bool = True, server_config_fun=None, tab_config_fun=None):
         # create viser server
         server = viser.ViserServer(host=self.host, port=self.port)
         server.configure_theme(
             control_layout="collapsible",
             show_logo=False,
         )
-        # register hooks
-        server.on_client_connect(self._handle_new_client)
-        server.on_client_disconnect(self._handle_client_disconnect)
+
+        if server_config_fun is not None:
+            server_config_fun(self, server)
 
         tabs = server.add_gui_tab_group()
+
+        if tab_config_fun is not None:
+            tab_config_fun(self, server, tabs)
 
         with tabs.add_tab("General"):
             from internal.viewer.ui.up_direction_folder import UpDirectionFolder
@@ -473,8 +476,13 @@ class Viewer:
                     sh_degree=self.sh_degree,
                 )
 
-        while True:
-            time.sleep(999)
+        # register hooks
+        server.on_client_connect(self._handle_new_client)
+        server.on_client_disconnect(self._handle_client_disconnect)
+
+        if block is True:
+            while True:
+                time.sleep(999)
 
     def _handle_appearance_embedding_slider_updated(self, event: viser.GuiEvent):
         """

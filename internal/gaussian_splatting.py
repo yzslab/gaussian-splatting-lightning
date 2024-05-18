@@ -12,6 +12,7 @@ from lightning.pytorch import LightningDataModule, LightningModule
 from lightning.pytorch.utilities.types import OptimizerLRScheduler, LRSchedulerPLType, STEP_OUTPUT
 import lightning.pytorch.loggers
 
+from internal.viewer.training_viewer import TrainingViewer
 from internal.configs.model import ModelParams
 # from internal.configs.appearance import AppearanceModelParams
 from internal.configs.light_gaussian import LightGaussian
@@ -44,6 +45,7 @@ class GaussianSplatting(LightningModule):
             renderer: Renderer = lazy_instance(VanillaRenderer),
             absgrad: bool = False,
             save_ply: bool = False,
+            web_viewer: bool = False,
     ) -> None:
         super().__init__()
         self.automatic_optimization = False
@@ -78,6 +80,8 @@ class GaussianSplatting(LightningModule):
             self.get_background_color = self._random_background_color
         else:
             self.get_background_color = self._fixed_background_color
+
+        self.web_viewer: TrainingViewer = None
 
         self.batch_size = 1
         self.restored_epoch = 0
@@ -250,6 +254,29 @@ class GaussianSplatting(LightningModule):
             print("[WARNING] DDP should only be enabled after finishing densify (after densify_until_iter={} iterations, but {} currently)".format(self.hparams["gaussian"].optimization.densify_until_iter, global_step))
         super().on_train_start()
 
+        if self.hparams["web_viewer"] is True and self.trainer.global_rank == 0:
+            if self.trainer.datamodule.hparams["type"] in ["blender", "nsvf", "matrixcity"]:
+                up = torch.tensor([0., 0., 1.])
+            else:
+                c2w = self.trainer.datamodule.dataparser_outputs.train_set.cameras.world_to_camera[:, :3, :3]
+                up = c2w[:, :3, 1].mean(dim=0)
+                up = -up / torch.linalg.norm(up)
+            self.web_viewer = TrainingViewer(
+                up_direction=up.cpu().numpy(),
+                camera_center=self.trainer.datamodule.dataparser_outputs.train_set.cameras.camera_center.mean(dim=0).cpu().numpy(),
+            )
+            self.web_viewer.start()
+
+    def on_train_batch_start(self, batch: Any, batch_idx: int):
+        if self.web_viewer is not None:
+            self.web_viewer.training_step(
+                self.gaussian_model,
+                self.renderer,
+                self._fixed_background_color(),
+                self.trainer.global_step,
+            )
+        return super().on_train_batch_start(batch, batch_idx)
+
     def training_step(self, batch, batch_idx):
         camera, image_info = batch
         # image_name, gt_image, masked_pixels = image_info
@@ -408,6 +435,16 @@ class GaussianSplatting(LightningModule):
 
         self.renderer.after_training_step(self.trainer.global_step, self)
         super().on_train_batch_end(outputs, batch, batch_idx)
+
+    def on_validation_batch_start(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> None:
+        super().on_validation_batch_start(batch, batch_idx, dataloader_idx)
+        if self.web_viewer is not None:
+            self.web_viewer.validation_step(
+                self.gaussian_model,
+                self.renderer,
+                self._fixed_background_color(),
+                batch_idx,
+            )
 
     def validation_step(self, batch, batch_idx, name: str = "val"):
         camera, image_info = batch
