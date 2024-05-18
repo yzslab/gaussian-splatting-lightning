@@ -419,6 +419,7 @@ class Viewer:
                     )
 
                     appearance_options = list(self.available_appearance_options.keys())
+                    appearance_options = [str(i) for i in appearance_options]
 
                     self.appearance_group_dropdown = server.add_gui_dropdown(
                         "Appearance Group",
