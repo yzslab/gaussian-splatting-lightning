@@ -94,6 +94,12 @@ python main.py fit \
 ```
 It can detect some dataset type automatically. You can also specify type with option `--data.type`. Possible values are: `colmap`, `blender`, `nsvf`, `nerfies`, `matrixcity`, `phototourism`.
 ### 2.2. Some useful options
+* Run training with web viewer
+```bash
+python main.py fit \
+    --viewer \
+    ...
+```
 * It is recommended to use config file `configs/blender.yaml` when training on blender dataset.
 ```bash
 python main.py fit \
@@ -101,6 +107,7 @@ python main.py fit \
     ...
 ```
 * With mask (colmap dataset only)
+  * You may need to undistort mask images too: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/utils/colmap_undistort_mask.py">utils/colmap_undistort_mask.py</a>
 ```bash
 # the requirements of mask
 #   * must be single channel
