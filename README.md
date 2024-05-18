@@ -278,9 +278,15 @@ python viewer.py \
 ## 5. F.A.Q.
 <b>Q: </b> The viewer shows my scene in unexpected orientation, how to rotate the camera, like the `U` and `O` key in the SIBR_viewer?
 
-<b>A: </b> You can click the 'Reset up direction' button on the right panel. Then the viewer will use your current orientation as the reference.
-* First use mouse to rotate your camera to the orientation you want
-* Then click the 'Reset up direction' button
+<b>A: </b> Check the `Orientation Control` on the right panel, rotate the camera frustum in the scene to the orientation you want, then click `Apply Up Direction`.
+<video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/7e9198b5-d853-4800-aac2-1774640a8874"></video>
+
+<br/>
+
+Besides: You can also click the 'Reset up direction' button. Then the viewer will use your current orientation as the reference.
+ * First use mouse to rotate your camera to the orientation you want
+ * Then click the 'Reset up direction' button
+
 
 ##
 
