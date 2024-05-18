@@ -438,6 +438,10 @@ class Viewer:
                 )
                 self.time_slider.on_update(self._handle_option_updated)
 
+            # add cameras
+            if self.show_cameras is True:
+                self.add_cameras_to_scene(server)
+
             UpDirectionFolder(self, server)
 
             go_to_scene_center = server.add_gui_button(
@@ -475,10 +479,6 @@ class Viewer:
         # register hooks
         server.on_client_connect(self._handle_new_client)
         server.on_client_disconnect(self._handle_client_disconnect)
-
-        # add cameras
-        if self.show_cameras is True:
-            self.add_cameras_to_scene(server)
 
         if block is True:
             while True:
