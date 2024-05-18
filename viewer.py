@@ -16,6 +16,7 @@ from internal.utils.gaussian_model_loader import GaussianModelLoader
 from internal.models.simplified_gaussian_model_manager import SimplifiedGaussianModelManager
 from internal.viewer import ClientThread, ViewerRenderer
 from internal.viewer.ui import populate_render_tab, TransformPanel, EditPanel
+from internal.viewer.ui.up_direction_folder import UpDirectionFolder
 
 DROPDOWN_USE_DIRECT_APPEARANCE_EMBEDDING_VALUE = "@Direct"
 
@@ -332,13 +333,6 @@ class Viewer:
             tab_config_fun(self, server, tabs)
 
         with tabs.add_tab("General"):
-            from internal.viewer.ui.up_direction_folder import UpDirectionFolder
-            UpDirectionFolder(self, server)
-
-            # add cameras
-            if self.show_cameras is True:
-                self.add_cameras_to_scene(server)
-
             # add render options
             with server.add_gui_folder("Render"):
                 self.max_res_when_static = server.add_gui_slider(
@@ -444,6 +438,8 @@ class Viewer:
                 )
                 self.time_slider.on_update(self._handle_option_updated)
 
+            UpDirectionFolder(self, server)
+
             go_to_scene_center = server.add_gui_button(
                 "Go to scene center",
             )
@@ -479,6 +475,10 @@ class Viewer:
         # register hooks
         server.on_client_connect(self._handle_new_client)
         server.on_client_disconnect(self._handle_client_disconnect)
+
+        # add cameras
+        if self.show_cameras is True:
+            self.add_cameras_to_scene(server)
 
         if block is True:
             while True:
