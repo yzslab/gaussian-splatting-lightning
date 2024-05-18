@@ -262,6 +262,8 @@ class GaussianSplatting(LightningModule):
                 up = c2w[:, :3, 1].mean(dim=0)
                 up = -up / torch.linalg.norm(up)
             self.web_viewer = TrainingViewer(
+                camera_names=self.trainer.datamodule.dataparser_outputs.train_set.image_names,
+                cameras=self.trainer.datamodule.dataparser_outputs.train_set.cameras,
                 up_direction=up.cpu().numpy(),
                 camera_center=self.trainer.datamodule.dataparser_outputs.train_set.cameras.camera_center.mean(dim=0).cpu().numpy(),
             )
