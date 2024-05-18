@@ -39,6 +39,7 @@ class TrainingViewer(viewer.Viewer):
             cameras: Cameras,
             up_direction: np.ndarray = None,
             camera_center: np.ndarray = None,
+            available_appearance_options=None,
             host: str = "0.0.0.0",
             port: int = 8080,
     ):
@@ -49,7 +50,6 @@ class TrainingViewer(viewer.Viewer):
         self.show_cameras = True
         self.show_edit_panel = False
         self.show_render_panel = False
-        self.available_appearance_options = None
         self.default_camera_position = None
         self.default_camera_look_at = None
         self.camera_transform = torch.eye(4)
@@ -59,6 +59,7 @@ class TrainingViewer(viewer.Viewer):
         self.cameras = cameras
         self.up_direction = up_direction
         self.camera_center = camera_center
+        self.available_appearance_options = available_appearance_options
 
         self.camera_queue = Queue()
         self.renderer_output_queue = Queue()
@@ -131,8 +132,8 @@ class TrainingViewer(viewer.Viewer):
             self.resume_training_button.visible = False
             # mark training resumed
             self.is_training_paused = False
-            # send camera to wake blocking thread
-            self.camera_queue.put((event.client.camera, self.scaling_modifier.value))
+            # send None to camera queue to wake blocking thread up
+            self.camera_queue.put((None, None))
 
         self.global_step_label = server.add_gui_markdown(content="Step: 0")
 
@@ -147,6 +148,8 @@ class TrainingViewer(viewer.Viewer):
             try:
                 if self.is_training_paused is True:
                     client_camera, scaling_modifier = self.camera_queue.get()
+                    if client_camera is None:
+                        break
                 else:
                     client_camera, scaling_modifier = self.camera_queue.get_nowait()
             except queue.Empty:

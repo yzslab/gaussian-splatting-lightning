@@ -266,6 +266,7 @@ class GaussianSplatting(LightningModule):
                 cameras=self.trainer.datamodule.dataparser_outputs.train_set.cameras,
                 up_direction=up.cpu().numpy(),
                 camera_center=self.trainer.datamodule.dataparser_outputs.train_set.cameras.camera_center.mean(dim=0).cpu().numpy(),
+                available_appearance_options=self.trainer.datamodule.dataparser_outputs.appearance_group_ids,
             )
             self.web_viewer.start()
 
