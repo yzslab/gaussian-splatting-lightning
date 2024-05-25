@@ -1,9 +1,12 @@
 import glob
 import os
+import queue
 import subprocess
-import multiprocessing.pool
 import argparse
 import json
+import threading
+import traceback
+
 import numpy as np
 import lightning
 import torch
@@ -100,10 +103,15 @@ def save_image(image_information: tuple):
     torchvision.utils.save_image(image, output_path)
 
 
-def save_images(image_list: list):
-    with multiprocessing.pool.ThreadPool() as tp:
-        for _ in tp.imap_unordered(save_image, image_list):
-            pass
+def process_image_queue(image_queue: queue.Queue):
+    while True:
+        image_information = image_queue.get()
+        if image_information is None:
+            break
+        try:
+            save_image(image_information)
+        except:
+            traceback.print_exc()
 
 
 def render_frames(
@@ -115,7 +123,15 @@ def render_frames(
         device,
 ):
     os.makedirs(output_path, exist_ok=True)
-    image_list = []
+
+    # create queue and threads
+    image_queue = queue.Queue(maxsize=max(image_save_batch // 2, 1))
+    threads = []
+    for _ in range(image_save_batch):
+        thread = threading.Thread(target=process_image_queue, args=(image_queue,))
+        threads.append(thread)
+        thread.start()
+
     for idx in tqdm(range(len(cameras)), desc="rendering frames"):
         # model transform
         for model_idx, model_transformation in enumerate(model_transformations[idx]):
@@ -131,16 +147,13 @@ def render_frames(
         image = viewer_renderer.get_outputs(camera).cpu()
         image_output_path = os.path.join(output_path, "{:06d}.png".format(idx))
 
-        if image_save_batch > 1:
-            image_list.append((image, image_output_path))
-            if len(image_list) >= image_save_batch:
-                save_images(image_list)
-                image_list = []
-        else:
-            save_image((image, image_output_path))
+        image_queue.put((image, image_output_path))
 
-    if len(image_list) > 0:
-        save_images(image_list)
+    # wait for all threads finishing image saving
+    for _ in range(len(threads)):
+        image_queue.put(None)
+    for i in threads:
+        i.join()
 
 
 if __name__ == "__main__":
@@ -198,3 +211,5 @@ if __name__ == "__main__":
         subprocess.call(["stty", "sane"])
     except:
         pass
+
+    print(f"Video saved to `{args.output_path}`")
