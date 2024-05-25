@@ -74,7 +74,7 @@ def parse_camera_poses(camera_path: dict):
         cy=height / 2.,
         width=width,
         height=height,
-        appearance_id=torch.zeros_like(fx),
+        appearance_id=torch.zeros_like(fx, dtype=torch.long),
         normalized_appearance_id=torch.zeros_like(fx),
         distortion_params=None,
         camera_type=torch.zeros_like(fx),
