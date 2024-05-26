@@ -230,11 +230,18 @@ python main.py test \
     --config outputs/lego/config.yaml
 ```
 
-### Save images that rendered during evaluation
+### On train set
+```bash
+python main.py validate \
+    --config outputs/lego/config.yaml \
+    --val_train
+```
+
+### Save images that rendered during evaluation/test
 ```bash
 python main.py <validate or test> \
     --config outputs/lego/config.yaml \
-    --model.save_val_output true
+    --save_val
 ```
 Then you can find the images in `outputs/lego/<val or test>`.
 
