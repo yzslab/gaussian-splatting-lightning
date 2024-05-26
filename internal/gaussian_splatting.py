@@ -1,4 +1,7 @@
 import os.path
+import queue
+import threading
+import traceback
 from typing import Tuple, List, Union, Any
 from typing_extensions import Self
 
@@ -86,6 +89,12 @@ class GaussianSplatting(LightningModule):
         self.batch_size = 1
         self.restored_epoch = 0
         self.restored_global_step = 0
+
+        self.max_image_saving_threads = 16
+        self.image_queue = queue.Queue(maxsize=self.max_image_saving_threads)
+        self.image_saving_threads = []
+
+        self.opacity_reset_at = - (1 < 15)
 
     def _l1_loss(self, predict: torch.Tensor, gt: torch.Tensor):
         return torch.abs(predict - gt).mean()
@@ -468,27 +477,98 @@ class GaussianSplatting(LightningModule):
         if self.trainer.global_rank == 0 and self.hparams["save_val_output"] is True and (
                 self.hparams["max_save_val_output"] < 0 or batch_idx < self.hparams["max_save_val_output"]
         ):
-            if self.log_image is not None:
-                grid = torchvision.utils.make_grid(torch.concat([outputs["render"], gt_image], dim=-1))
-                self.log_image(
-                    tag="{}_images/{}".format(name, image_info[0].replace("/", "_")),
-                    image_tensor=grid,
-                )
+            self.image_queue.put({
+                "output_image": outputs["render"].cpu(),
+                "extra_image": outputs["extra_image"].cpu() if "extra_image" in outputs else None,
+                "gt_image": gt_image.cpu(),
+                "stage": name,
+                "image_name": image_info[0],
+                "epoch": max(self.trainer.current_epoch, self.restored_epoch),
+                "step": max(self.trainer.global_step, self.restored_global_step),
+            })
 
-            image_output_path = os.path.join(
-                self.hparams["output_path"],
-                name,
-                "epoch={}-step={}".format(
-                    max(self.trainer.current_epoch, self.restored_epoch),
-                    max(self.trainer.global_step, self.restored_global_step),
-                ),
-                "{}.png".format(image_info[0].replace("/", "_"))
-            )
-            os.makedirs(os.path.dirname(image_output_path), exist_ok=True)
-            torchvision.utils.save_image(
-                torch.concat([outputs["render"], gt_image], dim=-1),
-                image_output_path,
-            )
+            # if self.log_image is not None:
+            #     grid = torchvision.utils.make_grid(torch.concat([outputs["render"], gt_image], dim=-1))
+            #     self.log_image(
+            #         tag="{}_images/{}".format(name, image_info[0].replace("/", "_")),
+            #         image_tensor=grid,
+            #     )
+            #
+            # image_output_path = os.path.join(
+            #     self.hparams["output_path"],
+            #     name,
+            #     "epoch={}-step={}".format(
+            #         max(self.trainer.current_epoch, self.restored_epoch),
+            #         max(self.trainer.global_step, self.restored_global_step),
+            #     ),
+            #     "{}.png".format(image_info[0].replace("/", "_"))
+            # )
+            # os.makedirs(os.path.dirname(image_output_path), exist_ok=True)
+            # torchvision.utils.save_image(
+            #     torch.concat([outputs["render"], gt_image], dim=-1),
+            #     image_output_path,
+            # )
+
+    def on_validation_epoch_start(self) -> None:
+        super().on_validation_epoch_start()
+        if self.hparams["save_val_output"] is True:
+            for i in range(self.max_image_saving_threads):
+                thread = threading.Thread(target=self.save_images)
+                self.image_saving_threads.append(thread)
+                thread.start()
+
+    def on_validation_epoch_end(self) -> None:
+        super().on_validation_epoch_end()
+        for i in range(self.max_image_saving_threads):
+            self.image_queue.put(None)
+        for i in self.image_saving_threads:
+            i.join()
+        self.image_saving_threads = []
+
+    def on_test_epoch_start(self) -> None:
+        super().on_test_epoch_start()
+        self.on_validation_epoch_start()
+
+    def on_test_epoch_end(self) -> None:
+        super().on_test_epoch_end()
+        self.on_validation_epoch_end()
+
+    def save_images(self):
+        while True:
+            item = self.image_queue.get()
+            if item is None:
+                break
+
+            try:
+                image_list = []
+                if item["extra_image"] is not None:
+                    image_list.append(item["extra_image"])
+                image_list += [item["output_image"], item["gt_image"]]
+                image = torch.concat(image_list, dim=-1)
+
+                if self.log_image is not None:
+                    grid = torchvision.utils.make_grid(image)
+                    self.log_image(
+                        tag="{}_images/{}".format(item["stage"], item["image_name"].replace("/", "_")),
+                        image_tensor=grid,
+                    )
+
+                image_output_path = os.path.join(
+                    self.hparams["output_path"],
+                    item["stage"],
+                    "epoch={}-step={}".format(
+                        item["epoch"],
+                        item["step"],
+                    ),
+                    "{}.png".format(item["image_name"].replace("/", "_"))
+                )
+                os.makedirs(os.path.dirname(image_output_path), exist_ok=True)
+                torchvision.utils.save_image(
+                    image,
+                    image_output_path,
+                )
+            except:
+                traceback.print_exc()
 
     def test_step(self, batch, batch_idx):
         return self.validation_step(batch, batch_idx, name="test")

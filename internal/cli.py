@@ -24,6 +24,10 @@ class CLI(LightningCLI):
         ), help="the base directory of the output")
         parser.add_argument("--float32_matmul_precision", "-f", type=Optional[Literal["medium", "high", "highest"]], default=None)
         parser.add_argument("--viewer", action="store_true", default=False)
+        parser.add_argument("--save_val", action="store_true", default=False,
+                            help="Whether save images rendered during validation/test to files")
+        parser.add_argument("--val_train", action="store_true", default=False,
+                            help="Whether use train set to do validation")
 
         # parser.link_arguments("iterations", "trainer.max_steps")
         # parser.link_arguments("epochs", "trainer.max_epochs")
@@ -110,3 +114,6 @@ class CLI(LightningCLI):
 
         # set web viewer
         config.model.web_viewer = config.viewer
+
+        config.model.save_val_output = config.save_val
+        config.data.val_on_train = config.val_train
