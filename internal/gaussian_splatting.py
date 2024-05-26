@@ -94,8 +94,6 @@ class GaussianSplatting(LightningModule):
         self.image_queue = queue.Queue(maxsize=self.max_image_saving_threads)
         self.image_saving_threads = []
 
-        self.opacity_reset_at = - (1 < 15)
-
     def _l1_loss(self, predict: torch.Tensor, gt: torch.Tensor):
         return torch.abs(predict - gt).mean()
 
