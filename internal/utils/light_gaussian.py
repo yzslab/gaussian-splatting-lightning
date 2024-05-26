@@ -7,7 +7,7 @@ def get_count_and_score(
         gaussian_model,
         cameras: List,
         anti_aliased: bool,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     device = gaussian_model.get_xyz.device
     num_gaussians = gaussian_model.get_xyz.shape[0]
 
@@ -17,7 +17,17 @@ def get_count_and_score(
         dtype=torch.int,
         device=device,
     )
-    score_total = torch.zeros(
+    opacity_score_total = torch.zeros(
+        num_gaussians,
+        dtype=torch.float,
+        device=device,
+    )
+    alpha_score_total = torch.zeros(
+        num_gaussians,
+        dtype=torch.float,
+        device=device,
+    )
+    visibility_score_total = torch.zeros(
         num_gaussians,
         dtype=torch.float,
         device=device,
@@ -26,7 +36,7 @@ def get_count_and_score(
     # count for each training camera
     for i in range(len(cameras)):
         camera = cameras[i]
-        count, score = GSplatHitPixelCountRenderer.hit_pixel_count(
+        count, opacity_score, alpha_score, visibility_score = GSplatHitPixelCountRenderer.hit_pixel_count(
             means3D=gaussian_model.get_xyz,
             opacities=gaussian_model.get_opacity,
             scales=gaussian_model.get_scaling,
@@ -36,9 +46,11 @@ def get_count_and_score(
         )
         # add to total
         count_total += count
-        score_total += score
+        opacity_score_total += opacity_score
+        alpha_score_total += alpha_score
+        visibility_score_total += visibility_score
 
-    return count_total, score_total
+    return count_total, opacity_score_total, alpha_score_total, visibility_score_total
 
 
 def calculate_v_imp_score(scales, importance_scores, v_pow):

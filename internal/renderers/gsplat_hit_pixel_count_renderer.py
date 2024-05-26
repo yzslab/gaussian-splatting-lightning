@@ -31,7 +31,7 @@ class GSplatHitPixelCountRenderer(Renderer):
         if anti_aliased is True:
             opacities = opacities * comp[:, None]
 
-        count, score = hit_pixel_count(
+        count, opacity_score, alpha_score, visibility_score = hit_pixel_count(
             xys,
             depths,
             radii,
@@ -43,4 +43,4 @@ class GSplatHitPixelCountRenderer(Renderer):
             block_width=block_size,
         )
 
-        return count, score
+        return count, opacity_score, alpha_score, visibility_score

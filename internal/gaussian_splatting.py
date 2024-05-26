@@ -415,7 +415,7 @@ class GaussianSplatting(LightningModule):
             anti_aliased = False
 
         with torch.no_grad():
-            count, score = get_count_and_score(
+            count, score, _, _ = get_count_and_score(
                 self.gaussian_model,
                 self.trainer.datamodule.dataparser_outputs.train_set.cameras,
                 anti_aliased,
