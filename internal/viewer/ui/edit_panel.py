@@ -191,6 +191,7 @@ class EditPanel:
                                 else:
                                     # save as a checkpoint if viewer started from a checkpoint
                                     checkpoint_save_path = os.path.join("edited", "{}.ckpt".format(name))
+                                    os.makedirs(os.path.dirname(checkpoint_save_path), exist_ok=True)
                                     checkpoint = self.viewer.checkpoint
                                     # update state dict of the checkpoint
                                     state_dict_value = self.viewer.gaussian_model.to_parameter_structure()
