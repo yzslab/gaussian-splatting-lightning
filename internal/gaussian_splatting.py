@@ -517,7 +517,7 @@ class GaussianSplatting(LightningModule):
 
     def on_validation_epoch_end(self) -> None:
         super().on_validation_epoch_end()
-        for i in range(self.max_image_saving_threads):
+        for i in range(len(self.image_saving_threads)):
             self.image_queue.put(None)
         for i in self.image_saving_threads:
             i.join()
