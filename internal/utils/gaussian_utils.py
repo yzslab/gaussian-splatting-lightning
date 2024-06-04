@@ -264,6 +264,77 @@ class GaussianTransformUtils:
 
         return xyz, rotation
 
+    @staticmethod
+    def transform_shs(features, rotation_matrix):
+        """
+        https://github.com/graphdeco-inria/gaussian-splatting/issues/176#issuecomment-2147223570
+        """
+
+        try:
+            from e3nn import o3
+            import einops
+            from einops import einsum
+        except:
+            print("Please run `pip install e3nn einops` to enable SHs rotation")
+            return
+
+        if features.shape[1] == 1:
+            return features
+
+        features = features.clone()
+
+        shs_feat = features[:, 1:, :]
+
+        ## rotate shs
+        P = torch.tensor([[0, 0, 1], [1, 0, 0], [0, 1, 0]], dtype=shs_feat.dtype, device=shs_feat.device)  # switch axes: yzx -> xyz
+        inversed_P = torch.tensor([
+            [0, 1, 0],
+            [0, 0, 1],
+            [1, 0, 0],
+        ], dtype=shs_feat.dtype, device=shs_feat.device)
+        permuted_rotation_matrix = inversed_P @ rotation_matrix @ P
+        rot_angles = o3._rotation.matrix_to_angles(permuted_rotation_matrix.cpu())
+
+        # Construction coefficient
+        D_1 = o3.wigner_D(1, rot_angles[0], - rot_angles[1], rot_angles[2]).to(device=shs_feat.device)
+        D_2 = o3.wigner_D(2, rot_angles[0], - rot_angles[1], rot_angles[2]).to(device=shs_feat.device)
+        D_3 = o3.wigner_D(3, rot_angles[0], - rot_angles[1], rot_angles[2]).to(device=shs_feat.device)
+
+        # rotation of the shs features
+        one_degree_shs = shs_feat[:, 0:3]
+        one_degree_shs = einops.rearrange(one_degree_shs, 'n shs_num rgb -> n rgb shs_num')
+        one_degree_shs = einsum(
+            D_1,
+            one_degree_shs,
+            "... i j, ... j -> ... i",
+        )
+        one_degree_shs = einops.rearrange(one_degree_shs, 'n rgb shs_num -> n shs_num rgb')
+        shs_feat[:, 0:3] = one_degree_shs
+
+        if shs_feat.shape[1] >= 4:
+            two_degree_shs = shs_feat[:, 3:8]
+            two_degree_shs = einops.rearrange(two_degree_shs, 'n shs_num rgb -> n rgb shs_num')
+            two_degree_shs = einsum(
+                D_2,
+                two_degree_shs,
+                "... i j, ... j -> ... i",
+            )
+            two_degree_shs = einops.rearrange(two_degree_shs, 'n rgb shs_num -> n shs_num rgb')
+            shs_feat[:, 3:8] = two_degree_shs
+
+            if shs_feat.shape[1] >= 9:
+                three_degree_shs = shs_feat[:, 8:15]
+                three_degree_shs = einops.rearrange(three_degree_shs, 'n shs_num rgb -> n rgb shs_num')
+                three_degree_shs = einsum(
+                    D_3,
+                    three_degree_shs,
+                    "... i j, ... j -> ... i",
+                )
+                three_degree_shs = einops.rearrange(three_degree_shs, 'n rgb shs_num -> n shs_num rgb')
+                shs_feat[:, 8:15] = three_degree_shs
+
+        return features
+
     @classmethod
     def rotate_by_wxyz_quaternions(cls, xyz, rotations, features, quaternions: torch.tensor):
         if torch.all(quaternions == 0.) or torch.all(quaternions == torch.tensor(
@@ -283,20 +354,7 @@ class GaussianTransformUtils:
             quaternions,
         ))
 
-        # rotate sh_degree=1 if exists
-        if features.shape[1] > 1:
-            features = features.clone()
-
-            degree_1 = features[:, 1:4, :].transpose(1, 2)  # [n, 3-rgb, 3-coefficients], 3 coefficients per-channel
-            rotation_matrix_inverse = rotation_matrix.T
-            rotation_matrix_inverse_reorder = rotation_matrix_inverse[[1, 2, 0], :][:, [1, 2, 0]]
-            sign_matrix = torch.tensor([
-                [-1, 0, 0],
-                [0, 1, 0],
-                [0, 0, -1],
-            ], device=features.device, dtype=torch.float)
-            rotated_degree_1 = degree_1 @ sign_matrix @ rotation_matrix_inverse_reorder @ sign_matrix
-            features[:, 1:4, :] = rotated_degree_1.transpose(1, 2)
+        features = cls.transform_shs(features, rotation_matrix)
 
         return xyz, rotations, features
 
