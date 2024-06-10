@@ -634,7 +634,7 @@ class GaussianSplatting(LightningModule):
             store_ply(os.path.join(
                 self.hparams["output_path"],
                 "checkpoints",
-                "epoch={}-step={}-preview.ply".format(self.trainer.current_epoch, self.trainer.global_step),
+                "epoch={}-step={}-xyz_rgb.ply".format(self.trainer.current_epoch, self.trainer.global_step),
             ), xyz.cpu().numpy(), ((rgb + 0.5).clamp(min=0., max=1.) * 255).to(torch.int).cpu().numpy())
         print("Checkpoint saved to {}".format(checkpoint_path))
 
