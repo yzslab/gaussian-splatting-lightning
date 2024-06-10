@@ -100,6 +100,13 @@ class PhotoTourismParams(ColmapParams):
 
 
 @dataclass
+class SemanticColmapParams(ColmapParams):
+    semantic_mask_dir: str = "semantic/masks"
+
+    semantic_feature_dir: str = "semantic/features"
+
+
+@dataclass
 class DatasetParams:
     """
         Args:
@@ -119,6 +126,8 @@ class DatasetParams:
     matrix_city: MatrixCityParams
 
     phototourism: PhotoTourismParams
+
+    semantic_colmap: SemanticColmapParams
 
     image_scale_factor: float = 1.  # TODO
 

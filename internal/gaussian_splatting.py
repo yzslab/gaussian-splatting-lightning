@@ -338,7 +338,7 @@ class GaussianSplatting(LightningModule):
         return super().on_train_batch_start(batch, batch_idx)
 
     def training_step(self, batch, batch_idx):
-        camera, image_info = batch
+        camera, image_info, _ = batch
         # image_name, gt_image, masked_pixels = image_info
 
         global_step = self.trainer.global_step + 1  # must start from 1 to prevent densify at the beginning
@@ -507,7 +507,7 @@ class GaussianSplatting(LightningModule):
             )
 
     def validation_step(self, batch, batch_idx, name: str = "val"):
-        camera, image_info = batch
+        camera, image_info, _ = batch
         gt_image = image_info[1]
 
         # forward

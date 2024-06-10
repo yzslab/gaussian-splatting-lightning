@@ -1,7 +1,18 @@
+import os
 import time
-
 from lightning.pytorch.callbacks import Callback
 from lightning.pytorch.callbacks.progress.tqdm_progress import TQDMProgressBar
+
+
+class SaveCheckpoint(Callback):
+    def on_train_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+        checkpoint_path = os.path.join(
+            pl_module.hparams["output_path"],
+            "checkpoints",
+            "epoch={}-step={}.ckpt".format(trainer.current_epoch, trainer.global_step),
+        )
+        os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
+        trainer.save_checkpoint(checkpoint_path)
 
 
 class SaveGaussian(Callback):
