@@ -23,6 +23,9 @@ class TrainingViewerRenderer:
         self.renderer_output_queue = renderer_output_queue
         self.gaussian_model = MockGaussianModel
 
+    def setup_options(self, *args, **kwargs):
+        return
+
     def get_outputs(self, camera, scaling_modifier: float = 1.):
         # TODO: support multiple client
         # if multiple clients connected, they may get images mismatch to their camera poses,
