@@ -1,6 +1,6 @@
 import lightning
 import torch
-from typing import Any, Union, List, Tuple, Optional
+from typing import Any, Union, List, Tuple, Optional, Dict
 from internal.cameras.cameras import Camera
 from internal.models.gaussian_model import GaussianModel
 
@@ -65,3 +65,14 @@ class Renderer(torch.nn.Module):
 
     def on_load_checkpoint(self, module, checkpoint):
         pass
+
+    def get_available_output_types(self) -> Dict:
+        return {
+            "rgb": "render",
+        }
+
+    def set_output_type(self, t: str) -> None:
+        return
+
+    def is_type_depth_map(self, t: str) -> bool:
+        return False

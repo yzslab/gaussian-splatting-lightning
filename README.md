@@ -19,6 +19,7 @@
 * <a href="https://niujinshuchong.github.io/mip-splatting/">Mip-Splatting</a>
 * <a href="https://lightgaussian.github.io/">LightGaussian</a>
 * <a href="https://ty424.github.io/AbsGS.github.io/">AbsGS</a> / EfficientGS
+* <a href="https://github.com/hbb1/2d-gaussian-splatting">2D Gaussian Splatting</a> (Viewer Only; See section 4.3 below)
 * Load arbitrary number of images without OOM
 * Interactive web viewer
   * Load multiple models
@@ -287,6 +288,16 @@ python viewer.py \
 python viewer.py \
     4DGaussians/outputs/lego \
     --vanilla_gs4d
+```
+
+* <a href="https://github.com/hbb1/2d-gaussian-splatting">hbb1/2d-gaussian-splatting</a>
+```bash
+# Install `diff-surfel-rasterization` first
+pip install git+https://github.com/hbb1/diff-surfel-rasterization/tree/a97d67aed599ab99dad4ecbe1dc5751bf4f16562
+# Then start viewer
+python viewer.py \
+    2d-gaussian-splatting/outputs/Truck \
+    --vanilla_gs2d
 ```
 
 ## 5. F.A.Q.

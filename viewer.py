@@ -36,6 +36,7 @@ class Viewer:
             cameras_json: str = None,
             vanilla_deformable: bool = False,
             vanilla_gs4d: bool = False,
+            vanilla_gs2d: bool = False,
             up: list[float] = None,
             default_camera_position: List[float] = None,
             default_camera_look_at: List[float] = None,
@@ -100,6 +101,9 @@ class Viewer:
             )
             self.show_edit_panel = False
             self.show_render_panel = False
+        elif vanilla_gs2d is True:
+            from internal.renderers.vanilla_2dgs_renderer import Vanilla2DGSRenderer
+            renderer = Vanilla2DGSRenderer()
 
         # reorient the scene
         cameras_json_path = cameras_json
@@ -367,6 +371,8 @@ class Viewer:
                     initial_value=60,
                 )
 
+            self.viewer_renderer.setup_options(self, server)
+
             with server.add_gui_folder("Model"):
                 self.scaling_modifier = server.add_gui_slider(
                     "Scaling Modifier",
@@ -599,6 +605,7 @@ if __name__ == "__main__":
     parser.add_argument("--cameras-json", "--cameras_json", type=str, default=None)
     parser.add_argument("--vanilla_deformable", action="store_true", default=False)
     parser.add_argument("--vanilla_gs4d", action="store_true", default=False)
+    parser.add_argument("--vanilla_gs2d", action="store_true", default=False)
     parser.add_argument("--up", nargs=3, required=False, type=float, default=None)
     parser.add_argument("--default_camera_position", "--dcp", nargs=3, required=False, type=float, default=None)
     parser.add_argument("--default_camera_look_at", "--dcla", nargs=3, required=False, type=float, default=None)
