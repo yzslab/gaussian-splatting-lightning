@@ -54,6 +54,7 @@ class Viewer:
         self.sh_degree = sh_degree
         self.enable_transform = enable_transform
         self.show_cameras = show_cameras
+        self.extra_video_render_args = []
 
         self.up_direction = np.asarray([0., 0., 1.])
         self.camera_center = np.asarray([0., 0., 0.])
@@ -104,6 +105,7 @@ class Viewer:
         elif vanilla_gs2d is True:
             from internal.renderers.vanilla_2dgs_renderer import Vanilla2DGSRenderer
             renderer = Vanilla2DGSRenderer()
+            self.extra_video_render_args.append("--vanilla_gs2d")
 
         # reorient the scene
         cameras_json_path = cameras_json
@@ -480,6 +482,7 @@ class Viewer:
                     enable_transform=self.enable_transform,
                     background_color=self.background_color,
                     sh_degree=self.sh_degree,
+                    extra_args=self.extra_video_render_args,
                 )
 
         # register hooks

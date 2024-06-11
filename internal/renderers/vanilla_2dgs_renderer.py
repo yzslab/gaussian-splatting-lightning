@@ -64,7 +64,7 @@ class Vanilla2DGSRenderer(Renderer):
         # If precomputed 3d covariance is provided, use it. If not, then it will be computed from
         # scaling / rotation by the rasterizer.
         cov3D_precomp = None
-        scales = pc.get_scaling
+        scales = pc.get_scaling[..., :2]
         rotations = pc.get_rotation
 
         # If precomputed colors are provided, use them. Otherwise, if it is desired to precompute colors

@@ -47,7 +47,7 @@ class SimplifiedGaussianModelManager:
             self._xyz[begin:end] = model.get_xyz.to(device)
             self._opacity[begin:end] = model.get_opacity.to(device)
             self._features[begin:end] = model.get_features.to(device)
-            self._scaling[begin:end] = model.get_scaling.to(device)
+            self._scaling[begin:end][:, :model.get_scaling.shape[-1]] = model.get_scaling.to(device)
             self._rotation[begin:end] = model.get_rotation.to(device)
             self._features_extra[begin:end] = model.get_features_extra.to(device)
 
