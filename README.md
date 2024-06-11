@@ -94,6 +94,12 @@ python main.py fit \
     -n EXPERIMENT_NAME
 ```
 It can detect some dataset type automatically. You can also specify type with option `--data.type`. Possible values are: `colmap`, `blender`, `nsvf`, `nerfies`, `matrixcity`, `phototourism`.
+
+<b>[NOTE]</b> By default, only checkpoint files will be produced on training end. If you need ply file in vanilla 3DGS's format (can be loaded by SIBR_viewer or some WebGL/GPU based viewer):
+  * [Option 1]: Convert checkpoint file to ply: `python utils/ckpt2ply.py TRAINING_OUTPUT_PATH`, e.g.:
+    * `python utils/ckpt2ply.py outputs/lego`
+    * `python utils/ckpt2ply.py outputs/lego/checkpoints/epoch=300-step=30000.ckpt`
+  * [Option 2]: Start training with option: `--model.save_ply true`
 ### 2.2. Some useful options
 * Run training with web viewer
 ```bash
