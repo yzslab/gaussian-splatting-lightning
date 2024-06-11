@@ -90,6 +90,7 @@ class ViewerRenderer:
         return image
 
     def depth_map_processor(self, depth_map):
+        # TODO: the pixels not covered by any Gaussian (alpha==0), should be 1. after normalization
         max_depth = self.max_depth_gui_number.value
         if max_depth == 0:
             max_depth = depth_map.max()

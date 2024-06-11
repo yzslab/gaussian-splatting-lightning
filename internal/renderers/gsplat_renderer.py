@@ -12,6 +12,7 @@ class GSPlatRenderer(Renderer):
         super().__init__()
         self.block_size = block_size
         self.anti_aliased = anti_aliased
+        self.require_depth_map = False
 
     def forward(self, viewpoint_camera: Camera, pc: GaussianModel, bg_color: torch.Tensor, scaling_modifier=1.0, **kwargs):
         img_height = int(viewpoint_camera.height.item())
@@ -47,6 +48,7 @@ class GSPlatRenderer(Renderer):
         if self.anti_aliased is True:
             opacities = opacities * comp[:, None]
 
+        # TODO: avoid rendering rgb if not required
         rgb = rasterize_gaussians(  # type: ignore
             xys,
             depths,
@@ -62,8 +64,30 @@ class GSPlatRenderer(Renderer):
             return_alpha=False,
         )  # type: ignore
 
+        depth_im = None
+        if getattr(self, "require_depth_map", False) is True:
+            depth_im, alpha = rasterize_gaussians(
+                xys,
+                depths,
+                radii,
+                conics,
+                num_tiles_hit,  # type: ignore
+                depths.unsqueeze(-1).repeat(1, 3),
+                opacities,
+                img_height=img_height,
+                img_width=img_width,
+                block_width=self.block_size,
+                background=torch.zeros_like(bg_color),
+                return_alpha=True,
+            )  # type: ignore
+            alpha = alpha[..., None]
+            depth_im = torch.where(alpha > 0, depth_im / alpha, depth_im.detach().max())
+            depth_im = depth_im.permute(2, 0, 1)
+
+
         return {
             "render": rgb.permute(2, 0, 1),
+            "depth": depth_im,
             "viewspace_points": xys,
             "viewspace_points_grad_scale": 0.5 * max(img_height, img_width),
             "visibility_filter": radii > 0,
@@ -227,3 +251,15 @@ class GSPlatRenderer(Renderer):
             "visibility_filter": radii > 0,
             "radii": radii,
         }
+
+    def get_available_output_types(self) -> Dict:
+        return {
+            "rgb": "render",
+            "depth": "depth",
+        }
+
+    def set_output_type(self, t: str) -> None:
+        self.require_depth_map = t == "depth"
+
+    def is_type_depth_map(self, t: str) -> bool:
+        return t == "depth"
