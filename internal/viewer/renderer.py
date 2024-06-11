@@ -1,3 +1,5 @@
+import torch.nn.functional
+
 import internal.renderers as renderers
 
 
@@ -14,7 +16,7 @@ class ViewerRenderer:
         self.renderer = renderer
         self.background_color = background_color
         self.output_key = "render"
-        self.is_depth_map = False
+        self.output_processor = self.no_processing
 
     def _setup_depth_map_options(self, viewer, server):
         self.max_depth_gui_number = server.add_gui_number(
@@ -36,8 +38,15 @@ class ViewerRenderer:
 
     def _set_output_type(self, name: str, key: str):
         # toggle depth map option
-        self.is_depth_map = self.renderer.is_type_depth_map(name)
-        self._set_depth_map_option_visibility(self.is_depth_map)
+        self._set_depth_map_option_visibility(False)
+
+        if self.renderer.is_type_depth_map(name) is True:
+            self.output_processor = self.depth_map_processor
+            self._set_depth_map_option_visibility(True)
+        elif self.renderer.is_type_normal_map(name) is True:
+            self.output_processor = self.normal_map_processor
+        else:
+            self.output_processor = self.no_processing
         # update key
         self.output_key = key
 
@@ -83,8 +92,7 @@ class ViewerRenderer:
             self.background_color,
             scaling_modifier=scaling_modifier,
         )[self.output_key]
-        if self.is_depth_map is True:
-            image = self.depth_map_processor(image)
+        image = self.output_processor(image)
         if image.shape[0] == 1:
             image = image.repeat(3, 1, 1)
         return image
@@ -95,3 +103,9 @@ class ViewerRenderer:
         if max_depth == 0:
             max_depth = depth_map.max()
         return depth_map / (max_depth + 1e-8)
+
+    def normal_map_processor(self, normal_map):
+        return torch.nn.functional.normalize(normal_map, dim=0) * 0.5 + 0.5
+
+    def no_processing(self, i):
+        return i

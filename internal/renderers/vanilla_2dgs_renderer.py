@@ -127,6 +127,7 @@ class Vanilla2DGSRenderer(Renderer):
         rets.update({
             'rend_alpha': render_alpha,
             'rend_normal': render_normal,
+            'view_normal': -allmap[2:5],
             'rend_dist': render_dist,
             'surf_depth': surf_depth,
             'surf_normal': surf_normal,
@@ -171,6 +172,7 @@ class Vanilla2DGSRenderer(Renderer):
             "rgb": "render",
             'render_alpha': "rend_alpha",
             'render_normal': "rend_normal",
+            'view_normal': "view_normal",
             'render_dist': "rend_dist",
             'surf_depth': "surf_depth",
             'surf_normal': "surf_normal",
@@ -178,3 +180,6 @@ class Vanilla2DGSRenderer(Renderer):
 
     def is_type_depth_map(self, t: str) -> bool:
         return t == "surf_depth"
+
+    def is_type_normal_map(self, t: str) -> bool:
+        return t == "render_normal" or t == "surf_normal" or t == "view_normal"

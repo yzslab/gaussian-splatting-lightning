@@ -76,3 +76,6 @@ class Renderer(torch.nn.Module):
 
     def is_type_depth_map(self, t: str) -> bool:
         return False
+
+    def is_type_normal_map(self, t: str) -> bool:
+        return False
