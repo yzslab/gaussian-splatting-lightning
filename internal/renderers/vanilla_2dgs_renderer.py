@@ -1,5 +1,6 @@
-from typing import Dict, Tuple, Union, Callable
+from typing import Dict, Tuple, Union, Callable, Optional, List
 
+import lightning
 import torch
 import math
 from .renderer import Renderer
@@ -141,6 +142,21 @@ class Vanilla2DGSRenderer(Renderer):
         })
 
         return rets
+
+    def training_setup(self, module: lightning.LightningModule) -> Tuple[
+        Optional[Union[
+            List[torch.optim.Optimizer],
+            torch.optim.Optimizer,
+        ]],
+        Optional[Union[
+            List[torch.optim.lr_scheduler.LRScheduler],
+            torch.optim.lr_scheduler.LRScheduler,
+        ]]
+    ]:
+        with torch.no_grad():
+            # key to a quality comparable to hbb1/2d-gaussian-splatting
+            module.gaussian_model._rotation.copy_(torch.rand_like(module.gaussian_model._rotation))
+        return super().training_setup(module)
 
     @staticmethod
     def depths_to_points(view, depthmap):
