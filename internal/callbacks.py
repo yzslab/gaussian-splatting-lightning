@@ -46,3 +46,11 @@ class ProgressBar(TQDMProgressBar):
         items = super().get_metrics(trainer, model)
         items.pop("v_num", None)
         return items
+
+
+class ValidateOnTrainEnd(Callback):
+    def on_train_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+        if trainer.is_last_batch is False or trainer.current_epoch % trainer.check_val_every_n_epoch != 0:
+            trainer.validating = True
+            trainer._evaluation_loop.run()
+            trainer.validating = False
