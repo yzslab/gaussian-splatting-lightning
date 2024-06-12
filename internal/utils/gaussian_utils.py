@@ -28,7 +28,7 @@ class Gaussian:
     def load_array_from_plyelement(plyelement, name_prefix: str):
         names = [p.name for p in plyelement.properties if p.name.startswith(name_prefix)]
         if len(names) == 0:
-            print(f"WARNING: '{name_prefix}' not found in ply, create an empty one")
+            # print(f"WARNING: '{name_prefix}' not found in ply, create an empty one")
             return np.empty((plyelement["x"].shape[0], 0))
         names = sorted(names, key=lambda x: int(x.split('_')[-1]))
         v_list = []
