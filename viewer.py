@@ -79,6 +79,10 @@ class Viewer:
         # TODO: load multiple models more elegantly
         # load and create models
         model, renderer, training_output_base_dir, dataset_type, self.checkpoint = self._load_model_from_file(load_from)
+        # whether a 2DGS model
+        if load_from.endswith(".ply") and model.get_scaling.shape[-1] == 2:
+            print("2DGS ply detected")
+            vanilla_gs2d = True
 
         def get_load_iteration() -> int:
             return int(os.path.basename(os.path.dirname(load_from)).replace("iteration_", ""))
