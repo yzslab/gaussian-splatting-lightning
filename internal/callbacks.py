@@ -1,6 +1,7 @@
 import time
 
 from lightning.pytorch.callbacks import Callback
+from lightning.pytorch.callbacks.progress.tqdm_progress import TQDMProgressBar
 
 
 class SaveGaussian(Callback):
@@ -37,3 +38,11 @@ class StopImageSavingThreads(Callback):
                 if thread.is_alive() is True:
                     still_alive_threads.append(thread)
             alive_threads = still_alive_threads
+
+
+class ProgressBar(TQDMProgressBar):
+    def get_metrics(self, trainer, model):
+        # don't show the version number
+        items = super().get_metrics(trainer, model)
+        items.pop("v_num", None)
+        return items

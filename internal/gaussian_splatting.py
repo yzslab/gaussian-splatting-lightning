@@ -2,7 +2,7 @@ import os.path
 import queue
 import threading
 import traceback
-from typing import Tuple, List, Union, Any
+from typing import Tuple, List, Dict, Union, Any
 from typing_extensions import Self
 
 import torch.optim
@@ -93,6 +93,66 @@ class GaussianSplatting(LightningModule):
         self.max_image_saving_threads = 16
         self.image_queue = queue.Queue(maxsize=self.max_image_saving_threads)
         self.image_saving_threads = []
+
+        # metric calculator
+        self.train_metric_calculator = self.vanilla_train_metric_calculator
+        self.validation_metric_calculator = self.vanilla_validation_metric_calculator
+
+    def vanilla_train_metric_calculator(self, batch, outputs) -> Tuple[Dict[str, float], Dict[str, bool]]:
+        camera, image_info = batch
+        image_name, gt_image, masked_pixels = image_info
+        image = outputs["render"]
+
+        # calculate loss
+        if masked_pixels is not None:
+            gt_image = gt_image.clone()
+            gt_image[masked_pixels] = image.detach()[masked_pixels]  # copy masked pixels from prediction to G.T.
+        rgb_diff_loss = self.rgb_diff_loss_fn(outputs["render"], gt_image)
+        ssim_metric = ssim(outputs["render"], gt_image)
+        loss = (1.0 - self.lambda_dssim) * rgb_diff_loss + self.lambda_dssim * (1. - ssim_metric)
+
+        return {
+            "loss": loss,
+            "rgb_diff": rgb_diff_loss,
+            "ssim": ssim_metric,
+        }, {
+            "loss": True,
+            "rgb_diff": False,
+            "ssim": False,
+        }
+
+    def vanilla_validation_metric_calculator(self, batch, outputs) -> Tuple[Dict[str, float], Dict[str, bool]]:
+        metrics, prog_bar = self.vanilla_train_metric_calculator(batch, outputs)
+
+        camera, image_info = batch
+        image_name, gt_image, _ = image_info
+
+        metrics["psnr"] = self.psnr(outputs["render"], gt_image)
+        prog_bar["psnr"] = True
+        metrics["lpips"] = lpips(outputs["render"].clamp(0., 1.).unsqueeze(0), gt_image.unsqueeze(0))
+        prog_bar["lpips"] = True
+
+        prog_bar["ssim"] = True
+
+        return metrics, prog_bar
+
+    def log_metrics(
+            self,
+            metrics: dict,
+            prog_bar: dict,
+            prefix: str,
+            on_step: bool,
+            on_epoch: bool,
+    ):
+        for name in metrics:
+            self.log(
+                f"{prefix}/{name}",
+                metrics[name],
+                prog_bar=prog_bar[name],
+                on_step=on_step,
+                on_epoch=on_epoch,
+                batch_size=self.batch_size,
+            )
 
     def _l1_loss(self, predict: torch.Tensor, gt: torch.Tensor):
         return torch.abs(predict - gt).mean()
@@ -200,23 +260,6 @@ class GaussianSplatting(LightningModule):
             bg_color=self._fixed_background_color().to(camera.R.device),
         )
 
-    def forward_with_loss_calculation(self, camera, image_info):
-        image_name, gt_image, masked_pixels = image_info
-
-        # forward
-        outputs = self(camera)
-
-        image = outputs["render"]
-
-        # calculate loss
-        if masked_pixels is not None:
-            gt_image[masked_pixels] = image.detach()[masked_pixels]  # copy masked pixels from prediction to G.T.
-        rgb_diff_loss = self.rgb_diff_loss_fn(outputs["render"], gt_image)
-        ssim_metric = ssim(outputs["render"], gt_image)
-        loss = (1.0 - self.lambda_dssim) * rgb_diff_loss + self.lambda_dssim * (1. - ssim_metric)
-
-        return outputs, loss, rgb_diff_loss, ssim_metric
-
     def optimizers(self, use_pl_optimizer: bool = True):
         optimizers = super().optimizers(use_pl_optimizer=use_pl_optimizer)
 
@@ -314,16 +357,16 @@ class GaussianSplatting(LightningModule):
             self.gaussian_model.oneupSHdegree()
 
         # forward
-        outputs, loss, rgb_diff_loss, ssim_metric = self.forward_with_loss_calculation(camera, image_info)
+        outputs = self(camera)
+        # metrics
+        metrics, prog_bar = self.train_metric_calculator(batch, outputs)
+        self.log_metrics(metrics, prog_bar, prefix="train", on_step=True, on_epoch=False)
+
         image, viewspace_point_tensor, visibility_filter, radii = outputs["render"], outputs["viewspace_points"], \
             outputs["visibility_filter"], outputs["radii"]
 
         # retrieve viewspace_points_grad_scale if provided
         viewspace_points_grad_scale = outputs.get("viewspace_points_grad_scale", None)
-
-        self.log("train/rgb_diff", rgb_diff_loss, on_step=True, on_epoch=False, prog_bar=False, batch_size=self.batch_size)
-        self.log("train/ssim", ssim_metric, on_step=True, on_epoch=False, prog_bar=False, batch_size=self.batch_size)
-        self.log("train/loss", loss, on_step=True, on_epoch=False, prog_bar=True, batch_size=self.batch_size)
 
         # log learning rate and gaussian count every 100 iterations (without plus one step)
         if self.trainer.global_step % 100 == 0:
@@ -342,7 +385,7 @@ class GaussianSplatting(LightningModule):
             )
 
         # backward
-        self.manual_backward(loss)
+        self.manual_backward(metrics["loss"])
 
         # before gradient descend
         with torch.no_grad():
@@ -461,15 +504,9 @@ class GaussianSplatting(LightningModule):
         gt_image = image_info[1]
 
         # forward
-        outputs, loss, rgb_diff_loss, ssim_metric = self.forward_with_loss_calculation(camera, image_info)
-
-        self.log(f"{name}/rgb_diff", rgb_diff_loss, on_epoch=True, prog_bar=False, batch_size=self.batch_size)
-        self.log(f"{name}/ssim", ssim_metric, on_epoch=True, prog_bar=False, batch_size=self.batch_size)
-        self.log(f"{name}/loss", loss, on_epoch=True, prog_bar=True, batch_size=self.batch_size)
-        self.log(f"{name}/psnr", self.psnr(outputs["render"], gt_image), on_epoch=True, prog_bar=True,
-                 batch_size=self.batch_size)
-        self.log(f"{name}/lpips", lpips(outputs["render"].clamp(0., 1.).unsqueeze(0), gt_image.unsqueeze(0)), on_epoch=True, prog_bar=True,
-                 batch_size=self.batch_size)
+        outputs = self(camera)
+        metrics, prog_bar = self.validation_metric_calculator(batch, outputs)
+        self.log_metrics(metrics, prog_bar, prefix=name, on_step=False, on_epoch=True)
 
         # write validation image
         if self.trainer.global_rank == 0 and self.hparams["save_val_output"] is True and (
