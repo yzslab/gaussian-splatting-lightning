@@ -24,3 +24,4 @@
 !light_gaussian/train_densify_prune-gsplat-experiment.yaml
 !gsplat-absgrad.yaml
 !gsplat-absgrad-experiment.yaml
+!vanilla_2dgs.yaml

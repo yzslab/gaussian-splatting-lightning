@@ -98,7 +98,7 @@ class GaussianSplatting(LightningModule):
         self.train_metric_calculator = self.vanilla_train_metric_calculator
         self.validation_metric_calculator = self.vanilla_validation_metric_calculator
 
-    def vanilla_train_metric_calculator(self, batch, outputs) -> Tuple[Dict[str, float], Dict[str, bool]]:
+    def vanilla_train_metric_calculator(self, pl_module, step: int, batch, outputs) -> Tuple[Dict[str, float], Dict[str, bool]]:
         camera, image_info = batch
         image_name, gt_image, masked_pixels = image_info
         image = outputs["render"]
@@ -121,8 +121,8 @@ class GaussianSplatting(LightningModule):
             "ssim": False,
         }
 
-    def vanilla_validation_metric_calculator(self, batch, outputs) -> Tuple[Dict[str, float], Dict[str, bool]]:
-        metrics, prog_bar = self.vanilla_train_metric_calculator(batch, outputs)
+    def vanilla_validation_metric_calculator(self, pl_module, batch, outputs) -> Tuple[Dict[str, float], Dict[str, bool]]:
+        metrics, prog_bar = self.train_metric_calculator(self, self.trainer.global_step, batch, outputs)
 
         camera, image_info = batch
         image_name, gt_image, _ = image_info
@@ -174,6 +174,13 @@ class GaussianSplatting(LightningModule):
             )
 
         self.renderer.setup(stage, lightning_module=self)
+
+        # get metric calculator from renderer if available
+        train_metric_calculator, validation_metric_calculator = self.renderer.get_metric_calculators()
+        if train_metric_calculator is not None:
+            self.train_metric_calculator = train_metric_calculator
+        if validation_metric_calculator is not None:
+            self.validation_metric_calculator = validation_metric_calculator
 
         # use different image log method based on the logger type
         self.log_image = None
@@ -359,7 +366,7 @@ class GaussianSplatting(LightningModule):
         # forward
         outputs = self(camera)
         # metrics
-        metrics, prog_bar = self.train_metric_calculator(batch, outputs)
+        metrics, prog_bar = self.train_metric_calculator(self, global_step, batch, outputs)
         self.log_metrics(metrics, prog_bar, prefix="train", on_step=True, on_epoch=False)
 
         image, viewspace_point_tensor, visibility_filter, radii = outputs["render"], outputs["viewspace_points"], \
@@ -416,7 +423,7 @@ class GaussianSplatting(LightningModule):
                     size_threshold = 20 if global_step > self.optimization_hparams.opacity_reset_interval else None
                     gaussians.densify_and_prune(
                         self.hparams["gaussian"].optimization.densify_grad_threshold,
-                        0.005,
+                        self.hparams["gaussian"].optimization.cull_opacity_threshold,
                         extent=self.cameras_extent,
                         prune_extent=self.prune_extent,
                         max_screen_size=size_threshold,
@@ -505,7 +512,7 @@ class GaussianSplatting(LightningModule):
 
         # forward
         outputs = self(camera)
-        metrics, prog_bar = self.validation_metric_calculator(batch, outputs)
+        metrics, prog_bar = self.validation_metric_calculator(self, batch, outputs)
         self.log_metrics(metrics, prog_bar, prefix=name, on_step=False, on_epoch=True)
 
         # write validation image

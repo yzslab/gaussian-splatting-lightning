@@ -1,6 +1,6 @@
 import lightning
 import torch
-from typing import Any, Union, List, Tuple, Optional, Dict
+from typing import Any, Union, List, Tuple, Optional, Dict, Callable
 from internal.cameras.cameras import Camera
 from internal.models.gaussian_model import GaussianModel
 
@@ -50,6 +50,9 @@ class Renderer(torch.nn.Module):
 
     def setup(self, stage: str, *args: Any, **kwargs: Any) -> Any:
         pass
+
+    def get_metric_calculators(self) -> Tuple[Union[None, Callable], Union[None, Callable]]:
+        return None, None
 
     def training_setup(self, module: lightning.LightningModule) -> Tuple[
         Optional[Union[

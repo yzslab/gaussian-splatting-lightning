@@ -19,7 +19,7 @@
 * <a href="https://niujinshuchong.github.io/mip-splatting/">Mip-Splatting</a>
 * <a href="https://lightgaussian.github.io/">LightGaussian</a>
 * <a href="https://ty424.github.io/AbsGS.github.io/">AbsGS</a> / EfficientGS
-* <a href="https://github.com/hbb1/2d-gaussian-splatting">2D Gaussian Splatting</a> (Viewer Only; See section 4.3 below)
+* <a href="https://github.com/hbb1/2d-gaussian-splatting">2D Gaussian Splatting</a>
 * Load arbitrary number of images without OOM
 * Interactive web viewer
   * Load multiple models
@@ -222,6 +222,19 @@ python main.py fit \
     --config configs/gsplat-absgrad.yaml \
     --data.path ...
 ```
+
+### 2.9. <a href="https://surfsplatting.github.io/">2D Gaussian Splatting</a>
+* Install `diff-surfel-rasterization` first
+  ```bash
+  pip install git+https://github.com/hbb1/diff-surfel-rasterization.git@a97d67aed599ab99dad4ecbe1dc5751bf4f16562
+  ```
+
+* Then start training
+  ```bash
+  ... fit \
+      --config configs/vanilla_2dgs.yaml \
+      --data.path ...
+  ```
 
 ## 3. Evaluation
 
