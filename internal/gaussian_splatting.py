@@ -98,7 +98,7 @@ class GaussianSplatting(LightningModule):
         self.train_metric_calculator = self.vanilla_train_metric_calculator
         self.validation_metric_calculator = self.vanilla_validation_metric_calculator
 
-    def vanilla_train_metric_calculator(self, pl_module, step: int, batch, outputs) -> Tuple[Dict[str, float], Dict[str, bool]]:
+    def vanilla_train_metric_calculator(self, pl_module, step: int, batch, outputs) -> Tuple[Dict[str, Any], Dict[str, bool]]:
         camera, image_info = batch
         image_name, gt_image, masked_pixels = image_info
         image = outputs["render"]
