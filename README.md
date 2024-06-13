@@ -1,4 +1,7 @@
 # Gaussian Splatting PyTorch Lightning Implementation
+* <a href="#1-installation">Installation</a>
+* <a href="#2-training">Training</a>
+* <a href="#4-web-viewer">Web Viewer</a>
 ## Known issues
 * Multi-GPU training can only be enabled after densification
 ## Features
@@ -226,7 +229,7 @@ python main.py fit \
 ### 2.9. <a href="https://surfsplatting.github.io/">2D Gaussian Splatting</a>
 * Install `diff-surfel-rasterization` first
   ```bash
-  pip install git+https://github.com/hbb1/diff-surfel-rasterization.git@a97d67aed599ab99dad4ecbe1dc5751bf4f16562
+  pip install git+https://github.com/hbb1/diff-surfel-rasterization.git@3a9357f6a4b80ba319560be7965ed6a88ec951c6
   ```
 
 * Then start training
@@ -312,7 +315,7 @@ python viewer.py \
 * <a href="https://github.com/hbb1/2d-gaussian-splatting">hbb1/2d-gaussian-splatting</a>
 ```bash
 # Install `diff-surfel-rasterization` first
-pip install git+https://github.com/hbb1/diff-surfel-rasterization.git@a97d67aed599ab99dad4ecbe1dc5751bf4f16562
+pip install git+https://github.com/hbb1/diff-surfel-rasterization.git@3a9357f6a4b80ba319560be7965ed6a88ec951c6
 # Then start viewer
 python viewer.py \
     2d-gaussian-splatting/outputs/Truck \
