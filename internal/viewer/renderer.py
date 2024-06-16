@@ -15,7 +15,10 @@ class ViewerRenderer:
         self.gaussian_model = gaussian_model
         self.renderer = renderer
         self.background_color = background_color
+
+        self.render_type = "rgb"
         self.output_key = "render"
+
         self.output_processor = self.no_processing
 
     def _setup_depth_map_options(self, viewer, server):
@@ -37,6 +40,9 @@ class ViewerRenderer:
         self.max_depth_gui_number.visible = visible
 
     def _set_output_type(self, name: str, key: str):
+        """
+        Update properties
+        """
         # toggle depth map option
         self._set_depth_map_option_visibility(False)
 
@@ -48,6 +54,7 @@ class ViewerRenderer:
         else:
             self.output_processor = self.no_processing
         # update key
+        self.render_type = name
         self.output_key = key
 
     def setup_options(self, viewer, server):
@@ -75,9 +82,6 @@ class ViewerRenderer:
 
                     self._set_output_type(output_type_dropdown.value, new_key)
 
-                    # notify renderer that expected output type has changed
-                    # TODO: avoid affect training
-                    self.renderer.set_output_type(output_type_dropdown.value)
                     viewer.rerender_for_all_client()
 
             self._setup_depth_map_options(viewer, server)
@@ -91,6 +95,7 @@ class ViewerRenderer:
             self.gaussian_model,
             self.background_color,
             scaling_modifier=scaling_modifier,
+            render_types=[self.render_type],
         )[self.output_key]
         image = self.output_processor(image)
         if image.shape[0] == 1:

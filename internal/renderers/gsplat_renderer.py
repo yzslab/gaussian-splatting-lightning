@@ -12,9 +12,11 @@ class GSPlatRenderer(Renderer):
         super().__init__()
         self.block_size = block_size
         self.anti_aliased = anti_aliased
-        self.require_depth_map = False
 
-    def forward(self, viewpoint_camera: Camera, pc: GaussianModel, bg_color: torch.Tensor, scaling_modifier=1.0, **kwargs):
+    def forward(self, viewpoint_camera: Camera, pc: GaussianModel, bg_color: torch.Tensor, scaling_modifier=1.0, render_types: list = None, **kwargs):
+        if render_types is None:
+            render_types = ["rgb"]
+
         img_height = int(viewpoint_camera.height.item())
         img_width = int(viewpoint_camera.width.item())
 
@@ -48,24 +50,26 @@ class GSPlatRenderer(Renderer):
         if self.anti_aliased is True:
             opacities = opacities * comp[:, None]
 
-        # TODO: avoid rendering rgb if not required
-        rgb = rasterize_gaussians(  # type: ignore
-            xys,
-            depths,
-            radii,
-            conics,
-            num_tiles_hit,  # type: ignore
-            rgbs,
-            opacities,
-            img_height=img_height,
-            img_width=img_width,
-            block_width=self.block_size,
-            background=bg_color,
-            return_alpha=False,
-        )  # type: ignore
+        rgb = None
+        if "rgb" in render_types:
+            rgb = rasterize_gaussians(  # type: ignore
+                xys,
+                depths,
+                radii,
+                conics,
+                num_tiles_hit,  # type: ignore
+                rgbs,
+                opacities,
+                img_height=img_height,
+                img_width=img_width,
+                block_width=self.block_size,
+                background=bg_color,
+                return_alpha=False,
+            )  # type: ignore
+            rgb = rgb.permute(2, 0, 1)
 
         depth_im = None
-        if getattr(self, "require_depth_map", False) is True:
+        if "depth" in render_types:
             depth_im, alpha = rasterize_gaussians(
                 xys,
                 depths,
@@ -86,7 +90,7 @@ class GSPlatRenderer(Renderer):
 
 
         return {
-            "render": rgb.permute(2, 0, 1),
+            "render": rgb,
             "depth": depth_im,
             "viewspace_points": xys,
             "viewspace_points_grad_scale": 0.5 * max(img_height, img_width),
@@ -257,9 +261,6 @@ class GSPlatRenderer(Renderer):
             "rgb": "render",
             "depth": "depth",
         }
-
-    def set_output_type(self, t: str) -> None:
-        self.require_depth_map = t == "depth"
 
     def is_type_depth_map(self, t: str) -> bool:
         return t == "depth"

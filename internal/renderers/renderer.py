@@ -12,6 +12,7 @@ class Renderer(torch.nn.Module):
             pc: GaussianModel,
             bg_color: torch.Tensor,
             scaling_modifier=1.0,
+            render_types: list = None,
             **kwargs,
     ):
         pass
@@ -24,6 +25,7 @@ class Renderer(torch.nn.Module):
             pc: GaussianModel,
             bg_color: torch.Tensor,
             scaling_modifier=1.0,
+            render_types: list = None,
             **kwargs,
     ):
         return self(
@@ -73,9 +75,6 @@ class Renderer(torch.nn.Module):
         return {
             "rgb": "render",
         }
-
-    def set_output_type(self, t: str) -> None:
-        return
 
     def is_type_depth_map(self, t: str) -> bool:
         return False

@@ -21,7 +21,6 @@ class VanillaRenderer(Renderer):
 
         self.compute_cov3D_python = compute_cov3D_python
         self.convert_SHs_python = convert_SHs_python
-        self.require_depth_map = False
 
     def forward(
             self,
@@ -30,6 +29,7 @@ class VanillaRenderer(Renderer):
             bg_color: torch.Tensor,
             scaling_modifier=1.0,
             override_color=None,
+            render_types: list = None,
     ):
         """
         Render the scene.
@@ -37,8 +37,12 @@ class VanillaRenderer(Renderer):
         Background tensor (bg_color) must be on GPU!
         """
 
+        if render_types is None:
+            render_types = ["rgb"]
+        assert len(render_types) == 1, "Only single type is allowed currently"
+
         rendered_image_key = "render"
-        if getattr(self, "require_depth_map", False):
+        if "depth" in render_types:
             rendered_image_key = "depth"
             w2c = viewpoint_camera.world_to_camera  # already transposed
             means3D_in_camera_space = torch.matmul(pc.get_xyz, w2c[:3, :3]) + w2c[3, :3]
@@ -216,9 +220,6 @@ class VanillaRenderer(Renderer):
             "rgb": "render",
             "depth": "depth",
         }
-
-    def set_output_type(self, t: str) -> None:
-        self.require_depth_map = t == "depth"
 
     def is_type_depth_map(self, t: str) -> bool:
         return t == "depth"
