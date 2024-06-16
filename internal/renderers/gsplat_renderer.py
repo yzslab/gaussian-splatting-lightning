@@ -1,3 +1,4 @@
+#from gsplat import rasterization
 from gsplat import project_gaussians
 from gsplat.rasterize import rasterize_gaussians
 from gsplat.sh import spherical_harmonics
@@ -12,6 +13,72 @@ class GSPlatRenderer(Renderer):
         super().__init__()
         self.block_size = block_size
         self.anti_aliased = anti_aliased
+
+        # self.rasterize_mode = "classic"
+        # if anti_aliased is True:
+        #     self.rasterize_mode = "antialiased"
+
+    # def forward_v1(self, viewpoint_camera: Camera, pc: GaussianModel, bg_color: torch.Tensor, scaling_modifier=1.0, render_types: list = None, **kwargs):
+    #
+    #     img_height = int(viewpoint_camera.height.item())
+    #     img_width = int(viewpoint_camera.width.item())
+    #
+    #     if render_types is None:
+    #         render_mode = "RGB"
+    #         rgb_index = (0, 3)
+    #         depth_index = (3, 3)
+    #     else:
+    #         rgb_index = (0, 0)
+    #         depth_index = (0, 0)
+    #         render_mode_list = []
+    #         bg_color_list = []
+    #         if "rgb" in render_types or "alpha" in render_types:
+    #             render_mode_list.append("RGB")
+    #             bg_color_list.append(bg_color)
+    #             rgb_index = (0, 3)
+    #         # either acc or exp
+    #         if "acc_depth" in render_types:
+    #             render_mode_list.append("D")
+    #             bg_color_list.append(torch.tensor([0.], device=bg_color.device))
+    #             depth_index = (rgb_index[1], rgb_index[1] + 1)
+    #         elif "exp_depth" in render_types:
+    #             render_mode_list.append("ED")
+    #             bg_color_list.append(torch.tensor([0.], device=bg_color.device))
+    #             depth_index = (rgb_index[1], rgb_index[1] + 1)
+    #         bg_color = torch.concat(bg_color_list, dim=-1)
+    #         render_mode = "+".join(render_mode_list)
+    #
+    #     K = torch.tensor([
+    #         [viewpoint_camera.fx, 0, viewpoint_camera.cx],
+    #         [0, viewpoint_camera.fy, viewpoint_camera.cy],
+    #         [0., 0., 1.]],
+    #         device=bg_color.device,
+    #     )
+    #     renders, alphas, meta = rasterization(
+    #         means=pc.get_xyz,
+    #         quats=pc.get_rotation,
+    #         scales=pc.get_scaling,
+    #         opacities=pc.get_opacity.squeeze(-1),
+    #         colors=pc.get_features,
+    #         sh_degree=pc.active_sh_degree,
+    #         viewmats=viewpoint_camera.world_to_camera.T[None, ...],
+    #         Ks=K[None, ...],
+    #         width=img_width,
+    #         height=img_height,
+    #         backgrounds=bg_color[None, ...],
+    #         render_mode=render_mode,
+    #         rasterize_mode=getattr(self, "rasterize_mode", "antialiased"),
+    #     )
+    #
+    #     return {
+    #         "render": renders[0][..., rgb_index[0]:rgb_index[1]].permute(2, 0, 1),
+    #         "depth": renders[0][..., depth_index[0]:depth_index[1]].permute(2, 0, 1),
+    #         "alpha": alphas[0].permute(2, 0, 1),
+    #         "viewspace_points": meta["means2d"][0],
+    #         "viewspace_points_grad_scale": 0.5 * max(img_height, img_width),
+    #         "visibility_filter": meta["radii"] > 0,
+    #         "radii": meta["radii"],
+    #     }
 
     def forward(self, viewpoint_camera: Camera, pc: GaussianModel, bg_color: torch.Tensor, scaling_modifier=1.0, render_types: list = None, **kwargs):
         if render_types is None:
@@ -87,7 +154,6 @@ class GSPlatRenderer(Renderer):
             alpha = alpha[..., None]
             depth_im = torch.where(alpha > 0, depth_im / alpha, depth_im.detach().max())
             depth_im = depth_im.permute(2, 0, 1)
-
 
         return {
             "render": rgb,
@@ -264,3 +330,14 @@ class GSPlatRenderer(Renderer):
 
     def is_type_depth_map(self, t: str) -> bool:
         return t == "depth"
+
+    # def get_available_output_types(self) -> Dict:
+    #     return {
+    #         "rgb": "render",
+    #         "alpha": "alpha",
+    #         "acc_depth": "depth",
+    #         "exp_depth": "depth",
+    #     }
+    #
+    # def is_type_depth_map(self, t: str) -> bool:
+    #     return t == "acc_depth" or t == "exp_depth"
