@@ -23,6 +23,7 @@
 * <a href="https://lightgaussian.github.io/">LightGaussian</a>
 * <a href="https://ty424.github.io/AbsGS.github.io/">AbsGS</a> / EfficientGS
 * <a href="https://github.com/hbb1/2d-gaussian-splatting">2D Gaussian Splatting</a>
+* <a href="https://jumpat.github.io/SAGA/">Segment Any 3D Gaussians v2</a>
 * Load arbitrary number of images without OOM
 * Interactive web viewer
   * Load multiple models
@@ -88,6 +89,12 @@ pip install -r requirements.txt
     ```bash
     pip install git+https://github.com/yzslab/gsplat.git
     ```
+
+* If you need SegAnyGaussian
+  * gsplat (see command above)
+  * hdbscan: `pip install hdbscan`
+  * PyTorch3D: <a href="https://github.com/facebookresearch/pytorch3d/blob/main/INSTALL.md">facebookresearch/pytorch3d</a>
+  * SAM: <a href="https://github.com/facebookresearch/segment-anything">facebookresearch/segment-anything</a>
 
 ## 2. Training
 ### 2.1. Basic command
@@ -238,6 +245,70 @@ python main.py fit \
       --config configs/vanilla_2dgs.yaml \
       --data.path ...
   ```
+  
+### 2.10. <a href="https://jumpat.github.io/SAGA/">Segment Any 3D Gaussians</a>
+* First, train a 3DGS scene using gsplat
+  ```bash
+  python main.py fit \
+      --config configs/gsplat.yaml \
+      --data.path data/Truck \
+      -n Truck -v gsplat  # trained model will save to `outputs/Truck/gsplat`
+  ```
+* Then generate SAM masks and their scales
+  * Masks
+    ```bash
+    python utils/get_sam_masks.py data/Truck/images
+    ```
+    You can specify the path to SAM checkpoint via argument `-c PATH_TO_SAM_CKPT`
+  
+  * Scales
+    ```bash
+    python utils/get_sam_mask_scales.py outputs/Truck/gsplat
+    ```
+  
+  Both the masks and scales will be saved in `data/Truck/semantics`, the structure of `data/Truck` will like this:
+  ```bash
+  ├── images  # The images of your dataset
+      ├── 000001.jpg
+      ├── 000002.jpg
+      ...
+  ├── semantic  # Generate by `get_sam_masks.py` and `get_sam_mask_scales.py`
+      ├── depths  # Only for visualization
+          ├── 000001.jpg.tiff
+          ├── 000002.jpg.tiff
+          ...
+      ├── masks
+          ├── 000001.jpg.pt
+          ├── 000002.jpg.pt
+          ...
+      ├── masks_preview  # Only for visualization
+          ├── 000001.jpg.png
+          ├── 000002.jpg.png
+          ...
+      └── scales
+          ├── 000001.jpg.pt
+          ├── 000002.jpg.pt
+          ...
+  ├── sparse  # colmap sparse database
+      ├── cameras.bin
+      ├── images.bin
+      ├── points3D.bin
+  ```
+
+* Train SegAnyGS
+  ```bash
+  python seganygs.py fit \
+      --config config/segany_splatting.yaml \
+      --data.path data/Truck \
+      --model.initialize_from outputs/Truck/gsplat \
+      -n Truck -v seganygs  # save to `outputs/Truck/seganygs`
+  ```
+  The value of `--model.initialize_from` is the path to the trained 3DGS model
+
+* Start the web viewer to perform segmentation or cluster
+  ```bash
+  python viewer.py outputs/Truck/seganygs
+  ```
 
 ## 3. Evaluation
 
@@ -320,6 +391,13 @@ pip install git+https://github.com/hbb1/diff-surfel-rasterization.git@3a9357f6a4
 python viewer.py \
     2d-gaussian-splatting/outputs/Truck \
     --vanilla_gs2d
+```
+
+* <a href="https://github.com/Jumpat/SegAnyGAussians">Jumpat/SegAnyGAussians</a>
+```bash
+python viewer.py \
+    SegAnyGAussians/outputs/Truck \
+    --vanilla_seganygs
 ```
 
 ## 5. F.A.Q.
