@@ -1,3 +1,4 @@
+max_steps: 10000
 data:
   type: semantic_colmap
   params:

@@ -4,7 +4,7 @@ from jsonargparse import lazy_instance
 
 from internal.semantic_splatting import SemanticSplatting
 from internal.dataset import DataModule
-from internal.callbacks import SaveCheckpoint
+from internal.callbacks import SaveCheckpoint, ProgressBar
 import lightning.pytorch.loggers
 
 
@@ -25,6 +25,7 @@ def cli_main():
             "enable_checkpointing": False,
             "callbacks": [
                 lazy_instance(SaveCheckpoint),
+                lazy_instance(ProgressBar),
             ],
         },
         save_config_kwargs={"overwrite": True},

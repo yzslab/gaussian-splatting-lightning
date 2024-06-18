@@ -9,7 +9,7 @@ from ..models.gaussian_model import GaussianModel
 
 
 class GSplatContrastiveFeatureRenderer(Renderer):
-    def __init__(self, feature_map_width: int = 200) -> None:
+    def __init__(self, feature_map_width: int = -1) -> None:
         super().__init__()
 
         self.block_size = DEFAULT_BLOCK_SIZE
@@ -20,6 +20,7 @@ class GSplatContrastiveFeatureRenderer(Renderer):
             self,
             viewpoint_camera: Camera,
             pc: GaussianModel,
+            bg_color: torch.Tensor,
             scaling_modifier=1.0,
             semantic_features: torch.Tensor = None,
             **kwargs,
@@ -77,7 +78,7 @@ class GSplatContrastiveFeatureRenderer(Renderer):
             img_height=img_height,
             img_width=img_width,
             block_width=self.block_size,
-            background=torch.zeros((semantic_features.shape[-1],), dtype=semantic_features.dtype, device=semantic_features.device),
+            background=bg_color,
             return_alpha=False,
         )  # type: ignore
 
@@ -88,3 +89,49 @@ class GSplatContrastiveFeatureRenderer(Renderer):
             "visibility_filter": radii > 0,
             "radii": radii,
         }
+
+    def depth_forward(
+            self,
+            viewpoint_camera: Camera,
+            pc: GaussianModel,
+    ):
+        img_height = int(viewpoint_camera.height.item())
+        img_width = int(viewpoint_camera.width.item())
+
+        xys, depths, radii, conics, comp, num_tiles_hit, cov3d = project_gaussians(  # type: ignore
+            means3d=pc.get_xyz,
+            scales=pc.get_scaling,
+            glob_scale=1.,
+            quats=pc.get_rotation,
+            viewmat=viewpoint_camera.world_to_camera.T[:3, :],
+            # projmat=viewpoint_camera.full_projection.T,
+            fx=viewpoint_camera.fx.item(),
+            fy=viewpoint_camera.fy.item(),
+            cx=viewpoint_camera.cx.item(),
+            cy=viewpoint_camera.cy.item(),
+            img_height=img_height,
+            img_width=img_width,
+            block_width=self.block_size,
+        )
+
+        opacities = pc.get_opacity
+        if self.anti_aliased is True:
+            opacities = opacities * comp[:, None]
+
+        depth_im = rasterize_gaussians(
+            xys,
+            depths,
+            radii,
+            conics,
+            num_tiles_hit,  # type: ignore
+            depths.unsqueeze(-1),
+            opacities,
+            img_height=img_height,
+            img_width=img_width,
+            block_width=self.block_size,
+            background=torch.zeros((1,), dtype=torch.float, device=xys.device),
+            return_alpha=False,
+        )  # type: ignore
+        depth_im = depth_im.permute(2, 0, 1)
+
+        return depth_im

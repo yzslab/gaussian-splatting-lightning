@@ -21,7 +21,7 @@ class ContrastiveFeatureRenderer(Renderer):
             pc: GaussianModel,
             bg_color: torch.Tensor,
             scaling_modifier=1.0,
-            features: torch.Tensor = None,
+            semantic_features: torch.Tensor = None,
             **kwargs,
     ):
         """
@@ -42,8 +42,10 @@ class ContrastiveFeatureRenderer(Renderer):
         tanfovx = math.tan(viewpoint_camera.fov_x * 0.5)
         tanfovy = math.tan(viewpoint_camera.fov_y * 0.5)
 
-        feature_width = 200
-        feature_height = int(feature_width * viewpoint_camera.height.long() / viewpoint_camera.width.long())
+        # feature_width = 200
+        # feature_height = int(feature_width * viewpoint_camera.height.long() / viewpoint_camera.width.long())
+        feature_width = viewpoint_camera.width.item()
+        feature_height = viewpoint_camera.height.item()
 
         raster_settings = GaussianRasterizationSettingsContrastiveF(
             image_height=feature_height,
@@ -80,7 +82,7 @@ class ContrastiveFeatureRenderer(Renderer):
         # If precomputed colors are provided, use them. Otherwise, if it is desired to precompute colors
         # from SHs in Python, do it. If not, then SH -> RGB conversion will be done by rasterizer.
         shs = None
-        colors_precomp = features
+        colors_precomp = semantic_features
 
         # Rasterize visible Gaussians to image, obtain their radii (on screen).
         rendered_image, radii = rasterizer(

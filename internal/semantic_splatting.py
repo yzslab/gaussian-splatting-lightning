@@ -1,9 +1,10 @@
 from collections import namedtuple
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, Dict
 from typing_extensions import Self
 
 import lightning
 import torch.nn
+import pytorch3d.ops
 from lightning.pytorch.utilities.types import STEP_OUTPUT, OptimizerLRScheduler
 
 from internal.configs.semantic_splatting import Optimization as OptimizationConfig
@@ -33,8 +34,14 @@ class SemanticSplatting(lightning.LightningModule):
         # avoid storing state_dict
         self.models = namedtuple("Models", ["gaussian"])
 
-        # self.renderer = ContrastiveFeatureRenderer()
-        self.renderer = GSplatContrastiveFeatureRenderer()
+        self.renderer = ContrastiveFeatureRenderer()
+        # self.renderer = GSplatContrastiveFeatureRenderer()
+
+        self.scale_aware_dim = -1
+        self.feature_smooth_map = None
+        self.ray_sample_rate = 0
+        self.num_sampled_rays = 1000
+        self.rfn = 1.
 
     def setup(self, stage: str) -> None:
         super().setup(stage)
@@ -45,98 +52,296 @@ class SemanticSplatting(lightning.LightningModule):
         gaussian_model, _ = GaussianModelLoader.search_and_load(initialize_from, sh_degree, self.device)
         self.models.gaussian = gaussian_model
 
-        self.gaussian_semantic_features = torch.nn.Parameter(torch.zeros(
+        # multiply with 1e-2 is the key to reduce noisy
+        self.gaussian_semantic_features = torch.nn.Parameter(torch.randn(
             (gaussian_model.get_xyz.shape[0], self.n_feature_dims),
             dtype=torch.float,
-        ), requires_grad=True)
-        # torch.nn.init.normal_(self.gaussian_semantic_features)
+        ) * 1e-2, requires_grad=True)
 
-        self.sam_proj = torch.nn.Sequential(
-            torch.nn.Linear(256, 64, bias=True),
-            torch.nn.LayerNorm(64),
-            torch.nn.LeakyReLU(),
-            torch.nn.Linear(64, 64, bias=True),
-            torch.nn.LayerNorm(64),
-            torch.nn.LeakyReLU(),
-            torch.nn.Linear(64, self.n_feature_dims, bias=True)
+        self.scale_gate = torch.nn.Sequential(
+            torch.nn.Linear(1, 32, bias=True),
+            torch.nn.Sigmoid()
         )
 
-    def forward(self, camera) -> Any:
+        self.bg_color = torch.nn.Parameter(torch.zeros((self.n_feature_dims,), dtype=torch.float, device=self.device), requires_grad=False)
+
+        if stage == "fit":
+            self.gather_scales()
+
+    def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
+        checkpoint["feature_smooth_map"] = self.feature_smooth_map
+
+    def on_load_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
+        super().on_load_checkpoint(checkpoint)
+        self.feature_smooth_map = checkpoint["feature_smooth_map"]
+
+    @staticmethod
+    def get_quantile_func(scales: torch.Tensor, distribution="normal"):
+        from sklearn.preprocessing import QuantileTransformer
+
+        """
+        Use 3D scale statistics to normalize scales -- use quantile transformer.
+        """
+        scales = scales.flatten()
+
+        scales = scales.detach().cpu().numpy()
+
+        # Calculate quantile transformer
+        quantile_transformer = QuantileTransformer(output_distribution=distribution)
+        quantile_transformer = quantile_transformer.fit(scales.reshape(-1, 1))
+
+        def quantile_transformer_func(scales):
+            # This function acts as a wrapper for QuantileTransformer.
+            # QuantileTransformer expects a numpy array, while we have a torch tensor.
+            scales = scales.reshape(-1, 1)
+            return torch.Tensor(
+                quantile_transformer.transform(scales.detach().cpu().numpy())
+            ).to(scales.device)
+
+        return quantile_transformer_func
+
+    def gather_scales(self) -> None:
+        scale_aware_dim = self.scale_aware_dim
+        # gather scales
+        print("Finding upper_bound_scale")
+        all_scales = []
+
+        from tqdm import tqdm
+        for image in tqdm(self.trainer.datamodule.dataparser_outputs.train_set):
+            scale_file_path = image[4][1]
+            all_scales.append(torch.load(scale_file_path, map_location=self.device))
+        all_scales = torch.cat(all_scales)
+
+        self.upper_bound_scale = all_scales.max().item()
+        print(f"upper_bound_scale={self.upper_bound_scale}")
+
+        if scale_aware_dim <= 0 or scale_aware_dim >= 32:
+            print("Using adaptive scale gate.")
+            self.q_trans = self.get_quantile_func(all_scales, "uniform")
+        else:
+            self.q_trans = self.get_quantile_func(all_scales, "uniform")
+            self.fixed_scale_gate = torch.tensor([[1 for j in range(32 - scale_aware_dim + i)] + [0 for k in range(scale_aware_dim - i)] for i in range(scale_aware_dim + 1)]).cuda()
+
+    def mask_preprocess(self, sam_masks, mask_scales):
+        ray_sample_rate = self.ray_sample_rate
+        num_sampled_rays = self.num_sampled_rays
+
+        with torch.no_grad():
+            upper_bound_scale = self.upper_bound_scale
+
+            mask_scales, sort_indices = torch.sort(mask_scales, descending=True)
+            sam_masks = sam_masks.float()[sort_indices, :, :]
+
+            num_sampled_scales = 8
+
+            sampled_scale_index = torch.randperm(len(mask_scales))[:num_sampled_scales]
+
+            tmp = torch.zeros(num_sampled_scales + 2)
+
+            tmp[1:len(sampled_scale_index) + 1] = sampled_scale_index
+            tmp[-1] = len(mask_scales) - 1
+            tmp[0] = -1  # attach a bigger scale
+            sampled_scale_index = tmp.long()
+
+            sampled_scales = mask_scales[sampled_scale_index]
+
+            second_big_scale = mask_scales[mask_scales < upper_bound_scale].max()
+
+            ray_sample_rate = ray_sample_rate if ray_sample_rate > 0 else num_sampled_rays / (sam_masks.shape[-1] * sam_masks.shape[-2])
+
+            sampled_ray = torch.rand(sam_masks.shape[-2], sam_masks.shape[-1]).cuda() < ray_sample_rate
+            non_mask_region = sam_masks.sum(dim=0) == 0
+
+            sampled_ray = torch.logical_and(sampled_ray, ~non_mask_region)
+
+            # H W
+            per_pixel_mask_size = sam_masks * sam_masks.sum(-1).sum(-1)[:, None, None]
+
+            per_pixel_mean_mask_size = per_pixel_mask_size.sum(dim=0) / (sam_masks.sum(dim=0) + 1e-9)
+
+            per_pixel_mean_mask_size = per_pixel_mean_mask_size[sampled_ray]
+
+            pixel_to_pixel_mask_size = per_pixel_mean_mask_size.unsqueeze(0) * per_pixel_mean_mask_size.unsqueeze(1)
+            ptp_max_size = pixel_to_pixel_mask_size.max()
+            pixel_to_pixel_mask_size[pixel_to_pixel_mask_size == 0] = 1e10
+            per_pixel_weight = torch.clamp(ptp_max_size / pixel_to_pixel_mask_size, 1.0, None)
+            per_pixel_weight = (per_pixel_weight - per_pixel_weight.min()) / (per_pixel_weight.max() - per_pixel_weight.min()) * 9. + 1.
+
+            sam_masks_sampled_ray = sam_masks[:, sampled_ray]
+
+            gt_corrs = []
+
+            sampled_scales[0] = upper_bound_scale + upper_bound_scale * torch.rand(1)[0]
+            for idx, si in enumerate(sampled_scale_index):
+                upper_bound = sampled_scales[idx] >= upper_bound_scale
+
+                if si != len(mask_scales) - 1 and not upper_bound:
+                    sampled_scales[idx] -= (sampled_scales[idx] - mask_scales[si + 1]) * torch.rand(1)[0]
+                elif upper_bound:
+                    sampled_scales[idx] -= (sampled_scales[idx] - second_big_scale) * torch.rand(1)[0]
+                else:
+                    sampled_scales[idx] -= sampled_scales[idx] * torch.rand(1)[0]
+
+                if not upper_bound:
+                    gt_vec = torch.zeros_like(sam_masks_sampled_ray)
+                    gt_vec[:si + 1, :] = sam_masks_sampled_ray[:si + 1, :]
+                    for j in range(si, -1, -1):
+                        gt_vec[j, :] = torch.logical_and(
+                            torch.logical_not(gt_vec[j + 1:, :].any(dim=0)), gt_vec[j, :]
+                        )
+                    gt_vec[si + 1:, :] = sam_masks_sampled_ray[si + 1:, :]
+                else:
+                    gt_vec = sam_masks_sampled_ray
+
+                gt_corr = torch.einsum('nh,nj->hj', gt_vec, gt_vec)
+                gt_corr[gt_corr != 0] = 1
+                gt_corrs.append(gt_corr)
+
+            # N_scale S C_clip
+            # gt_clip_features = torch.stack(gt_clip_features, dim = 0)
+            # N_scale S S
+            gt_corrs = torch.stack(gt_corrs, dim=0)
+
+            sampled_scales = self.q_trans(sampled_scales).squeeze()
+            sampled_scales = sampled_scales.squeeze()
+
+        return sampled_ray, per_pixel_weight, gt_corrs, sampled_scales
+
+    def get_smoothed_point_features(self, K=16, dropout=0.5):
+        if K <= 1:
+            return self.gaussian_semantic_features
+
+        assert dropout < 0 or int(K * dropout) >= 1
+
+        with torch.no_grad():
+            if self.feature_smooth_map is None or self.feature_smooth_map["K"] != K:
+                xyz = self.models.gaussian.get_xyz
+                nearest_k_idx = pytorch3d.ops.knn_points(
+                    xyz.unsqueeze(0),
+                    xyz.unsqueeze(0),
+                    K=K,
+                ).idx.squeeze()
+                self.feature_smooth_map = {"K": K, "m": nearest_k_idx}
+
+        normed_features = torch.nn.functional.normalize(self.gaussian_semantic_features, dim=-1, p=2)
+
+        if dropout > 0 and dropout < 1:
+            select_point = torch.randperm(K)[: int(K * dropout)]
+
+            select_idx = self.feature_smooth_map["m"][:, select_point]
+            ret = normed_features[select_idx, :].mean(dim=1)
+        else:
+            ret = normed_features[self.feature_smooth_map["m"], :].mean(dim=1)
+
+        return ret
+
+    def forward(self, camera, smooth_dropout: float = -1, semantic_features: torch.Tensor = None) -> Any:
+        if semantic_features is None:
+            semantic_features = self.get_smoothed_point_features(K=16, dropout=smooth_dropout)
+            semantic_features = semantic_features / (semantic_features.norm(dim=-1, keepdim=True) + 1e-9)
         return self.renderer(
             viewpoint_camera=camera,
             pc=self.models.gaussian,
-            semantic_features=self.gaussian_semantic_features,
+            bg_color=self.bg_color,
+            semantic_features=semantic_features,
         )
 
-    def forward_with_loss_calculation(self, cameras, image_info, semantic):
-        outputs = self(cameras)
+    def forward_with_loss_calculation(self, camera, image_info, semantic):
+        # dropout only apply during training
+        outputs = self(camera, 0.5)
         rendered_features = outputs["render"]
 
-        sam_features = semantic[1]
+        masks, scales = semantic
+        scale_aware_dim = self.scale_aware_dim
 
-        H, W = sam_features.shape[-2:]
+        sampled_ray, per_pixel_weight, gt_corrs, sampled_scales = self.mask_preprocess(sam_masks=masks, mask_scales=scales)
 
-        # N_mask, H, W
-        sam_masks = torch.nn.functional.interpolate(semantic[0].unsqueeze(0), size=sam_features.shape[-2:], mode='nearest').squeeze()
-        nonzero_masks = sam_masks.sum(dim=(1, 2)) > 0
-        sam_masks = sam_masks[nonzero_masks, :, :]
-        full_resolution_sam_masks = semantic[0]
-        full_resolution_sam_masks = full_resolution_sam_masks[nonzero_masks, :, :]
+        rendered_feature_norm = rendered_features.norm(dim=0, p=2).mean()
+        rendered_feature_norm_reg = (1 - rendered_feature_norm) ** 2
 
-        low_dim_sam_features = self.sam_proj(
-            sam_features.reshape(-1, H * W).permute([1, 0])
-        ).permute([1, 0]).reshape(self.n_feature_dims, H, W)
+        rendered_features = torch.nn.functional.interpolate(rendered_features.unsqueeze(0), masks.shape[-2:], mode='bilinear').squeeze(0)
 
-        # NHW, NCHW
-        prototypes = (sam_masks.unsqueeze(1) * low_dim_sam_features).sum(dim=(2, 3))
-        prototypes /= sam_masks.sum(dim=(1, 2)).unsqueeze(-1)
+        # N_sampled_scales 32
+        if scale_aware_dim <= 0 or scale_aware_dim >= 32:
+            gates = self.scale_gate(sampled_scales.unsqueeze(-1))
+        else:
+            int_sampled_scales = ((1 - sampled_scales.squeeze()) * scale_aware_dim).long()
+            gates = self.fixed_scale_gate[int_sampled_scales].detach()
 
-        pp = torch.einsum('NC, CHW -> NHW', prototypes, rendered_features)
+        # N_sampled_scales C H W
+        feature_with_scale = rendered_features.unsqueeze(0).repeat([sampled_scales.shape[0], 1, 1, 1])
+        feature_with_scale = feature_with_scale * gates.unsqueeze(-1).unsqueeze(-1)
 
-        prob = torch.sigmoid(pp)
+        sampled_feature_with_scale = feature_with_scale[:, :, sampled_ray]
 
-        full_resolution_sam_masks = torch.nn.functional.interpolate(full_resolution_sam_masks.unsqueeze(0), size=prob.shape[-2:], mode='bilinear').squeeze()
-        full_resolution_sam_masks[full_resolution_sam_masks <= 0.5] = 0
+        scale_conditioned_features_sam = sampled_feature_with_scale.permute([0, 2, 1])
 
-        bce_contrastive_loss = full_resolution_sam_masks * torch.log(prob + 1e-8) + ((1 - full_resolution_sam_masks) * torch.log(1 - prob + 1e-8))
-        bce_contrastive_loss = -bce_contrastive_loss.mean()
+        scale_conditioned_features_sam = torch.nn.functional.normalize(scale_conditioned_features_sam, dim=-1, p=2)
+        corr = torch.einsum('nhc,njc->nhj', scale_conditioned_features_sam, scale_conditioned_features_sam)
 
-        rands = torch.rand(self.gaussian_semantic_features.shape[0], device=prob.device)
-        reg_loss = torch.relu(torch.einsum('NC,KC->NK', self.gaussian_semantic_features[rands > 0.9, :], prototypes)).mean()
-        loss = bce_contrastive_loss + 0.1 * reg_loss
+        diag_mask = torch.eye(corr.shape[1], dtype=torch.bool, device=corr.device)
 
-        NHW = sam_masks
-        N, H, W = NHW.shape
-        NL = NHW.view(N, -1)
-        intersection = torch.einsum('NL,NC->LC', NL, NL)
-        union = NL.sum(dim=0, keepdim=True) + NL.sum(dim=0, keepdim=True).T - intersection
-        similarity = intersection / (union + 1e-5)
-        HWHW = similarity.view(H, W, H, W)
-        HWHW[HWHW == 0] = -1
-        norm_rendered_feature = torch.nn.functional.normalize(torch.nn.functional.interpolate(rendered_features.unsqueeze(0), (H, W), mode='bilinear').squeeze(), dim=0, p=2)
-        correspondence = torch.relu(torch.einsum('CHW,CJK->HWJK', norm_rendered_feature, norm_rendered_feature))
-        corr_loss = -HWHW * correspondence
-        corr_loss_mean = corr_loss.mean()
+        sum_0 = gt_corrs.sum(dim=0)
+        consistent_negative = sum_0 == 0
+        consistent_positive = sum_0 == len(gt_corrs)
+        inconsistent = torch.logical_not(torch.logical_or(consistent_negative, consistent_positive))
+        inconsistent_num = inconsistent.count_nonzero()
+        sampled_num = inconsistent_num / 2
 
-        loss = loss + corr_loss_mean
+        rand_num = torch.rand_like(sum_0)
 
-        return outputs, loss, bce_contrastive_loss, corr_loss_mean
+        sampled_positive = torch.logical_and(consistent_positive, rand_num < sampled_num / consistent_positive.count_nonzero())
+
+        sampled_negative = torch.logical_and(consistent_negative, rand_num < sampled_num / consistent_negative.count_nonzero())
+
+        sampled_mask_positive = torch.logical_or(
+            torch.logical_or(
+                sampled_positive, torch.any(torch.logical_and(corr < 0.75, gt_corrs == 1), dim=0)
+            ),
+            inconsistent
+        )
+        sampled_mask_positive = torch.logical_and(sampled_mask_positive, ~diag_mask)
+        sampled_mask_positive = torch.triu(sampled_mask_positive, diagonal=0)
+        sampled_mask_positive = sampled_mask_positive.bool()
+
+        sampled_mask_negative = torch.logical_or(
+            torch.logical_or(
+                sampled_negative, torch.any(torch.logical_and(corr > 0.5, gt_corrs == 0), dim=0)
+            ),
+            inconsistent
+        )
+        sampled_mask_negative = torch.logical_and(sampled_mask_negative, ~diag_mask)
+        sampled_mask_negative = torch.triu(sampled_mask_negative, diagonal=0)
+        sampled_mask_negative = sampled_mask_negative.bool()
+
+        per_pixel_weight = per_pixel_weight.unsqueeze(0)
+        loss = (- per_pixel_weight[:, sampled_mask_positive] * gt_corrs[:, sampled_mask_positive] * corr[:, sampled_mask_positive]).mean() \
+               + (per_pixel_weight[:, sampled_mask_negative] * (1 - gt_corrs[:, sampled_mask_negative]) * torch.relu(corr[:, sampled_mask_negative])).mean() \
+               + self.rfn * rendered_feature_norm_reg
+
+        with torch.no_grad():
+            cosine_pos = corr[gt_corrs == 1].mean()
+            cosine_neg = corr[gt_corrs == 0].mean()
+
+        return rendered_features, loss, cosine_pos, cosine_neg, rendered_feature_norm
 
     def validation_step(self, batch, batch_idx) -> Optional[STEP_OUTPUT]:
         camera, image_info, semantic = batch
-        _, loss, loss_3d, loss_corr = self.forward_with_loss_calculation(camera, image_info, semantic)
-        self.log("val/loss", loss, prog_bar=False, on_epoch=True, batch_size=1)
-        self.log("val/3d_loss", loss_3d, prog_bar=True, on_epoch=True, batch_size=1)
-        self.log("val/corr_loss", loss_corr, prog_bar=True, on_epoch=True, batch_size=1)
+        _, loss, cosine_pos, cosine_neg, rendered_feature_norm = self.forward_with_loss_calculation(camera, image_info, semantic)
+        self.log("val/loss", loss, prog_bar=True, on_epoch=True, batch_size=1)
+        self.log("val/cosine_pos", cosine_pos, prog_bar=True, on_epoch=True, batch_size=1)
+        self.log("val/cosine_neg", cosine_neg, prog_bar=True, on_epoch=True, batch_size=1)
+        self.log("val/RFN", rendered_feature_norm, prog_bar=True, on_epoch=True, batch_size=1)
         return
 
     def training_step(self, batch, batch_idx) -> STEP_OUTPUT:
         camera, image_info, semantic = batch
-        _, loss, loss_3d, loss_corr = self.forward_with_loss_calculation(camera, image_info, semantic)
+        _, loss, cosine_pos, cosine_neg, rendered_feature_norm = self.forward_with_loss_calculation(camera, image_info, semantic)
 
-        self.log("train/loss", loss, prog_bar=False, on_step=True, batch_size=1)
-        self.log("train/3d_loss", loss_3d, prog_bar=True, on_step=True, batch_size=1)
-        self.log("train/corr_loss", loss_corr, prog_bar=True, on_step=True, batch_size=1)
+        self.log("train/loss", loss, prog_bar=True, on_step=True, batch_size=1)
+        self.log("train/cosine_pos", cosine_pos, prog_bar=True, on_step=True, batch_size=1)
+        self.log("train/cosine_neg", cosine_neg, prog_bar=True, on_step=True, batch_size=1)
+        self.log("train/RFN", rendered_feature_norm, prog_bar=True, on_step=True, batch_size=1)
 
         if self.trainer.global_step % 100 == 0:
             metrics_to_log = {}
@@ -154,6 +359,8 @@ class SemanticSplatting(lightning.LightningModule):
         return loss
 
     def configure_optimizers(self) -> OptimizerLRScheduler:
+        lr_final_factor = 1.
+
         self.optimizer = torch.optim.Adam(
             params=[
                 {
@@ -162,8 +369,8 @@ class SemanticSplatting(lightning.LightningModule):
                     "lr": self.hparams["optimization"].lr,
                 },
                 {
-                    "params": self.sam_proj.parameters(),
-                    "name": "sam_proj",
+                    "params": self.scale_gate.parameters(),
+                    "name": "scale_gate",
                     "lr": self.hparams["optimization"].lr,
                 }
             ],
@@ -174,7 +381,7 @@ class SemanticSplatting(lightning.LightningModule):
             "lr_scheduler": {
                 "scheduler": torch.optim.lr_scheduler.LambdaLR(
                     optimizer=self.optimizer,
-                    lr_lambda=lambda iter: 0.1 ** min(iter / self.trainer.max_steps, 1),
+                    lr_lambda=lambda iter: lr_final_factor ** min(iter / self.trainer.max_steps, 1),
                 ),
                 "interval": "step",
                 "frequency": 1,
@@ -189,5 +396,3 @@ class SemanticSplatting(lightning.LightningModule):
         return_value = super().cuda(device)
         self.models.gaussian = self.models.gaussian.to(device=return_value.device)
         return return_value
-
-

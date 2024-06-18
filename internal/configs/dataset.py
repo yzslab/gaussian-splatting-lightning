@@ -103,7 +103,7 @@ class PhotoTourismParams(ColmapParams):
 class SemanticColmapParams(ColmapParams):
     semantic_mask_dir: str = "semantic/masks"
 
-    semantic_feature_dir: str = "semantic/features"
+    semantic_scale_dir: str = "semantic/scales"
 
 
 @dataclass
