@@ -118,7 +118,7 @@ try:
             for mask_id in range(len(masks)):
                 # get those points locating at masked pixels
                 point_in_3D_in_mask = points_in_3D[eroded_masks[mask_id] == 1]
-                # calculate the variance of the xyz of 3D points, then normalize to unit vector
+                # calculate the variance of the x,y and z of 3D points, then calculate its norm (length)
                 scale[mask_id] = (point_in_3D_in_mask.std(dim=0) * 2).norm()
 
             tensor_saver.save(scale, os.path.join(scales_dir, semantic_file_name))

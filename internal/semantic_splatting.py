@@ -129,81 +129,106 @@ class SemanticSplatting(lightning.LightningModule):
         with torch.no_grad():
             upper_bound_scale = self.upper_bound_scale
 
+            # build Scale-Aware Pixel Identity Vector mentioned in the paper
+
+            # sort scales
             mask_scales, sort_indices = torch.sort(mask_scales, descending=True)
+            # reorder masks according to the sorted scales
             sam_masks = sam_masks.float()[sort_indices, :, :]
 
+            # pick `num_sampled_scales` scales randomly
             num_sampled_scales = 8
-
             sampled_scale_index = torch.randperm(len(mask_scales))[:num_sampled_scales]
 
             tmp = torch.zeros(num_sampled_scales + 2)
-
             tmp[1:len(sampled_scale_index) + 1] = sampled_scale_index
             tmp[-1] = len(mask_scales) - 1
             tmp[0] = -1  # attach a bigger scale
-            sampled_scale_index = tmp.long()
+            sampled_scale_index = tmp.long()  # = [-1, the indices of num_sampled_scales..., N_scales - 1]
 
             sampled_scales = mask_scales[sampled_scale_index]
 
             second_big_scale = mask_scales[mask_scales < upper_bound_scale].max()
 
+            # pick some pixels to sample
             ray_sample_rate = ray_sample_rate if ray_sample_rate > 0 else num_sampled_rays / (sam_masks.shape[-1] * sam_masks.shape[-2])
 
             sampled_ray = torch.rand(sam_masks.shape[-2], sam_masks.shape[-1]).cuda() < ray_sample_rate
             non_mask_region = sam_masks.sum(dim=0) == 0
 
+            # do not sample pixels that not being masked by any masks
             sampled_ray = torch.logical_and(sampled_ray, ~non_mask_region)
 
-            # H W
-            per_pixel_mask_size = sam_masks * sam_masks.sum(-1).sum(-1)[:, None, None]
+            # Appendix A.1: Re-weighting
 
+            # H W
+            # foreach mask, set the value of the masked pixel to the `number of total mask pixels`
+            per_pixel_mask_size = sam_masks * sam_masks.sum(-1).sum(-1)[:, None, None]  # [N_masks, H, W]
+
+            # `per_pixel_mask_size.sum(dim=0)` is the total number of the masked pixels of all masks, in [H, W]
+            # `sam_masks.sum(dim=0)` is the total masked times of each pixel, in [H, W]
+            # `per_pixel_mean_mask_size` is the average number of masked pixels, in [H, W]
             per_pixel_mean_mask_size = per_pixel_mask_size.sum(dim=0) / (sam_masks.sum(dim=0) + 1e-9)
 
-            per_pixel_mean_mask_size = per_pixel_mean_mask_size[sampled_ray]
+            # pick those pixels selected to be sampled
+            per_pixel_mean_mask_size = per_pixel_mean_mask_size[sampled_ray]  # [N_sampled_rays]
 
+            # [1, N_sampled_rays] * [N_sampled_rays, 1] = [N_sampled_rays, N_sampled_rays]
+            # the mean mask size multiplication results of all pixel paris
             pixel_to_pixel_mask_size = per_pixel_mean_mask_size.unsqueeze(0) * per_pixel_mean_mask_size.unsqueeze(1)
+            # weights min-max normalization
             ptp_max_size = pixel_to_pixel_mask_size.max()
             pixel_to_pixel_mask_size[pixel_to_pixel_mask_size == 0] = 1e10
-            per_pixel_weight = torch.clamp(ptp_max_size / pixel_to_pixel_mask_size, 1.0, None)
+            per_pixel_weight = torch.clamp(ptp_max_size / pixel_to_pixel_mask_size, 1.0, None)  # smaller one has bigger weight
+            # first normalize the weight to [0, 1], then enlarge to [1, 10]
             per_pixel_weight = (per_pixel_weight - per_pixel_weight.min()) / (per_pixel_weight.max() - per_pixel_weight.min()) * 9. + 1.
 
-            sam_masks_sampled_ray = sam_masks[:, sampled_ray]
+            sam_masks_sampled_ray = sam_masks[:, sampled_ray]  # [N_masks, N_sampled_rays]
 
             gt_corrs = []
 
+            # set the first value of `sampled_scales` to a scale bigger than upper one a bit, which will trigger operation when `upper_bound=True` below
             sampled_scales[0] = upper_bound_scale + upper_bound_scale * torch.rand(1)[0]
             for idx, si in enumerate(sampled_scale_index):
                 upper_bound = sampled_scales[idx] >= upper_bound_scale
 
-                if si != len(mask_scales) - 1 and not upper_bound:
+                if si != len(mask_scales) - 1 and not upper_bound:  # not the last scale, and not upper_bound
+                    # make it a little smaller, according to the diff to the later one
                     sampled_scales[idx] -= (sampled_scales[idx] - mask_scales[si + 1]) * torch.rand(1)[0]
                 elif upper_bound:
+                    # make it a little smaller, according to the diff to the second_big_scale
                     sampled_scales[idx] -= (sampled_scales[idx] - second_big_scale) * torch.rand(1)[0]
                 else:
                     sampled_scales[idx] -= sampled_scales[idx] * torch.rand(1)[0]
 
                 if not upper_bound:
-                    gt_vec = torch.zeros_like(sam_masks_sampled_ray)
-                    gt_vec[:si + 1, :] = sam_masks_sampled_ray[:si + 1, :]
-                    for j in range(si, -1, -1):
+                    gt_vec = torch.zeros_like(sam_masks_sampled_ray)  # V(s, p), [N_masks, N_sampled_rays (or pixels)]
+                    gt_vec[:si + 1, :] = sam_masks_sampled_ray[:si + 1, :]  # add bigger and equal scale masks
+                    for j in range(si, -1, -1):  # from si to 0
+                        # `gt_vec[j + 1:, :].any(dim=0)`: in all smaller masks, is pixel masked?, [N_smaller_masks, N_sampled_pixels]
+                        #    torch.logical_not() mark the unmasked pixel to True
+                        # if the pixel is not masked in all smaller mask, and masked at current scale, mark it to True ("the i-th entry of V(s, p) equals to 1 only if ...")
                         gt_vec[j, :] = torch.logical_and(
                             torch.logical_not(gt_vec[j + 1:, :].any(dim=0)), gt_vec[j, :]
                         )
+                    # add smaller scale masks ("when ... < s, the i-th entry of V(s, p) is set to ...")
                     gt_vec[si + 1:, :] = sam_masks_sampled_ray[si + 1:, :]
                 else:
                     gt_vec = sam_masks_sampled_ray
 
-                gt_corr = torch.einsum('nh,nj->hj', gt_vec, gt_vec)
-                gt_corr[gt_corr != 0] = 1
+                # gt_vec.T multiply with gt_vec
+                # gt_vec is [N_masks (or N_scales), N_sampled_rays]
+                gt_corr = torch.einsum('nh,nj->hj', gt_vec, gt_vec)  # for each pair of pixels, how many common masks do they have?
+                gt_corr[gt_corr != 0] = 1  # mark those pairs having any common masks (or masked in the same mask; "(i.e., V(s, p1) · V(s, p2) > 0), they should have similar features at scale s")
                 gt_corrs.append(gt_corr)
 
             # N_scale S C_clip
             # gt_clip_features = torch.stack(gt_clip_features, dim = 0)
             # N_scale S S
-            gt_corrs = torch.stack(gt_corrs, dim=0)
-
+            gt_corrs = torch.stack(gt_corrs, dim=0)  # [N_sample_scales, N_sampled_rays, N_sampled_rays], marks indicating whether pixel paris have common masks
+            # map the distribution of scales to Gaussian distribution
             sampled_scales = self.q_trans(sampled_scales).squeeze()
-            sampled_scales = sampled_scales.squeeze()
+            sampled_scales = sampled_scales.squeeze()  # [N_sampled_scales]
 
         return sampled_ray, per_pixel_weight, gt_corrs, sampled_scales
 
@@ -261,49 +286,67 @@ class SemanticSplatting(lightning.LightningModule):
 
         rendered_features = torch.nn.functional.interpolate(rendered_features.unsqueeze(0), masks.shape[-2:], mode='bilinear').squeeze(0)
 
+        # 3.3.1. section of the paper: projects scale scalars to soft gate vectors
         # N_sampled_scales 32
         if scale_aware_dim <= 0 or scale_aware_dim >= 32:
-            gates = self.scale_gate(sampled_scales.unsqueeze(-1))
+            gates = self.scale_gate(sampled_scales.unsqueeze(-1))  # [N_scales, N_semantic_feature_dims]
         else:
             int_sampled_scales = ((1 - sampled_scales.squeeze()) * scale_aware_dim).long()
             gates = self.fixed_scale_gate[int_sampled_scales].detach()
 
         # N_sampled_scales C H W
-        feature_with_scale = rendered_features.unsqueeze(0).repeat([sampled_scales.shape[0], 1, 1, 1])
-        feature_with_scale = feature_with_scale * gates.unsqueeze(-1).unsqueeze(-1)
+        feature_with_scale = rendered_features.unsqueeze(0).repeat([sampled_scales.shape[0], 1, 1, 1])  # [N_sampled_scales, N_semantic_feature_dims (C), H, W]
+        # multiply rendered vectors with gate vectors
+        feature_with_scale = feature_with_scale * gates.unsqueeze(-1).unsqueeze(-1)  # eq. 5 of the paper, [N_sampled_scales, N_semantic_feature_dims (C), H, W]
 
-        sampled_feature_with_scale = feature_with_scale[:, :, sampled_ray]
+        # pick selected rays (pixels)
+        sampled_feature_with_scale = feature_with_scale[:, :, sampled_ray]  # [N_sampled_scales, N_semantic_feature_dims (C), N_sampled_rays]
 
-        scale_conditioned_features_sam = sampled_feature_with_scale.permute([0, 2, 1])
+        scale_conditioned_features_sam = sampled_feature_with_scale.permute([0, 2, 1])  # [N_sampled_scales, N_sampled_rays, N_semantic_feature_dims (C)]
 
+        # normalize the semantic features
         scale_conditioned_features_sam = torch.nn.functional.normalize(scale_conditioned_features_sam, dim=-1, p=2)
-        corr = torch.einsum('nhc,njc->nhj', scale_conditioned_features_sam, scale_conditioned_features_sam)
+        # equivalent to batch matrix multiplication: torch.bmm(scale_conditioned_features_sam, scale_conditioned_features_sam.transpose(1, 2))
+        # calculate the cos(theta) between feature vectors
+        corr = torch.einsum('nhc,njc->nhj', scale_conditioned_features_sam, scale_conditioned_features_sam)  # [N_sampled_scales, N_rays, N_rays]
 
         diag_mask = torch.eye(corr.shape[1], dtype=torch.bool, device=corr.device)
 
-        sum_0 = gt_corrs.sum(dim=0)
-        consistent_negative = sum_0 == 0
-        consistent_positive = sum_0 == len(gt_corrs)
-        inconsistent = torch.logical_not(torch.logical_or(consistent_negative, consistent_positive))
+        # Appendix A.1: Resampling
+        # the `gt_corrs` is in [N_sample_scales, N_sampled_rays, N_sampled_rays], the value indicates whether a pair of pixels shares a common mask at a given scale
+        sum_0 = gt_corrs.sum(dim=0)  # how many common masks the pixel paris have in all scales, [N_sampled_rays, N_sampled_rays]
+        consistent_negative = sum_0 == 0  # where no common masks
+        consistent_positive = sum_0 == len(gt_corrs)  # where have common masks in all scales
+        inconsistent = torch.logical_not(torch.logical_or(consistent_negative, consistent_positive))  # find those pixel paris not belong to above classes
         inconsistent_num = inconsistent.count_nonzero()
         sampled_num = inconsistent_num / 2
 
-        rand_num = torch.rand_like(sum_0)
+        rand_num = torch.rand_like(sum_0)  # [N_sample_pixels, N_sample_pixels]
 
+        # randomly select `sampled_num` pixels from `positive` and `negative` respectively
         sampled_positive = torch.logical_and(consistent_positive, rand_num < sampled_num / consistent_positive.count_nonzero())
-
         sampled_negative = torch.logical_and(consistent_negative, rand_num < sampled_num / consistent_negative.count_nonzero())
 
+        """
+        To tackle the hard samples in training, we also 
+          add pixel pairs in Qneg 
+            which have feature correspondences larger than 0.5 
+          and pixel pairs in Qpos 
+            which have feature correspondence smaller than 0.75
+        into loss calculation.
+        """
+        # `torch.logical_and(corr < 0.75, gt_corrs == 1)`: a pair of pixels sharing common masks, but has low cos(theta) value (large theta)
         sampled_mask_positive = torch.logical_or(
             torch.logical_or(
                 sampled_positive, torch.any(torch.logical_and(corr < 0.75, gt_corrs == 1), dim=0)
             ),
             inconsistent
         )
-        sampled_mask_positive = torch.logical_and(sampled_mask_positive, ~diag_mask)
-        sampled_mask_positive = torch.triu(sampled_mask_positive, diagonal=0)
+        sampled_mask_positive = torch.logical_and(sampled_mask_positive, ~diag_mask)  # exclude elements on diagonal
+        sampled_mask_positive = torch.triu(sampled_mask_positive, diagonal=0)  # all elements on and above the main diagonal
         sampled_mask_positive = sampled_mask_positive.bool()
 
+        # `torch.any(torch.logical_and(corr > 0.5, gt_corrs == 0)`: high cos(theta) but does not share any common masks
         sampled_mask_negative = torch.logical_or(
             torch.logical_or(
                 sampled_negative, torch.any(torch.logical_and(corr > 0.5, gt_corrs == 0), dim=0)
@@ -315,6 +358,14 @@ class SemanticSplatting(lightning.LightningModule):
         sampled_mask_negative = sampled_mask_negative.bool()
 
         per_pixel_weight = per_pixel_weight.unsqueeze(0)
+        #  `sampled_mask_positive` contains those pixel pair having common mask and low cos(theta). The expectation is increasing cos(theta).
+        #    `gt_corrs[:, sampled_mask_positive]`, in [N_masks (or scales), N_sampled_pixels], indicating whether the pixels of a pixel pair are both masked at a give mask (or scale)
+        #    `corr[:, sampled_mask_positive]`, cos(theta) between two pixels,
+        #    since a negative sign exists, the loss term here will increase cos(theta).
+        #  `sampled_mask_negative` contains those without common mask but with high cos(theta) which should be decreased.
+        #    `1 - gt_corrs[:, sampled_mask_negative]`: at a give mask (or scale), the pixels of a pixel pair are not both masked,
+        #    `torch.relu(corr[:, sampled_mask_negative])`: max(corr[...], 0),
+        #    decrease cos(theta) of those pixel pairs to minimum this loss term.
         loss = (- per_pixel_weight[:, sampled_mask_positive] * gt_corrs[:, sampled_mask_positive] * corr[:, sampled_mask_positive]).mean() \
                + (per_pixel_weight[:, sampled_mask_negative] * (1 - gt_corrs[:, sampled_mask_negative]) * torch.relu(corr[:, sampled_mask_negative])).mean() \
                + self.rfn * rendered_feature_norm_reg
