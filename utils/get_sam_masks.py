@@ -8,7 +8,7 @@ import cv2
 import torch
 import numpy as np
 from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
-from common import AsyncTensorSaving, AsyncImageReading, AsyncImageSaving
+from common import AsyncTensorSaver, AsyncImageReader, AsyncImageSaver
 
 parser = argparse.ArgumentParser()
 parser.add_argument("image_path", type=str, default=None)
@@ -28,7 +28,9 @@ print(f"output_path={output_path}")
 
 # build output dirs
 mask_dir = os.path.join(output_path, "semantic", "masks")
+mask_preview_dir = os.path.join(output_path, "semantic", "masks_preview")
 os.makedirs(mask_dir, exist_ok=True)
+os.makedirs(mask_preview_dir, exist_ok=True)
 
 # initialize SAM
 print("Initializing SAM...")
@@ -48,8 +50,9 @@ mask_generator = SamAutomaticMaskGenerator(
 
 image_list = list(glob(os.path.join(image_path, "**/*.jpg"), recursive=True))
 image_list.sort()
-image_reader = AsyncImageReading(image_list)
-tensor_saver = AsyncTensorSaving()
+image_reader = AsyncImageReader(image_list)
+image_saver = AsyncImageSaver()
+tensor_saver = AsyncTensorSaver()
 try:
     with tqdm(range(len(image_list))) as t:
         for _ in t:
@@ -66,13 +69,24 @@ try:
 
             # extract masks
             masks = mask_generator.generate(img)
+            img_tensor = torch.tensor(img, dtype=torch.float, device="cuda")
             mask_list = []
             for m in masks:
                 # TODO: resize
                 m_score = torch.from_numpy(m['segmentation']).float().to('cuda')
+                # discard if all/none pixels are masked
                 if len(m_score.unique()) < 2:
                     continue
                 mask_list.append(m_score.bool())
-            tensor_saver.save_tensor(torch.stack(mask_list, dim=0), os.path.join(mask_dir, semantic_file_name))
+
+                # preview masks
+                color_mask = torch.rand((1, 1, 3), dtype=torch.float, device=img_tensor.device) * 255
+                transparency = (torch.tensor(m['segmentation'], dtype=torch.float, device=img_tensor.device) * 0.5)[..., None]
+                img_tensor = img_tensor * (1 - transparency) + transparency * color_mask
+
+            tensor_saver.save(torch.stack(mask_list, dim=0), os.path.join(mask_dir, semantic_file_name))
+            image_saver.save(img_tensor.to(torch.uint8).cpu().numpy(), os.path.join(mask_preview_dir, f"{image_name}.png"))
 finally:
+    image_reader.stop()
+    image_saver.stop()
     tensor_saver.stop()

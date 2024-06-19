@@ -13,7 +13,7 @@ from internal.utils.gaussian_model_loader import GaussianModelLoader
 from internal.dataparsers.colmap_dataparser import ColmapDataParser
 # from internal.renderers.vanilla_depth_renderer import VanillaDepthRenderer
 from internal.renderers.gsplat_contrastive_feature_renderer import GSplatContrastiveFeatureRenderer
-from common import AsyncImageSaving, AsyncTensorSaving
+from common import AsyncImageSaver, AsyncTensorSaver
 
 parser = argparse.ArgumentParser()
 parser.add_argument("model_path", type=str)
@@ -58,8 +58,8 @@ def generate_grid_index(depth):
     return grid
 
 
-image_saver = AsyncImageSaving()
-tensor_saver = AsyncTensorSaving()
+image_saver = AsyncImageSaver()
+tensor_saver = AsyncTensorSaver()
 try:
     bg_color = torch.zeros((3,), dtype=torch.float, device=MODEL_DEVICE)
     with tqdm(range(len(dataparser_outputs.train_set.image_paths))) as t:
@@ -84,11 +84,12 @@ try:
                 )  # [C, H, W]
             camera.to_device("cpu")
 
-            image_saver.save_image(
+            image_saver.save(
                 depth.permute(1, 2, 0).cpu().numpy(),
                 os.path.join(depths_dir, f"{image_name}.tiff")
             )
 
+            # get 3D points in camera space
             depth = depth[0].cpu()  # [H, W]
             grid_index = generate_grid_index(depth)
             points_in_3D = torch.zeros((depth.shape[0], depth.shape[1], 3), device=MODEL_DEVICE)
@@ -103,8 +104,9 @@ try:
             points_in_3D[:, :, 1] = (grid_index[:, :, 1] - cy) * depth / fy
 
             # TODO: resize mask if not match to depth map
-            upsampled_mask = masks.unsqueeze(1)
+            upsampled_mask = masks.unsqueeze(1)  # [N_masks, 1, H, W]
 
+            # count masked pixels in 3x3 rectangle
             eroded_masks = torch.conv2d(
                 upsampled_mask.float(),
                 torch.full((3, 3), 1.0).view(1, 1, 3, 3).to(device=upsampled_mask.device),
@@ -114,11 +116,12 @@ try:
 
             scale = torch.zeros(len(masks))
             for mask_id in range(len(masks)):
+                # get those points locating at masked pixels
                 point_in_3D_in_mask = points_in_3D[eroded_masks[mask_id] == 1]
-
+                # calculate the variance of the xyz of 3D points, then normalize to unit vector
                 scale[mask_id] = (point_in_3D_in_mask.std(dim=0) * 2).norm()
 
-            tensor_saver.save_tensor(scale, os.path.join(scales_dir, semantic_file_name))
+            tensor_saver.save(scale, os.path.join(scales_dir, semantic_file_name))
 finally:
     image_saver.stop()
     tensor_saver.stop()
