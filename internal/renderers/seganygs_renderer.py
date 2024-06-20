@@ -276,6 +276,8 @@ class SegAnyGSRenderer(Renderer):
         from internal.viewer.client import ClientThread
 
         feature_map_render = GSplatContrastiveFeatureRenderer()
+        feature_map_render.anti_aliased = self.anti_aliased
+
         self._feature_map = None
         self.feature_list = []
 
