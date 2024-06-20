@@ -9,7 +9,7 @@ from lightning.pytorch.utilities.types import STEP_OUTPUT, OptimizerLRScheduler
 
 from internal.configs.semantic_splatting import Optimization as OptimizationConfig
 from internal.renderers.gsplat_contrastive_feature_renderer import GSplatContrastiveFeatureRenderer
-from internal.renderers.contrastive_feature_renderer import ContrastiveFeatureRenderer
+# from internal.renderers.contrastive_feature_renderer import ContrastiveFeatureRenderer
 from internal.utils.gaussian_model_loader import GaussianModelLoader
 
 
@@ -34,13 +34,15 @@ class SemanticSplatting(lightning.LightningModule):
         # avoid storing state_dict
         self.models = namedtuple("Models", ["gaussian"])
 
-        self.renderer = ContrastiveFeatureRenderer()
-        # self.renderer = GSplatContrastiveFeatureRenderer()
+        # self.renderer = ContrastiveFeatureRenderer()
+        self.renderer = GSplatContrastiveFeatureRenderer()
 
         self.scale_aware_dim = -1
         self.feature_smooth_map = None
         self.ray_sample_rate = 0
         self.num_sampled_rays = 1000
+        self.smooth_K = 16
+        self.smooth_dropout = 0.5
         self.rfn = 1.
 
     def setup(self, stage: str) -> None:
@@ -233,6 +235,8 @@ class SemanticSplatting(lightning.LightningModule):
         return sampled_ray, per_pixel_weight, gt_corrs, sampled_scales
 
     def get_smoothed_point_features(self, K=16, dropout=0.5):
+        # Local Feature Smoothing
+
         if K <= 1:
             return self.gaussian_semantic_features
 
@@ -251,19 +255,18 @@ class SemanticSplatting(lightning.LightningModule):
         normed_features = torch.nn.functional.normalize(self.gaussian_semantic_features, dim=-1, p=2)
 
         if dropout > 0 and dropout < 1:
+            # discard some points randomly
             select_point = torch.randperm(K)[: int(K * dropout)]
 
-            select_idx = self.feature_smooth_map["m"][:, select_point]
-            ret = normed_features[select_idx, :].mean(dim=1)
+            select_idx = self.feature_smooth_map["m"][:, select_point]  # [N_gaussians, N_selected_points]
+            # `normed_features[select_idx, :]`: [N_gaussians, N_selected_points, N_semantic_feature_dims]
+            ret = normed_features[select_idx, :].mean(dim=1)  # [N_gaussians, N_semantic_feature_dims]
         else:
             ret = normed_features[self.feature_smooth_map["m"], :].mean(dim=1)
 
         return ret
 
-    def forward(self, camera, smooth_dropout: float = -1, semantic_features: torch.Tensor = None) -> Any:
-        if semantic_features is None:
-            semantic_features = self.get_smoothed_point_features(K=16, dropout=smooth_dropout)
-            semantic_features = semantic_features / (semantic_features.norm(dim=-1, keepdim=True) + 1e-9)
+    def renderer_forward(self, camera, semantic_features):
         return self.renderer(
             viewpoint_camera=camera,
             pc=self.models.gaussian,
@@ -271,9 +274,23 @@ class SemanticSplatting(lightning.LightningModule):
             semantic_features=semantic_features,
         )
 
-    def forward_with_loss_calculation(self, camera, image_info, semantic):
+    def get_processed_semantic_features(self):
         # dropout only apply during training
-        outputs = self(camera, 0.5)
+        smooth_dropout = self.smooth_dropout
+        if self.training is False:
+            smooth_dropout = -1
+        semantic_features = self.get_smoothed_point_features(K=self.smooth_K, dropout=smooth_dropout)
+        semantic_features = semantic_features / (semantic_features.norm(dim=-1, keepdim=True) + 1e-9)
+        return semantic_features
+
+    def forward(self, camera) -> Any:
+        return self.renderer_forward(
+            camera,
+            self.get_processed_semantic_features(),
+        )
+
+    def forward_with_loss_calculation(self, camera, image_info, semantic):
+        outputs = self(camera)
         rendered_features = outputs["render"]
 
         masks, scales = semantic
@@ -371,8 +388,8 @@ class SemanticSplatting(lightning.LightningModule):
                + self.rfn * rendered_feature_norm_reg
 
         with torch.no_grad():
-            cosine_pos = corr[gt_corrs == 1].mean()
-            cosine_neg = corr[gt_corrs == 0].mean()
+            cosine_pos = corr[gt_corrs == 1].mean()  # higher is better
+            cosine_neg = corr[gt_corrs == 0].mean()  # lower is better
 
         return rendered_features, loss, cosine_pos, cosine_neg, rendered_feature_norm
 
