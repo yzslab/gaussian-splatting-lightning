@@ -43,6 +43,8 @@ class Viewer:
             no_edit_panel: bool = False,
             no_render_panel: bool = False,
             gsplat: bool = False,
+            seganygs: str = None,
+            vanilla_seganygs: bool = False,
     ):
         self.device = torch.device("cuda")
 
@@ -64,6 +66,10 @@ class Viewer:
         self.use_gsplat = gsplat
 
         load_from = self._search_load_file(model_paths[0])
+
+        if vanilla_seganygs is True:
+            load_from = load_from[:-len(os.path.basename(load_from))]
+            load_from = os.path.join(load_from, "scene_point_cloud.ply")
 
         self.simplified_model = True
         self.show_edit_panel = True
@@ -110,6 +116,8 @@ class Viewer:
             from internal.renderers.vanilla_2dgs_renderer import Vanilla2DGSRenderer
             renderer = Vanilla2DGSRenderer()
             self.extra_video_render_args.append("--vanilla_gs2d")
+        if vanilla_seganygs is True:
+            renderer = self._load_vanilla_seganygs(load_from)
 
         # reorient the scene
         cameras_json_path = cameras_json
@@ -163,6 +171,11 @@ class Viewer:
             self.loaded_model_count += len(addition_models)
 
         self.gaussian_model = model
+
+        if seganygs is not None:
+            print("loading SegAnyGaussian...")
+            renderer = self._load_seganygs(seganygs)
+
         # create renderer
         self.viewer_renderer = ViewerRenderer(
             model,
@@ -175,6 +188,50 @@ class Viewer:
     @staticmethod
     def _search_load_file(model_path: str) -> str:
         return GaussianModelLoader.search_load_file(model_path)
+
+    def _load_seganygs(self, path):
+        load_from = self._search_load_file(path)
+        assert load_from.endswith(".ckpt")
+        ckpt = torch.load(load_from, map_location="cpu")
+
+        from internal.semantic_splatting import SemanticSplatting
+        model = SemanticSplatting(**ckpt["hyper_parameters"])
+        model.setup("validate")
+        model.load_state_dict(ckpt["state_dict"])
+        model.on_load_checkpoint(ckpt)
+        model.eval()
+
+        semantic_features = model.get_processed_semantic_features()
+        scale_gate = model.scale_gate
+        del model
+        del ckpt
+        torch.cuda.empty_cache()
+
+        from internal.renderers.seganygs_renderer import SegAnyGSRenderer
+        return SegAnyGSRenderer(semantic_features=semantic_features, scale_gate=scale_gate)
+
+    def _load_vanilla_seganygs(self, path):
+        from plyfile import PlyData
+        from internal.utils.gaussian_utils import Gaussian
+
+        base_dir = os.path.join(os.path.dirname(os.path.dirname(path)), "iteration_10000")
+        plydata = PlyData.read(os.path.join(base_dir, "contrastive_feature_point_cloud.ply"))
+        semantic_features = torch.tensor(
+            Gaussian.load_array_from_plyelement(plydata.elements[0], "f_"),
+            dtype=torch.float,
+            device=self.device,
+        )
+
+        scale_gate_state_dict = torch.load(os.path.join(base_dir, "scale_gate.pt"), map_location="cpu")
+        scale_gate = torch.nn.Sequential(
+            torch.nn.Linear(1, 32, bias=True),
+            torch.nn.Sigmoid()
+        )
+        scale_gate.load_state_dict(scale_gate_state_dict)
+        scale_gate = scale_gate.to(self.device)
+
+        from internal.renderers.seganygs_renderer import SegAnyGSRenderer
+        return SegAnyGSRenderer(semantic_features=semantic_features, scale_gate=scale_gate, anti_aliased=False)
 
     def _reorient(self, cameras_json_path: str, mode: str, dataset_type: str = None):
         transform = torch.eye(4, dtype=torch.float)
@@ -489,6 +546,8 @@ class Viewer:
                     extra_args=self.extra_video_render_args,
                 )
 
+        self.viewer_renderer.renderer.setup_tabs(self, server, tabs)
+
         # register hooks
         server.on_client_connect(self._handle_new_client)
         server.on_client_disconnect(self._handle_client_disconnect)
@@ -620,6 +679,9 @@ if __name__ == "__main__":
     parser.add_argument("--no_render_panel", action="store_true", default=False)
     parser.add_argument("--gsplat", action="store_true", default=False,
                         help="Use GSPlat renderer for ply file")
+    parser.add_argument("--seganygs", type=str, default=None,
+                        help="Path to a SegAnyGaussian model output directory or checkpoint file")
+    parser.add_argument("--vanilla_seganygs", action="store_true", default=False)
     parser.add_argument("--float32_matmul_precision", "--fp", type=str, default=None)
     args = parser.parse_args()
 

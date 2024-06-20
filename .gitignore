@@ -3,4 +3,5 @@ outputs
 camera_paths
 renders
 edited
+clusters
 **/__pycache__

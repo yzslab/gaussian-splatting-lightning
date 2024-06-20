@@ -69,6 +69,7 @@ class ViewerRenderer:
                 options=list(available_output_types.keys()),
                 initial_value=first_type_name,
             )
+            self.output_type_dropdown = output_type_dropdown
 
             @output_type_dropdown.on_update
             def _(event):

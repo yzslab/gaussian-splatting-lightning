@@ -71,6 +71,9 @@ class Renderer(torch.nn.Module):
     def on_load_checkpoint(self, module, checkpoint):
         pass
 
+    def setup_tabs(self, viewer, server, tabs):
+        pass
+
     def get_available_output_types(self) -> Dict:
         return {
             "rgb": "render",
