@@ -71,9 +71,11 @@ class CLI(LightningCLI):
 
         if self.config.subcommand == "fit":
             if config.ckpt_path is None:
-                assert os.path.exists(
+                assert (os.path.exists(
                     os.path.join(output_path, "point_cloud")
-                ) is False, ("point cloud output already exists in {}, \n"
+                ) or os.path.exists(
+                    os.path.join(output_path, "checkpoints")
+                )) is False, ("checkpoint or point cloud output already exists in '{}', \n"
                              "please specific a different experiment name (-n) or version (-v)").format(output_path)
         else:
             # disable logger
