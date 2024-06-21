@@ -41,6 +41,7 @@ class SegAnyGSRenderer(Renderer):
         )
 
         self.segment_mask = None
+        self.similarities = None
 
         self.cluster_color = None
         self.cluster_result = None
@@ -59,6 +60,7 @@ class SegAnyGSRenderer(Renderer):
             "segment3d": self._segment_as_color,
             "segment3d_out": self._segment_out,
             "segment3d_removed": self._segment_removed,
+            "segment3d_similarities": self._segment_similarities_as_color,
         }
 
         self.available_output_types = {
@@ -70,6 +72,7 @@ class SegAnyGSRenderer(Renderer):
             "segment3d": "segment3d",
             "segment3d_out": "segment3d_out",
             "segment3d_removed": "segment3d_removed",
+            "segment3d_similarities": "segment3d_similarities",
         }
 
     def forward(
@@ -165,6 +168,11 @@ class SegAnyGSRenderer(Renderer):
             opacities = opacities * (~self.segment_mask).unsqueeze(-1)
         return colors, bg_color, opacities
 
+    def _segment_similarities_as_color(self, project_results, pc: GaussianModel, viewpoint_camera, bg_color, opacities):
+        if self.similarities is not None:
+            return self.similarities.unsqueeze(-1), torch.zeros((1, 1), dtype=torch.float, device=opacities.device), opacities
+        return torch.zeros((pc.get_xyz.shape[0], 3), dtype=torch.float, device=opacities.device), bg_color, opacities
+
     def cluster_in_3d(self):
         self.cluster_result = SegAnyGSUtils.cluster_3d_as_dict(self.scale_conditioned_semantic_features)
         self.cluster_color = torch.tensor(self.cluster_result["point_colors"], dtype=torch.float, device="cuda")
@@ -177,7 +185,7 @@ class SegAnyGSRenderer(Renderer):
         return self.available_output_types
 
     def is_type_depth_map(self, t: str) -> bool:
-        return t == "depth"
+        return t == "depth" or t == "segment3d_similarities"
 
 
 class OptionCallbacks:
@@ -309,6 +317,14 @@ class ViewerOptions:
             i(value)
 
     @property
+    def similarities(self):
+        return self.renderer.similarities
+
+    @similarities.setter
+    def similarities(self, value):
+        self.renderer.similarities = value
+
+    @property
     def cluster_result(self):
         return self.renderer.cluster_result
 
@@ -364,31 +380,39 @@ class ViewerOptions:
 
         scale_conditioned_semantic_features = self.scale_conditioned_semantic_features.cuda()
 
-        mask = SegAnyGSUtils.get_segment_mask_by_raw_feature_list(
+        mask, similarities = SegAnyGSUtils.get_segment_mask_by_raw_feature_list(
             scale_conditioned_semantic_features,
             self.feature_list,
             self.scale_gate,
             self.scale,
             self.similarity_score,
             self.similarity_score_gamma,
+            return_similarity_matrix=True,
         )
+        similarities = torch.max(similarities, dim=-1).values
         self.segment_mask = mask
+        self.similarities = similarities
 
     def _add_segment_by_query_feature(self, query_feature):
         current_mask = self.segment_mask
+        current_similarities = self.similarities
         if current_mask is None:
             current_mask = torch.zeros((self.scale_conditioned_semantic_features.shape[0],), dtype=torch.bool, device="cuda")
+            current_similarities = torch.zeros((self.scale_conditioned_semantic_features.shape[0],), dtype=torch.float, device="cuda")
 
-        mask = SegAnyGSUtils.get_segment_mask_by_raw_feature_list(
+        mask, similarities = SegAnyGSUtils.get_segment_mask_by_raw_feature_list(
             self.scale_conditioned_semantic_features.cuda(),
             [query_feature],
             self.scale_gate,
             self.scale,
             self.similarity_score,
             self.similarity_score_gamma,
+            return_similarity_matrix=True,
         )
+        similarities = torch.max(similarities, dim=-1).values
 
         self.segment_mask = torch.logical_or(current_mask, mask)
+        self.similarities = torch.maximum(current_similarities, similarities)
 
     def _setup_segment(self):
         viewer, server = self.viewer, self.server
@@ -490,6 +514,7 @@ class ViewerOptions:
             with server.atomic():
                 self.feature_list.clear()
                 self.segment_mask = None
+                self.similarities = None
                 point_number.value = 0
             viewer.rerender_for_all_client()
 

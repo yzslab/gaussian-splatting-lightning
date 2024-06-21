@@ -132,6 +132,7 @@ class SegAnyGSUtils:
             score: float,
             gamma: float = None,
             gamma_eps: float = 1e-9,
+            return_similarity_matrix: bool = False,
     ):
         similarities = cls.get_similarities_by_raw_feature_list(
             scale_conditioned_semantic_features,
@@ -142,4 +143,8 @@ class SegAnyGSUtils:
         if gamma is not None and gamma != 1.:
             similarities = torch.pow(similarities + gamma_eps, gamma)
 
-        return (similarities >= score).sum(dim=-1) > 0
+        mask = (similarities >= score).sum(dim=-1) > 0
+
+        if return_similarity_matrix is True:
+            return mask, similarities
+        return mask
