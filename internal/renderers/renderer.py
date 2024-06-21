@@ -71,7 +71,7 @@ class Renderer(torch.nn.Module):
     def on_load_checkpoint(self, module, checkpoint):
         pass
 
-    def setup_tabs(self, viewer, server, tabs):
+    def setup_web_viewer_tabs(self, viewer, server, tabs):
         pass
 
     def get_available_output_types(self) -> Dict:

@@ -214,15 +214,32 @@ class Viewer:
         from plyfile import PlyData
         from internal.utils.gaussian_utils import Gaussian
 
-        base_dir = os.path.join(os.path.dirname(os.path.dirname(path)), "iteration_10000")
-        plydata = PlyData.read(os.path.join(base_dir, "contrastive_feature_point_cloud.ply"))
+        max_iteration = -1
+        load_from = None
+        model_output = os.path.dirname(os.path.dirname(path))
+        for i in os.listdir(model_output):
+            if i.startswith("iteration_") is False:
+                continue
+            ply_file_path = os.path.join(model_output, i, "contrastive_feature_point_cloud.ply")
+            if os.path.exists(ply_file_path) is False:
+                continue
+            try:
+                iteration = int(i.split("_")[1])
+            except:
+                break
+            if iteration > max_iteration:
+                load_from = ply_file_path
+        assert load_from is not None, "'contrastive_feature_point_cloud.ply' not found"
+        print(f"load SegAnyGS from '{load_from}'...")
+
+        plydata = PlyData.read(load_from)
         semantic_features = torch.tensor(
             Gaussian.load_array_from_plyelement(plydata.elements[0], "f_"),
             dtype=torch.float,
             device=self.device,
         )
 
-        scale_gate_state_dict = torch.load(os.path.join(base_dir, "scale_gate.pt"), map_location="cpu")
+        scale_gate_state_dict = torch.load(os.path.join(os.path.dirname(load_from), "scale_gate.pt"), map_location="cpu")
         scale_gate = torch.nn.Sequential(
             torch.nn.Linear(1, 32, bias=True),
             torch.nn.Sigmoid()
@@ -546,7 +563,7 @@ class Viewer:
                     extra_args=self.extra_video_render_args,
                 )
 
-        self.viewer_renderer.renderer.setup_tabs(self, server, tabs)
+        self.viewer_renderer.renderer.setup_web_viewer_tabs(self, server, tabs)
 
         # register hooks
         server.on_client_connect(self._handle_new_client)

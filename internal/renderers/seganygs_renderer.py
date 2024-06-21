@@ -11,12 +11,10 @@ from .gsplat_renderer import GSPlatRenderer, DEFAULT_ANTI_ALIASED_STATUS, DEFAUL
 from .gsplat_contrastive_feature_renderer import GSplatContrastiveFeatureRenderer
 from ..cameras import Camera
 from ..models.gaussian_model import GaussianModel
+from internal.utils.seganygs import ScaleGateUtils, SegAnyGSUtils
 
 
 class SegAnyGSRenderer(Renderer):
-    SEGMENT_RENDER_MODE_COLORED = 0
-    SEGMENT_RENDER_MODE_SEGMENT_OUT = 1
-
     def __init__(
             self,
             semantic_features: torch.Tensor,
@@ -27,28 +25,29 @@ class SegAnyGSRenderer(Renderer):
 
         self.anti_aliased = anti_aliased
 
+        self.initial_scale = 1.
+
         # move to cuda first
         self.semantic_features = semantic_features.cuda()
-        self.scale_gate = scale_gate.cuda()
-        self.pca_projection_matrix = self._get_pca_projection_matrix(self.semantic_features)
-        self.pca_colors = ((self.semantic_features @ self.pca_projection_matrix) * 0.5 + 0.5).clamp(0., 1.)
+        self.scale_gate = ScaleGateUtils(scale_gate.cuda())
+
+        self.scale_conditioned_semantic_features = SegAnyGSUtils.get_scale_conditioned_semantic_features(self.semantic_features, self.scale_gate, self.initial_scale)
+
+        self.pca_projection_matrix = SegAnyGSUtils.get_pca_projection_matrix(self.semantic_features)
+        self.pca_colors = SegAnyGSUtils.get_pca_projected_colors(self.semantic_features, self.pca_projection_matrix)
+        self.scale_gated_pca_colors = SegAnyGSUtils.get_pca_projected_colors(
+            self.scale_conditioned_semantic_features,
+            self.pca_projection_matrix,
+        )
 
         self.segment_mask = None
-        self.feature_list = []
-        self.segment_render_mode = self.SEGMENT_RENDER_MODE_SEGMENT_OUT
 
-        # calculate some scale relative values
-        self._update_scale(1.)
-
-        self.cluster_result_save_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-            "clusters",
-        )
-        self.cluster_result = None
         self.cluster_color = None
+        self.cluster_result = None
 
         # reduce CUDA memory consumption
         self.semantic_features = self.semantic_features.cpu()
+        self.scale_conditioned_semantic_features = self.scale_conditioned_semantic_features.cpu()
         torch.cuda.empty_cache()
 
         self.color_producers = {
@@ -59,6 +58,7 @@ class SegAnyGSRenderer(Renderer):
             "cluster3d": self._cluster_as_color,
             "segment3d": self._segment_as_color,
             "segment3d_out": self._segment_out,
+            "segment3d_removed": self._segment_removed,
         }
 
         self.available_output_types = {
@@ -69,40 +69,8 @@ class SegAnyGSRenderer(Renderer):
             "cluster3d": "cluster3d",
             "segment3d": "segment3d",
             "segment3d_out": "segment3d_out",
+            "segment3d_removed": "segment3d_removed",
         }
-
-    def _get_pca_projection_matrix(self, semantic_features, n_components: int = 3):
-        randint = torch.randint(0, semantic_features.shape[0], [200_000])
-        X = semantic_features[randint, :]
-
-        n = X.shape[0]
-        mean = torch.mean(X, dim=0)
-        X = X - mean
-        covariance_matrix = (1 / n) * torch.matmul(X.T, X).float()  # An old torch bug: matmul float32->float16,
-        eigenvalues, eigenvectors = torch.linalg.eig(covariance_matrix)
-        idx = torch.argsort(-eigenvalues.real)
-        eigenvectors = eigenvectors.real[:, idx]
-        proj_mat = eigenvectors[:, 0:n_components]
-
-        return proj_mat
-
-    def _update_scale(self, scale):
-        self.scale = scale
-
-        semantic_features = self.semantic_features.cuda()
-
-        scale_conditioned_semantic_features = torch.nn.functional.normalize(
-            semantic_features * self._scale_gate_forward(self.scale),
-            dim=-1,
-        )
-
-        self.scale_gated_pca_colors = (scale_conditioned_semantic_features @ self.pca_projection_matrix)
-        self.scale_gated_pca_colors = self.scale_gated_pca_colors - self.scale_gated_pca_colors.min(dim=0).values
-        self.scale_gated_pca_colors = self.scale_gated_pca_colors / self.scale_gated_pca_colors.max(dim=0).values
-
-        self.scale_conditioned_semantic_features = scale_conditioned_semantic_features.cpu()
-
-        self._segment()
 
     def forward(
             self,
@@ -175,7 +143,7 @@ class SegAnyGSRenderer(Renderer):
 
     def _cluster_as_color(self, project_results, pc: GaussianModel, viewpoint_camera, bg_color, opacities):
         if self.cluster_color is None:
-            self._cluster_in_3d()
+            self.cluster_in_3d()
 
         return self.cluster_color, bg_color, opacities
 
@@ -191,63 +159,204 @@ class SegAnyGSRenderer(Renderer):
             opacities = opacities * self.segment_mask.unsqueeze(-1)
         return colors, bg_color, opacities
 
-    def _cluster_in_3d(self):
-        print("clustering...")
-        # get scale gated features
-        scale_conditioned_point_features = self.scale_conditioned_semantic_features
-        # select points randomly
-        normed_sampled_point_features = scale_conditioned_point_features[torch.rand(scale_conditioned_point_features.shape[0]) > 0.98]
+    def _segment_removed(self, project_results, pc: GaussianModel, viewpoint_camera, bg_color, opacities):
+        colors, bg_color, opacities = self._shs_to_rgb(project_results, pc, viewpoint_camera, bg_color, opacities)
+        if self.segment_mask is not None:
+            opacities = opacities * (~self.segment_mask).unsqueeze(-1)
+        return colors, bg_color, opacities
 
-        import hdbscan
-        import numpy as np
+    def cluster_in_3d(self):
+        self.cluster_result = SegAnyGSUtils.cluster_3d_as_dict(self.scale_conditioned_semantic_features)
+        self.cluster_color = torch.tensor(self.cluster_result["point_colors"], dtype=torch.float, device="cuda")
 
-        clusterer = hdbscan.HDBSCAN(min_cluster_size=10, cluster_selection_epsilon=0.01)
-        cluster_labels = clusterer.fit_predict(normed_sampled_point_features.detach().cpu().numpy())
-        print(np.unique(cluster_labels))
+    def setup_web_viewer_tabs(self, viewer, server, tabs):
+        with tabs.add_tab("Semantic"):
+            self.viewer_options = ViewerOptions(self, viewer, server, initial_scale=self.initial_scale)
 
-        cluster_centers = torch.zeros(len(np.unique(cluster_labels)) - 1, normed_sampled_point_features.shape[-1])
-        for i in range(1, len(np.unique(cluster_labels))):
-            cluster_centers[i - 1] = torch.nn.functional.normalize(normed_sampled_point_features[cluster_labels == i - 1].mean(dim=0), dim=-1)
+    def get_available_output_types(self) -> Dict:
+        return self.available_output_types
 
-        seg_score = torch.einsum('nc,bc->bn', cluster_centers.cpu(), scale_conditioned_point_features.cpu())
+    def is_type_depth_map(self, t: str) -> bool:
+        return t == "depth"
 
-        label_to_color = np.random.rand(1000, 3)
-        point_colors = label_to_color[seg_score.argmax(dim=-1).cpu().numpy()]
-        point_colors[seg_score.max(dim=-1)[0].detach().cpu().numpy() < 0.5] = (0, 0, 0)
 
-        self.cluster_color = torch.tensor(point_colors, dtype=torch.float, device="cuda")
+class OptionCallbacks:
+    def __init__(
+            self,
+            options,
+    ):
+        self.options = options
 
-        self.cluster_result = {
-            "cluster_labels": cluster_labels,
-            "cluster_centers": cluster_centers,
-            "seg_score": seg_score,
-            "label_to_color": label_to_color,
-            "cluster_color": self.cluster_color,
-        }
+    @property
+    def renderer(self) -> SegAnyGSRenderer:
+        return self.options.renderer
 
-        print("cluster finished")
+    @property
+    def viewer(self):
+        return self.options.viewer
 
-    def _show_message(self, client, message: str):
-        with client.add_gui_modal("Message") as modal:
-            client.add_gui_markdown(message)
-            close_button = client.add_gui_button("Close")
+    @property
+    def scale_gate(self):
+        return self.renderer.scale_gate
 
-            @close_button.on_click
-            def _(_) -> None:
-                try:
-                    modal.close()
-                except:
-                    pass
+    def get_update_scale_conditioned_features_callback(self, on_features_updated_callbacks):
+        def update_scale_conditioned_features(event, scale):
+            semantic_features = self.renderer.semantic_features.cuda()
 
-    def _scale_gate_forward(self, scale):
-        return self.scale_gate(
-            torch.tensor([scale], dtype=torch.float, device="cuda")
+            scale_conditioned_semantic_features = torch.nn.functional.normalize(
+                semantic_features * self.scale_gate(scale).to(semantic_features.device),
+                dim=-1,
+            )
+
+            for i in on_features_updated_callbacks:
+                i(event, scale_conditioned_semantic_features)
+
+            self.renderer.scale_conditioned_semantic_features = scale_conditioned_semantic_features.cpu()
+
+        return update_scale_conditioned_features
+
+    def update_scale_conditioned_pca_colors(self, event, scale_conditioned_semantic_features):
+        self.renderer.scale_gated_pca_colors = SegAnyGSUtils.get_pca_projected_colors(scale_conditioned_semantic_features, self.renderer.pca_projection_matrix)
+
+    def get_update_selected_point_number_by_mask_callback(self, point_number):
+        def update_point_number(mask):
+            if mask is None:
+                point_number.value = 0
+            else:
+                point_number.value = mask.sum().item()
+
+        return update_point_number
+
+    def update_segment_mask_on_scale_updated(self, event, scale):
+        self.options._segment()
+
+
+class ViewerOptions:
+    def __init__(
+            self,
+            renderer: SegAnyGSRenderer,
+            viewer, server,
+            initial_scale: float,
+    ):
+        self.renderer = renderer
+        self.viewer = viewer
+        self.server = server
+
+        # callback lists
+        self.callbacks = OptionCallbacks(self)
+        self._on_scale_updated_callbacks = []
+        self._on_segment_mask_updated_callbacks = []
+        self._on_scale_conditioned_features_updated_callbacks = [
+            self.callbacks.update_scale_conditioned_pca_colors,
+        ]
+        self._on_render_output_type_switched_callbacks = []
+
+        self._on_scale_updated_callbacks.append(
+            self.callbacks.get_update_scale_conditioned_features_callback(self._on_scale_conditioned_features_updated_callbacks),
+        )
+        self._on_scale_updated_callbacks.append(
+            self.callbacks.update_segment_mask_on_scale_updated,
         )
 
-    def _query_feature_preprocess(self, query_feature):
-        scale_gated_query_feature = query_feature * self._scale_gate_forward(self.scale).to(device=query_feature.device)
-        scale_gated_query_feature = torch.nn.functional.normalize(scale_gated_query_feature, dim=-1)
-        return scale_gated_query_feature
+        # properties
+        self.scale = initial_scale
+        self.similarity_score = 0.9
+        self.similarity_score_gamma = 1.
+
+        self._feature_map = None
+        self.feature_list = []
+
+        self.cluster_result_save_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            "clusters",
+        )
+
+        # setup ui
+        self._setup_output_type_dropdown()
+        self._setup_scale_number()
+
+        with server.add_gui_folder("Segment"):
+            self._setup_segment()
+
+        with server.add_gui_folder("Cluster"):
+            self._setup_cluster()
+            server.add_gui_markdown("")
+            with server.add_gui_folder("Save Cluster"):
+                self._setup_save_cluster()
+            with server.add_gui_folder("Load Cluster"):
+                self._setup_load_cluster()
+
+    @property
+    def scale_gate(self) -> ScaleGateUtils:
+        return self.renderer.scale_gate
+
+    @property
+    def semantic_features(self) -> torch.Tensor:
+        return self.renderer.semantic_features
+
+    @property
+    def scale_conditioned_semantic_features(self) -> torch.Tensor:
+        return self.renderer.scale_conditioned_semantic_features
+
+    @property
+    def segment_mask(self):
+        return self.renderer.segment_mask
+
+    @segment_mask.setter
+    def segment_mask(self, value):
+        self.renderer.segment_mask = value
+        for i in self._on_segment_mask_updated_callbacks:
+            i(value)
+
+    @property
+    def cluster_result(self):
+        return self.renderer.cluster_result
+
+    @cluster_result.setter
+    def cluster_result(self, value):
+        self.renderer.cluster_result = value
+        if value is None:
+            self.renderer.cluster_color = None
+        else:
+            self.renderer.cluster_color = torch.tensor(value["point_colors"], dtype=torch.float, device="cuda")
+
+    def _setup_output_type_dropdown(self):
+        render_type_dropdown = self.server.add_gui_dropdown(
+            label="Render Type",
+            options=list(self.renderer.get_available_output_types().keys()),
+        )
+
+        @render_type_dropdown.on_update
+        def _(event):
+            if event.client is None:
+                return
+            self._switch_renderer_output_type(render_type_dropdown.value)
+
+        def update_dropdown(value):
+            render_type_dropdown.value = value
+
+        self._on_render_output_type_switched_callbacks.append(update_dropdown)
+
+    def _setup_scale_number(self):
+        scale_slider = self.server.add_gui_slider(
+            "Scale",
+            min=0.,
+            max=1.,
+            step=0.001,
+            initial_value=self.scale,
+        )
+
+        @scale_slider.on_update
+        def _(event):
+            with self.server.atomic():
+                self.scale = scale_slider.value
+                for i in self._on_scale_updated_callbacks:
+                    i(event, scale_slider.value)
+                self.viewer.rerender_for_all_client()
+
+    """
+    Segment
+    """
 
     def _segment(self):
         if len(self.feature_list) == 0:
@@ -255,31 +364,40 @@ class SegAnyGSRenderer(Renderer):
 
         scale_conditioned_semantic_features = self.scale_conditioned_semantic_features.cuda()
 
-        query_features = torch.stack(self.feature_list)
-        query_features = self._query_feature_preprocess(query_features).T
-        similarities = (torch.einsum("NC,CA->NA", scale_conditioned_semantic_features, query_features) + 1.) / 2.  # [N_points, N_query_features]
-        similarities = torch.pow(similarities + 1e-9, self.similarity_score_gamma.value)
-        mask = (similarities >= self.similarity_score_number.value).sum(dim=-1) > 0
+        mask = SegAnyGSUtils.get_segment_mask_by_raw_feature_list(
+            scale_conditioned_semantic_features,
+            self.feature_list,
+            self.scale_gate,
+            self.scale,
+            self.similarity_score,
+            self.similarity_score_gamma,
+        )
         self.segment_mask = mask
 
-    def _add_segment(self, query_feature):
-        if self.segment_mask is None:
-            self.segment_mask = torch.zeros((self.scale_conditioned_semantic_features.shape[0],), dtype=torch.bool, device="cuda")
+    def _add_segment_by_query_feature(self, query_feature):
+        current_mask = self.segment_mask
+        if current_mask is None:
+            current_mask = torch.zeros((self.scale_conditioned_semantic_features.shape[0],), dtype=torch.bool, device="cuda")
 
-        query_feature = self._query_feature_preprocess(query_feature)
-        scale_conditioned_semantic_features = self.scale_conditioned_semantic_features.cuda()
-        similarities = (torch.einsum('C,NC->N', query_feature, scale_conditioned_semantic_features) + 1.) / 2.
-        similarities = torch.pow(similarities + 1e-9, self.similarity_score_gamma.value)
-        self.segment_mask = torch.logical_or(self.segment_mask, similarities >= self.similarity_score_number.value)
+        mask = SegAnyGSUtils.get_segment_mask_by_raw_feature_list(
+            self.scale_conditioned_semantic_features.cuda(),
+            [query_feature],
+            self.scale_gate,
+            self.scale,
+            self.similarity_score,
+            self.similarity_score_gamma,
+        )
 
-    def _setup_segment(self, viewer, server):
+        self.segment_mask = torch.logical_or(current_mask, mask)
+
+    def _setup_segment(self):
+        viewer, server = self.viewer, self.server
+
         from internal.viewer.client import ClientThread
 
+        # setup feature map renderer
         feature_map_render = GSplatContrastiveFeatureRenderer()
-        feature_map_render.anti_aliased = self.anti_aliased
-
-        self._feature_map = None
-        self.feature_list = []
+        feature_map_render.anti_aliased = self.renderer.anti_aliased
 
         point_number = server.add_gui_number(
             label="Prompt",
@@ -291,15 +409,16 @@ class SegAnyGSRenderer(Renderer):
             initial_value=0,
             disabled=True,
         )
-        similarity_score_number = server.add_gui_number(
+        self._on_segment_mask_updated_callbacks.append(self.callbacks.get_update_selected_point_number_by_mask_callback(selected_point_number))
+
+        similarity_score_number = server.add_gui_slider(
             label="Similarity Score",
             initial_value=0.8,
-            min=-1.,
+            min=0.,
             max=1.,
             step=0.001,
         )
-        self.similarity_score_number = similarity_score_number
-        similarity_score_gamma = server.add_gui_number(
+        similarity_score_gamma = server.add_gui_slider(
             label="Score Gamma",
             initial_value=1.,
             min=0.,
@@ -307,11 +426,17 @@ class SegAnyGSRenderer(Renderer):
             step=0.01,
             hint="Smaller the gamma, more the high score"
         )
-        self.similarity_score_gamma = similarity_score_gamma
 
         @similarity_score_number.on_update
+        def _(_):
+            self.similarity_score = similarity_score_number.value
+            with server.atomic():
+                self._segment()
+            viewer.rerender_for_all_client()
+
         @similarity_score_gamma.on_update
         def _(_):
+            self.similarity_score_gamma = similarity_score_gamma.value
             with server.atomic():
                 self._segment()
             viewer.rerender_for_all_client()
@@ -324,7 +449,7 @@ class SegAnyGSRenderer(Renderer):
             enable_click_mode_button.visible = False
             disable_click_mode_button.visible = True
 
-            self._switch_renderer_output_type(viewer, "segment3d")
+            self._switch_renderer_output_type("segment3d")
 
             max_res = viewer.max_res_when_static.value
             camera = ClientThread.get_camera(
@@ -345,10 +470,8 @@ class SegAnyGSRenderer(Renderer):
                 print(f"x={x}, y={y}")
 
                 feature = self._feature_map[y, x]
-                feature = feature / (torch.norm(feature) + 1e-9)
                 self.feature_list.append(feature)
-                self._add_segment(feature)
-                selected_point_number.value = self.segment_mask.sum().item()
+                self._add_segment_by_query_feature(feature)
                 point_number.value += 1
                 viewer.rerender_for_all_client()
 
@@ -368,10 +491,15 @@ class SegAnyGSRenderer(Renderer):
                 self.feature_list.clear()
                 self.segment_mask = None
                 point_number.value = 0
-                selected_point_number.value = 0
             viewer.rerender_for_all_client()
 
-    def _setup_cluster(self, viewer, server):
+    """
+    Cluster
+    """
+
+    def _setup_cluster(self):
+        viewer, server = self.viewer, self.server
+
         clustering_button = server.add_gui_button(
             label="Clustering...",
             disabled=True,
@@ -386,19 +514,16 @@ class SegAnyGSRenderer(Renderer):
             cluster_button.visible = False
             clustering_button.visible = True
             with server.atomic():
-                self._cluster_in_3d()
+                self.renderer.cluster_in_3d()
             cluster_button.visible = True
             clustering_button.visible = False
 
             # switch output type to cluster3d
-            self._switch_renderer_output_type(viewer, "cluster3d")
+            self._switch_renderer_output_type("cluster3d")
 
-    def _switch_renderer_output_type(self, viewer, type):
-        viewer.viewer_renderer.output_type_dropdown.value = type
-        viewer.viewer_renderer._set_output_type(type, self.available_output_types[type])
-        viewer.rerender_for_all_client()
+    def _setup_save_cluster(self):
+        viewer, server = self.viewer, self.server
 
-    def _setup_save_cluster(self, viewer, server):
         save_name_text = server.add_gui_text(label="Name", initial_value="")
         save_cluster_button = server.add_gui_button(label="Save")
 
@@ -415,7 +540,9 @@ class SegAnyGSRenderer(Renderer):
             save_cluster_button.disabled = False
             self._show_message(event.client, message_text)
 
-    def _setup_load_cluster(self, viewer, server):
+    def _setup_load_cluster(self):
+        viewer, server = self.viewer, self.server
+
         reload_file_list_button = server.add_gui_button(
             label="Refresh",
         )
@@ -444,47 +571,18 @@ class SegAnyGSRenderer(Renderer):
             load_cluster_button.disabled = True
             with server.atomic():
                 cluster_result = torch.load(os.path.join(self.cluster_result_save_dir, cluster_result_file_dropdown.value))
-                if cluster_result["cluster_color"].shape[0] == self.semantic_features.shape[0]:
-                    cluster_result["cluster_color"] = cluster_result["cluster_color"].cuda()
+                if isinstance(cluster_result, dict) is False or "point_colors" not in cluster_result:
+                    self._show_message(event.client, "Invalid file content")
+                elif cluster_result["point_colors"].shape[0] == self.semantic_features.shape[0]:
                     self.cluster_result = cluster_result
-                    self.cluster_color = cluster_result["cluster_color"]
                     loaded = True
                 else:
                     self._show_message(event.client, "File not match to current scene")
 
             # switch output type to cluster3d
             if loaded is True:
-                viewer.viewer_renderer.output_type_dropdown.value = "cluster3d"
-                viewer.viewer_renderer._set_output_type("cluster3d", self.available_output_types["cluster3d"])
-                viewer.rerender_for_all_client()
+                self._switch_renderer_output_type("cluster3d")
             load_cluster_button.disabled = False
-
-    def setup_tabs(self, viewer, server, tabs):
-        with tabs.add_tab("Semantic"):
-            scale_slider = server.add_gui_number(
-                "Scale",
-                min=0.,
-                max=1.,
-                step=0.001,
-                initial_value=self.scale,
-            )
-
-            @scale_slider.on_update
-            def _(_):
-                with server.atomic():
-                    self._update_scale(scale_slider.value)
-                    viewer.rerender_for_all_client()
-
-            with server.add_gui_folder("Segment"):
-                self._setup_segment(viewer, server)
-
-            with server.add_gui_folder("Cluster"):
-                self._setup_cluster(viewer, server)
-                server.add_gui_markdown("")
-                with server.add_gui_folder("Save Cluster"):
-                    self._setup_save_cluster(viewer, server)
-                with server.add_gui_folder("Load Cluster"):
-                    self._setup_load_cluster(viewer, server)
 
     def _scan_cluster_files(self):
         file_list = []
@@ -513,8 +611,24 @@ class SegAnyGSRenderer(Renderer):
         else:
             raise RuntimeError("Invalid name")
 
-    def get_available_output_types(self) -> Dict:
-        return self.available_output_types
+    def _switch_renderer_output_type(self, type):
+        viewer = self.viewer
+        viewer.viewer_renderer.output_type_dropdown.value = type
+        viewer.viewer_renderer._set_output_type(type, self.renderer.available_output_types[type])
 
-    def is_type_depth_map(self, t: str) -> bool:
-        return t == "depth"
+        for i in self._on_render_output_type_switched_callbacks:
+            i(type)
+
+        viewer.rerender_for_all_client()
+
+    def _show_message(self, client, message: str):
+        with client.add_gui_modal("Message") as modal:
+            client.add_gui_markdown(message)
+            close_button = client.add_gui_button("Close")
+
+            @close_button.on_click
+            def _(_) -> None:
+                try:
+                    modal.close()
+                except:
+                    pass
