@@ -1,6 +1,7 @@
 *
 !.gitignore
 !ddp.yaml
+!ddp_find_unused.yaml
 !blender.yaml
 !appearance.yaml
 !experiment.yaml
