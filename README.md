@@ -92,9 +92,9 @@ pip install -r requirements.txt
 
 * If you need SegAnyGaussian
   * gsplat (see command above)
-  * `pip install hdbscan scikit-learn==1.3.2`
-  * PyTorch3D: <a href="https://github.com/facebookresearch/pytorch3d/blob/main/INSTALL.md">facebookresearch/pytorch3d</a>
-  * SAM: <a href="https://github.com/facebookresearch/segment-anything">facebookresearch/segment-anything</a>
+  * `pip install hdbscan scikit-learn==1.3.2 git+https://github.com/facebookresearch/segment-anything.git`
+  * <a href="https://github.com/facebookresearch/pytorch3d/blob/main/INSTALL.md">facebookresearch/pytorch3d</a>
+  * Download <a href="https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth">ViT-H SAM model</a>, place it to the root dir of this repo.: `wget -O sam_vit_h_4b8939.pth https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth`
 
 ## 2. Training
 ### 2.1. Basic command
@@ -273,26 +273,16 @@ python main.py fit \
       ├── 000002.jpg
       ...
   ├── semantic  # Generate by `get_sam_masks.py` and `get_sam_mask_scales.py`
-      ├── depths  # Only for visualization
-          ├── 000001.jpg.tiff
-          ├── 000002.jpg.tiff
-          ...
       ├── masks
           ├── 000001.jpg.pt
           ├── 000002.jpg.pt
-          ...
-      ├── masks_preview  # Only for visualization
-          ├── 000001.jpg.png
-          ├── 000002.jpg.png
           ...
       └── scales
           ├── 000001.jpg.pt
           ├── 000002.jpg.pt
           ...
   ├── sparse  # colmap sparse database
-      ├── cameras.bin
-      ├── images.bin
-      ├── points3D.bin
+      ...
   ```
 
 * Train SegAnyGS
