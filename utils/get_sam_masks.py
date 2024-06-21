@@ -15,6 +15,7 @@ parser.add_argument("image_path", type=str, default=None)
 parser.add_argument("--output", type=str, default=None)
 parser.add_argument("--sam_ckpt", "-c", type=str, default="sam_vit_h_4b8939.pth")
 parser.add_argument("--sam_arch", type=str, default="vit_h")
+parser.add_argument("--preview", action="store_true", default=False)
 args = parser.parse_args()
 
 MODEL_DEVICE = "cuda"
@@ -48,7 +49,11 @@ mask_generator = SamAutomaticMaskGenerator(
     min_mask_region_area=100,
 )
 
-image_list = list(glob(os.path.join(image_path, "**/*.jpg"), recursive=True))
+image_list = []
+for e in ["jpg", "jpeg"]:
+    image_list += list(glob(os.path.join(image_path, f"**/*.{e}"), recursive=True))
+    image_list += list(glob(os.path.join(image_path, f"**/*.{e.upper()}"), recursive=True))
+assert len(image_list) > 0
 image_list.sort()
 image_reader = AsyncImageReader(image_list)
 image_saver = AsyncImageSaver()
@@ -79,13 +84,15 @@ try:
                     continue
                 mask_list.append(m_score.bool())
 
-                # preview masks
-                color_mask = torch.rand((1, 1, 3), dtype=torch.float, device=img_tensor.device) * 255
-                transparency = (torch.tensor(m['segmentation'], dtype=torch.float, device=img_tensor.device) * 0.5)[..., None]
-                img_tensor = img_tensor * (1 - transparency) + transparency * color_mask
+                if args.preview is True:
+                    # preview masks
+                    color_mask = torch.rand((1, 1, 3), dtype=torch.float, device=img_tensor.device) * 255
+                    transparency = (torch.tensor(m['segmentation'], dtype=torch.float, device=img_tensor.device) * 0.5)[..., None]
+                    img_tensor = img_tensor * (1 - transparency) + transparency * color_mask
+
+                    image_saver.save(img_tensor.to(torch.uint8).cpu().numpy(), os.path.join(mask_preview_dir, f"{image_name}.png"))
 
             tensor_saver.save(torch.stack(mask_list, dim=0), os.path.join(mask_dir, semantic_file_name))
-            image_saver.save(img_tensor.to(torch.uint8).cpu().numpy(), os.path.join(mask_preview_dir, f"{image_name}.png"))
 finally:
     image_reader.stop()
     image_saver.stop()

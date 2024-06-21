@@ -18,6 +18,7 @@ from common import AsyncImageSaver, AsyncTensorSaver
 parser = argparse.ArgumentParser()
 parser.add_argument("model_path", type=str)
 parser.add_argument("--data_path", type=str, default=None)
+parser.add_argument("--save_depth_map", action="store_true", default=False)
 args = parser.parse_args()
 
 MODEL_DEVICE = "cuda"
@@ -32,11 +33,13 @@ renderer = GSplatContrastiveFeatureRenderer()
 
 # load dataset
 dataset_path = ckpt["datamodule_hyper_parameters"]["path"] if args.data_path is None else args.data_path
+dataparser_params = ckpt["datamodule_hyper_parameters"]["params"].colmap
+dataparser_params.split_mode = "reconstruction"
 dataparser_outputs = ColmapDataParser(
     path=dataset_path,
     output_path=os.getcwd(),
     global_rank=0,
-    params=ckpt["datamodule_hyper_parameters"]["params"].colmap,
+    params=dataparser_params,
 ).get_outputs()
 
 del ckpt
@@ -84,10 +87,11 @@ try:
                 )  # [C, H, W]
             camera.to_device("cpu")
 
-            image_saver.save(
-                depth.permute(1, 2, 0).cpu().numpy(),
-                os.path.join(depths_dir, f"{image_name}.tiff")
-            )
+            if args.save_depth_map is True:
+                image_saver.save(
+                    depth.permute(1, 2, 0).cpu().numpy(),
+                    os.path.join(depths_dir, f"{image_name}.tiff")
+                )
 
             # get 3D points in camera space
             depth = depth[0].cpu()  # [H, W]
