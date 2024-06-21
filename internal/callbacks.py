@@ -7,6 +7,8 @@ from lightning.pytorch.callbacks.progress.tqdm_progress import TQDMProgressBar, 
 
 class SaveCheckpoint(Callback):
     def on_train_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+        if trainer.global_rank != 0:
+            return
         checkpoint_path = os.path.join(
             pl_module.hparams["output_path"],
             "checkpoints",
