@@ -23,7 +23,7 @@ from internal.dataparsers.nsvf_dataparser import NSVFDataParser
 from internal.dataparsers.nerfies_dataparser import NerfiesDataparser
 from internal.dataparsers.matrix_city_dataparser import MatrixCityDataParser
 from internal.dataparsers.phototourism_dataparser import PhotoTourismDataParser
-from internal.dataparsers.semantic_colmap_dataparser import SemanticColmapDataParser
+from internal.dataparsers.segany_colmap_dataparser import SegAnyColmapDataParser
 from internal.utils.graphics_utils import store_ply, BasicPointCloud
 
 from tqdm import tqdm
@@ -44,8 +44,10 @@ class Dataset(torch.utils.data.Dataset):
         return len(self.image_set)
 
     def get_image(self, index) -> Tuple[str, torch.Tensor, Optional[torch.Tensor]]:
-        # TODO: resize
+        if self.image_set.image_paths[index] is None:
+            return self.image_set.image_names[index], None, None
 
+        # TODO: resize
         pil_image = Image.open(self.image_set.image_paths[index])
         numpy_image = np.array(pil_image, dtype="uint8")
 
@@ -248,7 +250,7 @@ class DataModule(LightningDataModule):
             self,
             path: str,
             params: DatasetParams,
-            type: Literal["colmap", "blender", "nsvf", "nerfies", "matrixcity", "phototourism", "semantic_colmap"] = None,
+            type: Literal["colmap", "blender", "nsvf", "nerfies", "matrixcity", "phototourism", "segany_colmap"] = None,
             distributed: bool = False,
             undistort_image: bool = False,
             val_on_train: bool = False,
@@ -304,8 +306,8 @@ class DataModule(LightningDataModule):
             dataparser = MatrixCityDataParser(params=self.hparams["params"].matrix_city, **dataparser_params)
         elif self.hparams["type"] == "phototourism":
             dataparser = PhotoTourismDataParser(params=self.hparams["params"].phototourism, **dataparser_params)
-        elif self.hparams["type"] == "semantic_colmap":
-            dataparser = SemanticColmapDataParser(params=self.hparams["params"].semantic_colmap, **dataparser_params)
+        elif self.hparams["type"] == "segany_colmap":
+            dataparser = SegAnyColmapDataParser(params=self.hparams["params"].segany_colmap, **dataparser_params)
         else:
             raise ValueError("unsupported dataset type {}".format(self.hparams["type"]))
 
