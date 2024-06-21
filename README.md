@@ -92,7 +92,7 @@ pip install -r requirements.txt
 
 * If you need SegAnyGaussian
   * gsplat (see command above)
-  * hdbscan: `pip install hdbscan`
+  * `pip install hdbscan scikit-learn==1.3.2`
   * PyTorch3D: <a href="https://github.com/facebookresearch/pytorch3d/blob/main/INSTALL.md">facebookresearch/pytorch3d</a>
   * SAM: <a href="https://github.com/facebookresearch/segment-anything">facebookresearch/segment-anything</a>
 
