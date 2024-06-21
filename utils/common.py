@@ -63,6 +63,8 @@ class AsyncImageSaver:
 
         tmp_path = f"{path[:dot_index]}.tmp{ext}"
 
+        os.makedirs(os.path.dirname(tmp_path), exist_ok=True)
+
         cv2.imwrite(tmp_path, image)
         os.rename(tmp_path, path)
 
