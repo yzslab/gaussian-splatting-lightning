@@ -1,3 +1,4 @@
+import os.path
 from collections import namedtuple
 from typing import Any, Optional, Union, Dict
 from typing_extensions import Self
@@ -7,21 +8,28 @@ import torch.nn
 import pytorch3d.ops
 from lightning.pytorch.utilities.types import STEP_OUTPUT, OptimizerLRScheduler
 
-from internal.configs.semantic_splatting import Optimization as OptimizationConfig
+from internal.configs.segany_splatting import Optimization as OptimizationConfig
 from internal.renderers.gsplat_contrastive_feature_renderer import GSplatContrastiveFeatureRenderer
 # from internal.renderers.contrastive_feature_renderer import ContrastiveFeatureRenderer
 from internal.utils.gaussian_model_loader import GaussianModelLoader
 
 
-class SemanticSplatting(lightning.LightningModule):
+class SegAnySplatting(lightning.LightningModule):
     def __init__(
             self,
             initialize_from: str,
             optimization: OptimizationConfig,
             n_feature_dims: int = 32,
+            scale_aware_dim: int = -1,
+            ray_sample_rate: int = 0,
+            num_sampled_rays: int = 1000,
+            smooth_K: int = 16,
+            smooth_dropout: float = 0.5,
+            rfn: float = 1.,
+            output_path: str = None,
+            # TODO: remove unnecessary parameters
             sh_degree: int = -1,
             save_iterations: list = None,
-            output_path: str = None,
             web_viewer: bool = False,
             save_val_output: bool = False,
     ):
@@ -37,13 +45,15 @@ class SemanticSplatting(lightning.LightningModule):
         # self.renderer = ContrastiveFeatureRenderer()
         self.renderer = GSplatContrastiveFeatureRenderer()
 
-        self.scale_aware_dim = -1
         self.feature_smooth_map = None
-        self.ray_sample_rate = 0
-        self.num_sampled_rays = 1000
-        self.smooth_K = 16
-        self.smooth_dropout = 0.5
-        self.rfn = 1.
+
+        # hyper parameters
+        self.scale_aware_dim = scale_aware_dim
+        self.ray_sample_rate = ray_sample_rate
+        self.num_sampled_rays = num_sampled_rays
+        self.smooth_K = smooth_K
+        self.smooth_dropout = smooth_dropout
+        self.rfn = rfn
 
     def setup(self, stage: str) -> None:
         super().setup(stage)
@@ -61,13 +71,18 @@ class SemanticSplatting(lightning.LightningModule):
         ) * 1e-2, requires_grad=True)
 
         self.scale_gate = torch.nn.Sequential(
-            torch.nn.Linear(1, 32, bias=True),
+            torch.nn.Linear(1, self.n_feature_dims, bias=True),
             torch.nn.Sigmoid()
         )
 
         self.bg_color = torch.nn.Parameter(torch.zeros((self.n_feature_dims,), dtype=torch.float, device=self.device), requires_grad=False)
 
         if stage == "fit":
+            if self.trainer.global_rank == 0:
+                # save initialization model path
+                with open(os.path.join(self.hparams["output_path"], "seganygs"), "w") as f:
+                    f.write(self.hparams["initialize_from"])
+
             self.gather_scales()
 
     def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
@@ -427,7 +442,7 @@ class SemanticSplatting(lightning.LightningModule):
         return loss
 
     def configure_optimizers(self) -> OptimizerLRScheduler:
-        lr_final_factor = 1.
+        lr_final_factor = self.hparams["optimization"].lr_final_factor
 
         self.optimizer = torch.optim.Adam(
             params=[

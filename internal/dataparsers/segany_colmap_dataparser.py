@@ -3,11 +3,11 @@ import torch
 
 from . import DataParserOutputs
 from .colmap_dataparser import ColmapDataParser
-from ..configs.dataset import SemanticColmapParams
+from ..configs.dataset import SegAnyColmapParams
 
 
-class SemanticColmapDataParser(ColmapDataParser):
-    def __init__(self, path: str, output_path: str, global_rank: int, params: SemanticColmapParams) -> None:
+class SegAnyColmapDataParser(ColmapDataParser):
+    def __init__(self, path: str, output_path: str, global_rank: int, params: SegAnyColmapParams) -> None:
         super().__init__(path, output_path, global_rank, params)
 
     def get_outputs(self) -> DataParserOutputs:
@@ -21,7 +21,12 @@ class SemanticColmapDataParser(ColmapDataParser):
                     os.path.join(self.path, self.params.semantic_mask_dir, semantic_file_name),
                     os.path.join(self.path, self.params.semantic_scale_dir, semantic_file_name),
                 )
-            image_set.extra_data_processor = SemanticColmapDataParser.read_semantic_data
+            image_set.extra_data_processor = SegAnyColmapDataParser.read_semantic_data
+
+        # remove image paths to avoid caching
+        for i in [dataparser_outputs.train_set, dataparser_outputs.val_set, dataparser_outputs.test_set]:
+            for j in range(len(i.image_paths)):
+                i.image_paths[j] = None
 
         return dataparser_outputs
 

@@ -23,8 +23,8 @@ MODEL_DEVICE = "cuda"
 image_path = args.image_path
 output_path = args.output
 if output_path is None:
-    output_path = os.path.join(os.path.dirname(image_path))
-print(f"output_path={output_path}")
+    output_path = os.path.join(os.path.dirname(image_path.rstrip("/")))
+print(f"output_path={os.path.join(output_path, 'semantic')}")
 
 # build output dirs
 mask_dir = os.path.join(output_path, "semantic", "masks")

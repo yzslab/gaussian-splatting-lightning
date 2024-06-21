@@ -100,7 +100,7 @@ class PhotoTourismParams(ColmapParams):
 
 
 @dataclass
-class SemanticColmapParams(ColmapParams):
+class SegAnyColmapParams(ColmapParams):
     semantic_mask_dir: str = "semantic/masks"
 
     semantic_scale_dir: str = "semantic/scales"
@@ -127,7 +127,7 @@ class DatasetParams:
 
     phototourism: PhotoTourismParams
 
-    semantic_colmap: SemanticColmapParams
+    segany_colmap: SegAnyColmapParams
 
     image_scale_factor: float = 1.  # TODO
 

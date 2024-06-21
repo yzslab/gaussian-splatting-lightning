@@ -67,6 +67,15 @@ class Viewer:
 
         load_from = self._search_load_file(model_paths[0])
 
+        # detect whether a SegAnyGS output
+        if seganygs is None and load_from.endswith(".ckpt"):
+            seganygs_tag_file_path = os.path.join(os.path.dirname(os.path.dirname(load_from)), "seganygs")
+            if os.path.exists(seganygs_tag_file_path) is True:
+                print("SegAny Splatting model detected")
+                seganygs = load_from
+                with open(seganygs_tag_file_path, "r") as f:
+                    load_from = self._search_load_file(f.read())
+
         if vanilla_seganygs is True:
             load_from = load_from[:-len(os.path.basename(load_from))]
             load_from = os.path.join(load_from, "scene_point_cloud.ply")
@@ -194,8 +203,8 @@ class Viewer:
         assert load_from.endswith(".ckpt")
         ckpt = torch.load(load_from, map_location="cpu")
 
-        from internal.semantic_splatting import SemanticSplatting
-        model = SemanticSplatting(**ckpt["hyper_parameters"])
+        from internal.segany_splatting import SegAnySplatting
+        model = SegAnySplatting(**ckpt["hyper_parameters"])
         model.setup("validate")
         model.load_state_dict(ckpt["state_dict"])
         model.on_load_checkpoint(ckpt)

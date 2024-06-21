@@ -2,7 +2,7 @@ import lightning
 from internal.cli import CLI
 from jsonargparse import lazy_instance
 
-from internal.semantic_splatting import SemanticSplatting
+from internal.segany_splatting import SegAnySplatting
 from internal.dataset import DataModule
 from internal.callbacks import SaveCheckpoint, ProgressBar
 import lightning.pytorch.loggers
@@ -10,7 +10,7 @@ import lightning.pytorch.loggers
 
 def cli_main():
     cli = CLI(
-        SemanticSplatting,
+        SegAnySplatting,
         DataModule,
         seed_everything_default=42,
         trainer_defaults={
