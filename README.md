@@ -23,7 +23,7 @@
 * <a href="https://lightgaussian.github.io/">LightGaussian</a>
 * <a href="https://ty424.github.io/AbsGS.github.io/">AbsGS</a> / EfficientGS
 * <a href="https://github.com/hbb1/2d-gaussian-splatting">2D Gaussian Splatting</a>
-* <a href="https://jumpat.github.io/SAGA/">Segment Any 3D Gaussians v2</a>
+* <a href="https://jumpat.github.io/SAGA/">Segment Any 3D Gaussians (v2)</a>
 * Load arbitrary number of images without OOM
 * Interactive web viewer
   * Load multiple models
