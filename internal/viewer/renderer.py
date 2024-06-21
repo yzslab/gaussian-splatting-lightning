@@ -1,6 +1,7 @@
+from typing import Literal
 import torch.nn.functional
-
 import internal.renderers as renderers
+import matplotlib
 
 
 class ViewerRenderer:
@@ -23,21 +24,29 @@ class ViewerRenderer:
 
     def _setup_depth_map_options(self, viewer, server):
         self.max_depth_gui_number = server.add_gui_number(
-            label="Max Depth",
+            label="Max Clamp",
             initial_value=0.,
             min=0.,
             step=0.01,
-            hint="value=0 means that no max depth clamping, depth will be normalized based on the maximum one",
+            hint="value=0 means that no max clamping, value will be normalized based on the maximum one",
+            visible=False,
+        )
+        self.depth_map_color_map_dropdown = server.add_gui_dropdown(
+            label="Color Map",
+            options=["turbo", "viridis", "magma", "inferno", "cividis", "gray"],
+            initial_value="turbo",
             visible=False,
         )
 
         @self.max_depth_gui_number.on_update
+        @self.depth_map_color_map_dropdown.on_update
         def _(event):
             with server.atomic():
                 viewer.rerender_for_all_client()
 
     def _set_depth_map_option_visibility(self, visible: bool):
         self.max_depth_gui_number.visible = visible
+        self.depth_map_color_map_dropdown.visible = visible
 
     def _set_output_type(self, name: str, key: str):
         """
@@ -108,10 +117,37 @@ class ViewerRenderer:
         max_depth = self.max_depth_gui_number.value
         if max_depth == 0:
             max_depth = depth_map.max()
-        return depth_map / (max_depth + 1e-8)
+        depth_map = (depth_map / (max_depth + 1e-8)).clamp(max=1.)
+        return self.apply_float_colormap(depth_map, self.depth_map_color_map_dropdown.value)
 
     def normal_map_processor(self, normal_map):
         return torch.nn.functional.normalize(normal_map, dim=0) * 0.5 + 0.5
 
     def no_processing(self, i):
         return i
+
+    @staticmethod
+    def apply_float_colormap(image, colormap: Literal["default", "turbo", "viridis", "magma", "inferno", "cividis", "gray"]):
+        """Copied from NeRFStudio
+
+        Convert single channel to a color image.
+
+        Args:
+            image: Single channel image.
+            colormap: Colormap for image.
+
+        Returns:
+            Tensor: Colored image with colors in [0, 1]
+        """
+        if colormap == "default":
+            colormap = "turbo"
+
+        image = torch.nan_to_num(image, 0)
+        if colormap == "gray":
+            return image.repeat(3, 1, 1)
+        image_long = (image * 255).long()
+        image_long_min = torch.min(image_long)
+        image_long_max = torch.max(image_long)
+        assert image_long_min >= 0, f"the min value is {image_long_min}"
+        assert image_long_max <= 255, f"the max value is {image_long_max}"
+        return torch.tensor(matplotlib.colormaps[colormap].colors, device=image.device)[image_long[0, ...]].permute(2, 0, 1)

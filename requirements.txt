@@ -7,5 +7,6 @@ wandb
 tqdm
 viser==0.1.29
 opencv-python==4.8.*
+matplotlib
 ./submodules/diff-gaussian-rasterization
 ./submodules/simple-knn
