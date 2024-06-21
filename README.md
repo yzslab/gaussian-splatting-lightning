@@ -184,7 +184,7 @@ python main.py fit \
 # Then resume, and enable multi-GPU
 python main.py fit \
     --config ... \
-    --trainer configs/ddp.yaml \
+    --trainer configs/ddp_find_unused.yaml \
     --data.path DATASET_PATH \
     --max_steps 30000 \
     --ckpt_path last  # find latest checkpoint automatically, or provide a path to checkpoint file
