@@ -205,7 +205,7 @@ class Viewer:
 
         from internal.segany_splatting import SegAnySplatting
         model = SegAnySplatting(**ckpt["hyper_parameters"])
-        model.setup("validate")
+        model.setup_parameters(ckpt["state_dict"]["gaussian_semantic_features"].shape[0])
         model.load_state_dict(ckpt["state_dict"])
         model.on_load_checkpoint(ckpt)
         model.eval()

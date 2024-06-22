@@ -64,9 +64,20 @@ class SegAnySplatting(lightning.LightningModule):
         gaussian_model, _ = GaussianModelLoader.search_and_load(initialize_from, sh_degree, self.device)
         self.models.gaussian = gaussian_model
 
+        self.setup_parameters(n_gaussians=gaussian_model.get_xyz.shape[0])
+
+        if stage == "fit":
+            if self.trainer.global_rank == 0:
+                # save initialization model path
+                with open(os.path.join(self.hparams["output_path"], "seganygs"), "w") as f:
+                    f.write(self.hparams["initialize_from"])
+
+            self.gather_scales()
+
+    def setup_parameters(self, n_gaussians: int):
         # multiply with 1e-2 is the key to reduce noisy
         self.gaussian_semantic_features = torch.nn.Parameter(torch.randn(
-            (gaussian_model.get_xyz.shape[0], self.n_feature_dims),
+            (n_gaussians, self.n_feature_dims),
             dtype=torch.float,
         ) * 1e-2, requires_grad=True)
 
@@ -76,14 +87,6 @@ class SegAnySplatting(lightning.LightningModule):
         )
 
         self.bg_color = torch.nn.Parameter(torch.zeros((self.n_feature_dims,), dtype=torch.float, device=self.device), requires_grad=False)
-
-        if stage == "fit":
-            if self.trainer.global_rank == 0:
-                # save initialization model path
-                with open(os.path.join(self.hparams["output_path"], "seganygs"), "w") as f:
-                    f.write(self.hparams["initialize_from"])
-
-            self.gather_scales()
 
     def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
         checkpoint["feature_smooth_map"] = self.feature_smooth_map
