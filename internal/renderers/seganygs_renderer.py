@@ -216,7 +216,7 @@ class OptionCallbacks:
         return self.renderer.scale_gate
 
     def get_update_scale_conditioned_features_callback(self, on_features_updated_callbacks):
-        def update_scale_conditioned_features(event, scale):
+        def update_scale_conditioned_features(scale):
             semantic_features = self.renderer.semantic_features.cuda()
 
             scale_conditioned_semantic_features = torch.nn.functional.normalize(
@@ -226,14 +226,14 @@ class OptionCallbacks:
 
             self.renderer.scale_conditioned_semantic_features = scale_conditioned_semantic_features
             for i in on_features_updated_callbacks:
-                i(event, scale_conditioned_semantic_features)
+                i(scale_conditioned_semantic_features)
 
             # move to cpu after all callback invoked (slow scale update a lot)
             # self.renderer.scale_conditioned_semantic_features = scale_conditioned_semantic_features.cpu()
 
         return update_scale_conditioned_features
 
-    def update_scale_conditioned_pca_colors(self, event, scale_conditioned_semantic_features):
+    def update_scale_conditioned_pca_colors(self, scale_conditioned_semantic_features):
         self.renderer.scale_gated_pca_colors = SegAnyGSUtils.get_pca_projected_colors(scale_conditioned_semantic_features, self.renderer.pca_projection_matrix)
 
     def get_update_selected_point_number_by_mask_callback(self, point_number):
@@ -373,13 +373,16 @@ class ViewerOptions:
             step=0.001,
             initial_value=self.scale,
         )
+        self._scale_slider = scale_slider
 
         @scale_slider.on_update
         def _(event):
+            if event.client is None:
+                return
             with self.server.atomic():
                 self.scale = scale_slider.value
                 for i in self._on_scale_updated_callbacks:
-                    i(event, scale_slider.value)
+                    i(scale_slider.value)
                 self.viewer.rerender_for_all_client()
 
     """
@@ -466,14 +469,18 @@ class ViewerOptions:
         )
 
         @similarity_score_number.on_update
-        def _(_):
+        def _(event):
+            if event.client is None:
+                return
             self.similarity_score = similarity_score_number.value
             with server.atomic():
                 self._segment()
             viewer.rerender_for_all_client()
 
         @similarity_score_gamma.on_update
-        def _(_):
+        def _(event):
+            if event.client is None:
+                return
             self.similarity_score_gamma = similarity_score_gamma.value
             with server.atomic():
                 self._segment()
@@ -546,8 +553,9 @@ class ViewerOptions:
                     pass
             viewer.rerender_for_all_client()
 
+        # save segment
         server.gui.add_markdown("")
-        with server.gui.add_folder("Save"):
+        with server.gui.add_folder("Save Segment"):
             save_name = server.gui.add_text("Name", initial_value="")
             save_button = server.gui.add_button("Save")
 
@@ -573,10 +581,65 @@ class ViewerOptions:
                         "query_features": self.feature_list,
                         "scale": self.scale,
                         "similarity_score": self.similarity_score,
-                        "gamma": self.similarity_score_gamma,
+                        "similarity_score_gamma": self.similarity_score_gamma,
                     }, save_to)
                 save_button.disabled = False
                 self._show_message(event.client, f"Saved to '{save_to}'")
+
+        # load segment
+        with server.gui.add_folder("Load Segment"):
+            reload_file_list_button = server.gui.add_button(
+                label="Refresh",
+            )
+            file_dropdown = server.gui.add_dropdown(
+                label="File",
+                options=self._scan_pt_files(self.segment_result_save_dir),
+            )
+            load_button = server.gui.add_button(
+                label="Load",
+            )
+
+            @reload_file_list_button.on_click
+            def _(_):
+                file_dropdown.options = self._scan_pt_files(self.segment_result_save_dir)
+
+            @load_button.on_click
+            def _(event):
+                if self._filename_check(file_dropdown.value) is False or file_dropdown.value.endswith(".pt") is False:
+                    self._show_message(event.client, "Invalid filename")
+                    return
+
+                load_button.disabled = True
+                try:
+                    segment = torch.load(os.path.join(self.segment_result_save_dir, file_dropdown.value), map_location=viewer.device)
+                    if segment["mask"].shape[0] != self.semantic_features.shape[0]:
+                        self._show_message(event.client, "File does not match to current scene")
+                        return
+
+                    with server.atomic():
+                        previous_scale = self.scale
+
+                        self.segment_mask = segment["mask"]
+                        self.similarities = segment["similarities"]
+                        self.feature_list = segment["query_features"]
+                        self.scale = segment["scale"]
+                        self.similarity_score = segment["similarity_score"]
+                        self.similarity_score_gamma = segment["similarity_score_gamma"]
+
+                        # update ui
+                        self._scale_slider.value = segment["scale"]
+                        similarity_score_number.value = segment["similarity_score"]
+                        similarity_score_gamma.value = segment["similarity_score_gamma"]
+                        point_number.value = len(segment["query_features"])
+
+                        # invoke scale updated callbacks
+                        if previous_scale != segment["scale"]:
+                            for i in self._on_scale_updated_callbacks:
+                                i(segment["scale"])
+
+                    viewer.rerender_for_all_client()
+                finally:
+                    load_button.disabled = False
 
     """
     Cluster
@@ -650,7 +713,6 @@ class ViewerOptions:
         cluster_result_file_dropdown = server.gui.add_dropdown(
             label="File",
             options=self._scan_cluster_files(),
-            initial_value="",
         )
         load_cluster_button = server.gui.add_button(
             label="Load",
@@ -686,9 +748,12 @@ class ViewerOptions:
             load_cluster_button.disabled = False
 
     def _scan_cluster_files(self):
+        return self._scan_pt_files(self.cluster_result_save_dir)
+
+    def _scan_pt_files(self, path):
         file_list = []
         try:
-            for i in os.listdir(self.cluster_result_save_dir):
+            for i in os.listdir(path):
                 if i.endswith(".pt"):
                     file_list.append(i)
         except:
