@@ -2,6 +2,7 @@
 * <a href="#1-installation">Installation</a>
 * <a href="#2-training">Training</a>
 * <a href="#4-web-viewer">Web Viewer</a>
+* <a href="https://github.com/yzslab/gaussian-splatting-lightning/releases">Changelog</a>
 ## Known issues
 * Multi-GPU training can only be enabled after densification
 ## Features
