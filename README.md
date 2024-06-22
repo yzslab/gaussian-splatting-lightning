@@ -369,7 +369,6 @@ python viewer.py \
 ```
 
 * <a href="https://github.com/hustvl/4DGaussians">hustvl/4DGaussians</a>
-
 ```bash
 python viewer.py \
     4DGaussians/outputs/lego \
@@ -391,6 +390,13 @@ python viewer.py \
 python viewer.py \
     SegAnyGAussians/outputs/Truck \
     --vanilla_seganygs
+```
+
+* <a href="https://github.com/autonomousvision/mip-splatting">autonomousvision/mip-splatting</a>
+```bash
+python viewer.py \
+    mip-splatting/outputs/bicycle \
+    --vanilla_mip
 ```
 
 ## 5. F.A.Q.

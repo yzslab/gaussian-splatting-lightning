@@ -45,6 +45,7 @@ class Viewer:
             gsplat: bool = False,
             seganygs: str = None,
             vanilla_seganygs: bool = False,
+            vanilla_mip: bool = False,
     ):
         self.device = torch.device("cuda")
 
@@ -125,8 +126,10 @@ class Viewer:
             from internal.renderers.vanilla_2dgs_renderer import Vanilla2DGSRenderer
             renderer = Vanilla2DGSRenderer()
             self.extra_video_render_args.append("--vanilla_gs2d")
-        if vanilla_seganygs is True:
+        elif vanilla_seganygs is True:
             renderer = self._load_vanilla_seganygs(load_from)
+        elif vanilla_mip is True:
+            renderer = self._load_vanilla_mip(load_from)
 
         # reorient the scene
         cameras_json_path = cameras_json
@@ -258,6 +261,23 @@ class Viewer:
 
         from internal.renderers.seganygs_renderer import SegAnyGSRenderer
         return SegAnyGSRenderer(semantic_features=semantic_features, scale_gate=scale_gate, anti_aliased=False)
+
+    def _load_vanilla_mip(self, load_from):
+        from plyfile import PlyData
+        from internal.renderers.mip_splatting_gsplat_renderer import MipSplattingGSplatRenderer
+
+        plydata = PlyData.read(load_from)
+        filter_3d = torch.nn.Parameter(torch.tensor(
+            plydata.elements[0]["filter_3D"][..., np.newaxis],
+            dtype=torch.float,
+            device=self.device,
+        ), requires_grad=False)
+
+        # TODO: read `kernel_size` from cfg_args
+        renderer = MipSplattingGSplatRenderer()
+        renderer.filter_3d = filter_3d
+
+        return renderer
 
     def _reorient(self, cameras_json_path: str, mode: str, dataset_type: str = None):
         transform = torch.eye(4, dtype=torch.float)
@@ -712,6 +732,7 @@ if __name__ == "__main__":
     parser.add_argument("--seganygs", type=str, default=None,
                         help="Path to a SegAnyGaussian model output directory or checkpoint file")
     parser.add_argument("--vanilla_seganygs", action="store_true", default=False)
+    parser.add_argument("--vanilla_mip", action="store_true", default=False)
     parser.add_argument("--float32_matmul_precision", "--fp", type=str, default=None)
     args = parser.parse_args()
 
