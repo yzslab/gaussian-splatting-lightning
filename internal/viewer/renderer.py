@@ -23,7 +23,7 @@ class ViewerRenderer:
         self.output_processor = self.no_processing
 
     def _setup_depth_map_options(self, viewer, server):
-        self.max_depth_gui_number = server.add_gui_number(
+        self.max_depth_gui_number = server.gui.add_number(
             label="Max Clamp",
             initial_value=0.,
             min=0.,
@@ -31,7 +31,7 @@ class ViewerRenderer:
             hint="value=0 means that no max clamping, value will be normalized based on the maximum one",
             visible=False,
         )
-        self.depth_map_color_map_dropdown = server.add_gui_dropdown(
+        self.depth_map_color_map_dropdown = server.gui.add_dropdown(
             label="Color Map",
             options=["turbo", "viridis", "magma", "inferno", "cividis", "gray"],
             initial_value="turbo",
@@ -67,13 +67,13 @@ class ViewerRenderer:
         self.output_key = key
 
     def setup_options(self, viewer, server):
-        with server.add_gui_folder("Output"):
+        with server.gui.add_folder("Output"):
             available_output_types = self.renderer.get_available_output_types()
             first_type_name = list(available_output_types.keys())[0]
             first_type_key = available_output_types[first_type_name]
 
             # setup output type dropdown
-            output_type_dropdown = server.add_gui_dropdown(
+            output_type_dropdown = server.gui.add_dropdown(
                 label="Type",
                 options=list(available_output_types.keys()),
                 initial_value=first_type_name,

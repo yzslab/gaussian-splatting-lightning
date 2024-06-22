@@ -291,15 +291,15 @@ class ViewerOptions:
         self._setup_output_type_dropdown()
         self._setup_scale_number()
 
-        with server.add_gui_folder("Segment"):
+        with server.gui.add_folder("Segment"):
             self._setup_segment()
 
-        with server.add_gui_folder("Cluster"):
+        with server.gui.add_folder("Cluster"):
             self._setup_cluster()
-            server.add_gui_markdown("")
-            with server.add_gui_folder("Save Cluster"):
+            server.gui.add_markdown("")
+            with server.gui.add_folder("Save Cluster"):
                 self._setup_save_cluster()
-            with server.add_gui_folder("Load Cluster"):
+            with server.gui.add_folder("Load Cluster"):
                 self._setup_load_cluster()
 
     @property
@@ -345,7 +345,7 @@ class ViewerOptions:
             self.renderer.cluster_color = torch.tensor(value["point_colors"], dtype=torch.float, device="cuda")
 
     def _setup_output_type_dropdown(self):
-        render_type_dropdown = self.server.add_gui_dropdown(
+        render_type_dropdown = self.server.gui.add_dropdown(
             label="Render Type",
             options=list(self.renderer.get_available_output_types().keys()),
         )
@@ -362,7 +362,7 @@ class ViewerOptions:
         self._on_render_output_type_switched_callbacks.append(update_dropdown)
 
     def _setup_scale_number(self):
-        scale_slider = self.server.add_gui_slider(
+        scale_slider = self.server.gui.add_slider(
             "Scale",
             min=0.,
             max=1.,
@@ -431,26 +431,26 @@ class ViewerOptions:
         feature_map_render = GSplatContrastiveFeatureRenderer()
         feature_map_render.anti_aliased = self.renderer.anti_aliased
 
-        point_number = server.add_gui_number(
+        point_number = server.gui.add_number(
             label="Prompt",
             initial_value=0,
             disabled=True,
         )
-        selected_point_number = server.add_gui_number(
+        selected_point_number = server.gui.add_number(
             label="Maksed",
             initial_value=0,
             disabled=True,
         )
         self._on_segment_mask_updated_callbacks.append(self.callbacks.get_update_selected_point_number_by_mask_callback(selected_point_number))
 
-        similarity_score_number = server.add_gui_slider(
+        similarity_score_number = server.gui.add_slider(
             label="Similarity Score",
             initial_value=self.similarity_score,
             min=0.,
             max=1.,
             step=0.001,
         )
-        similarity_score_gamma = server.add_gui_slider(
+        similarity_score_gamma = server.gui.add_slider(
             label="Score Gamma",
             initial_value=self.similarity_score_gamma,
             min=0.,
@@ -473,8 +473,8 @@ class ViewerOptions:
                 self._segment()
             viewer.rerender_for_all_client()
 
-        enable_click_mode_button = server.add_gui_button("Enter Click Mode")
-        disable_click_mode_button = server.add_gui_button("Exit Click Mode", visible=False, color="red")
+        enable_click_mode_button = server.gui.add_button("Enter Click Mode")
+        disable_click_mode_button = server.gui.add_button("Exit Click Mode", visible=False, color="red")
 
         @enable_click_mode_button.on_click
         def _(event):
@@ -515,7 +515,7 @@ class ViewerOptions:
             disable_click_mode_button.visible = False
 
         # clear points
-        clear_prompt_point_button = server.add_gui_button("Clear Prompt Points", color="red")
+        clear_prompt_point_button = server.gui.add_button("Clear Prompt Points", color="red")
 
         @clear_prompt_point_button.on_click
         def _(_):
@@ -533,12 +533,12 @@ class ViewerOptions:
     def _setup_cluster(self):
         viewer, server = self.viewer, self.server
 
-        clustering_button = server.add_gui_button(
+        clustering_button = server.gui.add_button(
             label="Clustering...",
             disabled=True,
             visible=False,
         )
-        cluster_button = server.add_gui_button(
+        cluster_button = server.gui.add_button(
             label="Re-Cluster in 3D",
         )
 
@@ -559,8 +559,8 @@ class ViewerOptions:
     def _setup_save_cluster(self):
         viewer, server = self.viewer, self.server
 
-        save_name_text = server.add_gui_text(label="Name", initial_value="")
-        save_cluster_button = server.add_gui_button(label="Save")
+        save_name_text = server.gui.add_text(label="Name", initial_value="")
+        save_cluster_button = server.gui.add_button(label="Save")
 
         @save_cluster_button.on_click
         def _(event):
@@ -578,15 +578,15 @@ class ViewerOptions:
     def _setup_load_cluster(self):
         viewer, server = self.viewer, self.server
 
-        reload_file_list_button = server.add_gui_button(
+        reload_file_list_button = server.gui.add_button(
             label="Refresh",
         )
-        cluster_result_file_dropdown = server.add_gui_dropdown(
+        cluster_result_file_dropdown = server.gui.add_dropdown(
             label="File",
             options=self._scan_cluster_files(),
             initial_value="",
         )
-        load_cluster_button = server.add_gui_button(
+        load_cluster_button = server.gui.add_button(
             label="Load",
         )
 
@@ -675,9 +675,9 @@ class ViewerOptions:
         if target is None:
             target = self.server
 
-        with target.add_gui_modal("Message") as modal:
-            target.add_gui_markdown(message)
-            close_button = target.add_gui_button("Close")
+        with target.gui.add_modal("Message") as modal:
+            target.gui.add_markdown(message)
+            close_button = target.gui.add_button("Close")
 
             @close_button.on_click
             def _(_) -> None:

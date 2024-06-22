@@ -357,9 +357,9 @@ class Viewer:
         #         for i in self.camera_handles:
         #             i.scale = self.camera_scale_slider.value
 
-        with viser_server.add_gui_folder("Cameras"):
-            self.toggle_camera_button = viser_server.add_gui_button("Toggle Camera Visibility")
-            # self.camera_scale_slider = viser_server.add_gui_slider(
+        with viser_server.gui.add_folder("Cameras"):
+            self.toggle_camera_button = viser_server.gui.add_button("Toggle Camera Visibility")
+            # self.camera_scale_slider = viser_server.gui.add_slider(
             #     "Camera Scale",
             #     min=0.,
             #     max=1.,
@@ -409,10 +409,10 @@ class Viewer:
 
         return model, renderer, training_output_base_dir, dataset_type, checkpoint
 
-    def start(self, block: bool = True, server_config_fun=None, tab_config_fun=None):
+    def start(self, block: bool = True, server_config_fun=None, tab_config_fun=None, enable_renderer_options: bool = True):
         # create viser server
         server = viser.ViserServer(host=self.host, port=self.port)
-        server.configure_theme(
+        server.gui.configure_theme(
             control_layout="collapsible",
             show_logo=False,
         )
@@ -420,15 +420,15 @@ class Viewer:
         if server_config_fun is not None:
             server_config_fun(self, server)
 
-        tabs = server.add_gui_tab_group()
+        tabs = server.gui.add_tab_group()
 
         if tab_config_fun is not None:
             tab_config_fun(self, server, tabs)
 
         with tabs.add_tab("General"):
             # add render options
-            with server.add_gui_folder("Render"):
-                self.max_res_when_static = server.add_gui_slider(
+            with server.gui.add_folder("Render"):
+                self.max_res_when_static = server.gui.add_slider(
                     "Max Res",
                     min=128,
                     max=3840,
@@ -436,7 +436,7 @@ class Viewer:
                     initial_value=1920,
                 )
                 self.max_res_when_static.on_update(self._handle_option_updated)
-                self.jpeg_quality_when_static = server.add_gui_slider(
+                self.jpeg_quality_when_static = server.gui.add_slider(
                     "JPEG Quality",
                     min=0,
                     max=100,
@@ -445,14 +445,14 @@ class Viewer:
                 )
                 self.jpeg_quality_when_static.on_update(self._handle_option_updated)
 
-                self.max_res_when_moving = server.add_gui_slider(
+                self.max_res_when_moving = server.gui.add_slider(
                     "Max Res when Moving",
                     min=128,
                     max=3840,
                     step=128,
                     initial_value=1280,
                 )
-                self.jpeg_quality_when_moving = server.add_gui_slider(
+                self.jpeg_quality_when_moving = server.gui.add_slider(
                     "JPEG Quality when Moving",
                     min=0,
                     max=100,
@@ -462,8 +462,8 @@ class Viewer:
 
             self.viewer_renderer.setup_options(self, server)
 
-            with server.add_gui_folder("Model"):
-                self.scaling_modifier = server.add_gui_slider(
+            with server.gui.add_folder("Model"):
+                self.scaling_modifier = server.gui.add_slider(
                     "Scaling Modifier",
                     min=0.,
                     max=1.,
@@ -473,7 +473,7 @@ class Viewer:
                 self.scaling_modifier.on_update(self._handle_option_updated)
 
                 if self.viewer_renderer.gaussian_model.max_sh_degree > 0:
-                    self.active_sh_degree_slider = server.add_gui_slider(
+                    self.active_sh_degree_slider = server.gui.add_slider(
                         "Active SH Degree",
                         min=0,
                         max=self.viewer_renderer.gaussian_model.max_sh_degree,
@@ -496,7 +496,7 @@ class Viewer:
                             self.available_appearance_options[i] = (0, self.available_appearance_options[i])
                     self.available_appearance_options[DROPDOWN_USE_DIRECT_APPEARANCE_EMBEDDING_VALUE] = None
 
-                    self.appearance_id = server.add_gui_slider(
+                    self.appearance_id = server.gui.add_slider(
                         "Appearance Direct",
                         min=0,
                         max=max_input_id,
@@ -505,7 +505,7 @@ class Viewer:
                         visible=max_input_id > 0
                     )
 
-                    self.normalized_appearance_id = server.add_gui_slider(
+                    self.normalized_appearance_id = server.gui.add_slider(
                         "Normalized Appearance Direct",
                         min=0.,
                         max=1.,
@@ -515,7 +515,7 @@ class Viewer:
 
                     appearance_options = list(self.available_appearance_options.keys())
 
-                    self.appearance_group_dropdown = server.add_gui_dropdown(
+                    self.appearance_group_dropdown = server.gui.add_dropdown(
                         "Appearance Group",
                         options=appearance_options,
                         initial_value=appearance_options[0],
@@ -524,7 +524,7 @@ class Viewer:
                     self.normalized_appearance_id.on_update(self._handle_appearance_embedding_slider_updated)
                     self.appearance_group_dropdown.on_update(self._handel_appearance_group_dropdown_updated)
 
-                self.time_slider = server.add_gui_slider(
+                self.time_slider = server.gui.add_slider(
                     "Time",
                     min=0.,
                     max=1.,
@@ -539,7 +539,7 @@ class Viewer:
 
             UpDirectionFolder(self, server)
 
-            go_to_scene_center = server.add_gui_button(
+            go_to_scene_center = server.gui.add_button(
                 "Go to scene center",
             )
 
@@ -572,7 +572,8 @@ class Viewer:
                     extra_args=self.extra_video_render_args,
                 )
 
-        self.viewer_renderer.renderer.setup_web_viewer_tabs(self, server, tabs)
+        if enable_renderer_options is True:
+            self.viewer_renderer.renderer.setup_web_viewer_tabs(self, server, tabs)
 
         # register hooks
         server.on_client_connect(self._handle_new_client)
@@ -620,7 +621,10 @@ class Viewer:
             return
 
         # get appearance ids according to the dropdown value
-        appearance_id, normalized_appearance_id = self.available_appearance_options[self.appearance_group_dropdown.value]
+        v = self.available_appearance_options.get(self.appearance_group_dropdown.value, None)
+        if v is None:
+            return
+        appearance_id, normalized_appearance_id = v
         # update sliders
         self.appearance_id.value = appearance_id
         self.normalized_appearance_id.value = normalized_appearance_id
