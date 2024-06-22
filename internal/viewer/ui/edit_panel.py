@@ -42,6 +42,7 @@ class EditPanel:
                 "Point Size",
                 min=0.,
                 initial_value=0.01,
+                step=0.001,
             )
             self.point_sparsify = server.gui.add_number(
                 "Point Sparsify",
