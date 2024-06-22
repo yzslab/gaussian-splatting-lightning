@@ -288,7 +288,7 @@ python main.py fit \
 * Train SegAnyGS
   ```bash
   python seganygs.py fit \
-      --config config/segany_splatting.yaml \
+      --config configs/segany_splatting.yaml \
       --data.path data/Truck \
       --model.initialize_from outputs/Truck/gsplat \
       -n Truck -v seganygs  # save to `outputs/Truck/seganygs`
