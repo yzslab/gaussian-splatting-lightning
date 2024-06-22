@@ -647,9 +647,13 @@ class ViewerOptions:
             raise RuntimeError("Invalid name")
 
     def _switch_renderer_output_type(self, type):
+        output_type_key = self.renderer.available_output_types.get(type, None)
+        if output_type_key is None:
+            return
+
         viewer = self.viewer
         viewer.viewer_renderer.output_type_dropdown.value = type
-        viewer.viewer_renderer._set_output_type(type, self.renderer.available_output_types[type])
+        viewer.viewer_renderer._set_output_type(type, output_type_key)
 
         for i in self._on_render_output_type_switched_callbacks:
             i(type)
