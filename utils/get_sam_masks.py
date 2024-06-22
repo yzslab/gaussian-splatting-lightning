@@ -16,6 +16,7 @@ parser.add_argument("--output", type=str, default=None)
 parser.add_argument("--sam_ckpt", "-c", type=str, default="sam_vit_h_4b8939.pth")
 parser.add_argument("--sam_arch", type=str, default="vit_h")
 parser.add_argument("--preview", action="store_true", default=False)
+parser.add_argument("--ext", "-e", nargs="+", default=["jpg", "jpeg", "JPG", "JPEG"])
 args = parser.parse_args()
 
 MODEL_DEVICE = "cuda"
@@ -49,12 +50,16 @@ mask_generator = SamAutomaticMaskGenerator(
     min_mask_region_area=100,
 )
 
-image_list = []
-for e in ["jpg", "jpeg"]:
-    image_list += list(glob(os.path.join(image_path, f"**/*.{e}"), recursive=True))
-    image_list += list(glob(os.path.join(image_path, f"**/*.{e.upper()}"), recursive=True))
-assert len(image_list) > 0
+print("Finding image files...")
+image_name_set = {}
+for e in args.ext:
+    for i in glob(os.path.join(image_path, f"**/*.{e}"), recursive=True):
+        image_name_set[i] = True
+image_list = list(image_name_set.keys())
+assert len(image_list) > 0, "Not a image can be found"
+print(f"{len(image_list)} images found")
 image_list.sort()
+
 image_reader = AsyncImageReader(image_list)
 image_saver = AsyncImageSaver()
 tensor_saver = AsyncTensorSaver()
