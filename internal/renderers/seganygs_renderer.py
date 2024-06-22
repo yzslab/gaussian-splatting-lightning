@@ -436,6 +436,10 @@ class ViewerOptions:
 
         from internal.viewer.client import ClientThread
 
+        def switch_to_segment_output():
+            if self.viewer.viewer_renderer.output_type_dropdown.value.startswith("segment3d_") is False:
+                self._switch_renderer_output_type("segment3d")
+
         # setup feature map renderer
         feature_map_render = GSplatContrastiveFeatureRenderer()
         feature_map_render.anti_aliased = self.renderer.anti_aliased
@@ -494,7 +498,7 @@ class ViewerOptions:
             enable_click_mode_button.visible = False
             disable_click_mode_button.visible = True
 
-            self._switch_renderer_output_type("segment3d")
+            switch_to_segment_output()
 
             max_res = viewer.max_res_when_static.value
             camera = ClientThread.get_camera(
@@ -637,6 +641,7 @@ class ViewerOptions:
                             for i in self._on_scale_updated_callbacks:
                                 i(segment["scale"])
 
+                    switch_to_segment_output()
                     viewer.rerender_for_all_client()
                 finally:
                     load_button.disabled = False
