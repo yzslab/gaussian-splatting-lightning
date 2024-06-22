@@ -598,6 +598,7 @@ class ViewerOptions:
             file_dropdown = server.gui.add_dropdown(
                 label="File",
                 options=self._scan_pt_files(self.segment_result_save_dir),
+                initial_value="",
             )
             load_button = server.gui.add_button(
                 label="Load",
@@ -718,6 +719,7 @@ class ViewerOptions:
         cluster_result_file_dropdown = server.gui.add_dropdown(
             label="File",
             options=self._scan_cluster_files(),
+            initial_value="",
         )
         load_cluster_button = server.gui.add_button(
             label="Load",
