@@ -79,7 +79,6 @@ try:
 
             # extract masks
             masks = mask_generator.generate(img)
-            img_tensor = torch.tensor(img, dtype=torch.float, device="cuda")
             mask_list = []
             for m in masks:
                 # TODO: resize
@@ -91,6 +90,7 @@ try:
 
                 if args.preview is True:
                     # preview masks
+                    img_tensor = torch.tensor(img, dtype=torch.float, device="cuda")
                     color_mask = torch.rand((1, 1, 3), dtype=torch.float, device=img_tensor.device) * 255
                     transparency = (torch.tensor(m['segmentation'], dtype=torch.float, device=img_tensor.device) * 0.5)[..., None]
                     img_tensor = img_tensor * (1 - transparency) + transparency * color_mask
