@@ -47,9 +47,9 @@ class SegAnyGSRenderer(Renderer):
         self.cluster_result = None
 
         # reduce CUDA memory consumption
-        self.semantic_features = self.semantic_features.cpu()
+        # self.semantic_features = self.semantic_features.cpu()  # slow scale update a little
         self.scale_conditioned_semantic_features = self.scale_conditioned_semantic_features.cpu()
-        torch.cuda.empty_cache()
+        # torch.cuda.empty_cache()
 
         self.color_producers = {
             "rgb": self._shs_to_rgb,
@@ -174,8 +174,10 @@ class SegAnyGSRenderer(Renderer):
         return torch.zeros((pc.get_xyz.shape[0], 3), dtype=torch.float, device=opacities.device), bg_color, opacities
 
     def cluster_in_3d(self):
+        print("Cluster takes some time. The viewer will not response any requests during this process, please be patient...")
         self.cluster_result = SegAnyGSUtils.cluster_3d_as_dict(self.scale_conditioned_semantic_features)
         self.cluster_color = torch.tensor(self.cluster_result["point_colors"], dtype=torch.float, device="cuda")
+        print(f"Cluster finished: {len(self.cluster_result['cluster_labels'])} labels")
 
     def setup_web_viewer_tabs(self, viewer, server, tabs):
         with tabs.add_tab("Semantic"):
@@ -216,10 +218,12 @@ class OptionCallbacks:
                 dim=-1,
             )
 
+            self.renderer.scale_conditioned_semantic_features = scale_conditioned_semantic_features
             for i in on_features_updated_callbacks:
                 i(event, scale_conditioned_semantic_features)
 
-            self.renderer.scale_conditioned_semantic_features = scale_conditioned_semantic_features.cpu()
+            # move to cpu after all callback invoked (slow scale update a lot)
+            # self.renderer.scale_conditioned_semantic_features = scale_conditioned_semantic_features.cpu()
 
         return update_scale_conditioned_features
 
@@ -235,7 +239,7 @@ class OptionCallbacks:
 
         return update_point_number
 
-    def update_segment_mask_on_scale_updated(self, event, scale):
+    def update_segment_mask_on_scale_conditioned_feature_updated(self, *args, **kwargs):
         self.options._segment()
 
 
@@ -256,14 +260,12 @@ class ViewerOptions:
         self._on_segment_mask_updated_callbacks = []
         self._on_scale_conditioned_features_updated_callbacks = [
             self.callbacks.update_scale_conditioned_pca_colors,
+            self.callbacks.update_segment_mask_on_scale_conditioned_feature_updated,
         ]
         self._on_render_output_type_switched_callbacks = []
 
         self._on_scale_updated_callbacks.append(
             self.callbacks.get_update_scale_conditioned_features_callback(self._on_scale_conditioned_features_updated_callbacks),
-        )
-        self._on_scale_updated_callbacks.append(
-            self.callbacks.update_segment_mask_on_scale_updated,
         )
 
         # properties
@@ -437,14 +439,14 @@ class ViewerOptions:
 
         similarity_score_number = server.add_gui_slider(
             label="Similarity Score",
-            initial_value=0.8,
+            initial_value=self.similarity_score,
             min=0.,
             max=1.,
             step=0.001,
         )
         similarity_score_gamma = server.add_gui_slider(
             label="Score Gamma",
-            initial_value=1.,
+            initial_value=self.similarity_score_gamma,
             min=0.,
             max=10.,
             step=0.01,
