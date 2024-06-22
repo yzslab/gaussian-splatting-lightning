@@ -47,8 +47,6 @@ class UpDirectionFolder:
                 up_direction_visualize_camera.wxyz = event.client.camera.wxyz
                 up_rotation = (current_camera_rotation @ vtf.SO3.from_x_radians(np.pi / 2))
                 up_direction_visualize_transform.wxyz = up_rotation.wxyz
-                # update rotation text inputs
-                up_rotations_input.value = up_rotation.as_rpy_radians()
 
 
             # up text vector
@@ -83,7 +81,6 @@ class UpDirectionFolder:
                 transform_rotation = vtf.SO3(up_direction_visualize_transform.wxyz)
                 up_direction_visualize_camera.wxyz = (transform_rotation @ vtf.SO3.from_x_radians(-np.pi / 2)).wxyz
                 up_direction_visualize_camera.position = up_direction_visualize_transform.position
-                up_rotations_input.value = transform_rotation.as_rpy_radians()
 
             # toggle the visibilities of visualizers
             show_up_visualizer_checkbox = server.add_gui_checkbox(
@@ -97,22 +94,6 @@ class UpDirectionFolder:
                 up_direction_visualize_camera.visible = show_up_visualizer_checkbox.value
                 up_direction_visualize_transform.position = event.client.camera.look_at
                 up_direction_visualize_transform.visible = show_up_visualizer_checkbox.value
-
-            # rotations text inputs
-            up_rotations_input = server.add_gui_vector3(
-                "Up Rot (xyz)",
-                initial_value=rotation_of_up_direction.as_rpy_radians(),
-                min=(-np.pi, -np.pi, -np.pi),
-                max=(np.pi, np.pi, np.pi),
-                step=0.01,
-            )
-            @up_rotations_input.on_update
-            def _(event):
-                if event.client is None:
-                    return
-                # synchronize visualizers
-                up_direction_visualize_transform.wxyz = vtf.SO3.from_rpy_radians(*up_rotations_input.value).wxyz
-                on_up_direction_visualize_transform_update(event)
 
             # set up direction based on the pose of the visualizer (transform control)
             apply_up_direction = server.add_gui_button("Apply Up Direction")
