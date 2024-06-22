@@ -79,15 +79,15 @@ try:
 
             # extract masks
             masks = mask_generator.generate(img)
-            img_tensor = torch.tensor(img, dtype=torch.float, device="cuda")
+            if args.preview is True:
+                img_tensor = torch.tensor(img, dtype=torch.float, device="cuda")
             mask_list = []
             for m in masks:
                 # TODO: resize
-                m_score = torch.from_numpy(m['segmentation']).float().to('cuda')
                 # discard if all/none pixels are masked
-                if len(m_score.unique()) < 2:
+                if np.all(m['segmentation']) or np.all(np.logical_not(m['segmentation'])):
                     continue
-                mask_list.append(m_score.bool())
+                mask_list.append(torch.from_numpy(m['segmentation']))
 
                 if args.preview is True:
                     # preview masks
