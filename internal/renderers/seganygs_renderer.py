@@ -146,7 +146,15 @@ class SegAnyGSRenderer(Renderer):
 
     def _cluster_as_color(self, project_results, pc: GaussianModel, viewpoint_camera, bg_color, opacities):
         if self.cluster_color is None:
+            try:
+                self.viewer_options.print_cluster_start_message()
+            except:
+                pass
             self.cluster_in_3d()
+            try:
+                self.viewer_options.print_cluster_finished_message()
+            except:
+                pass
 
         return self.cluster_color, bg_color, opacities
 
@@ -174,10 +182,8 @@ class SegAnyGSRenderer(Renderer):
         return torch.zeros((pc.get_xyz.shape[0], 3), dtype=torch.float, device=opacities.device), bg_color, opacities
 
     def cluster_in_3d(self):
-        print("Cluster takes some time. The viewer will not response any requests during this process, please be patient...")
         self.cluster_result = SegAnyGSUtils.cluster_3d_as_dict(self.scale_conditioned_semantic_features)
         self.cluster_color = torch.tensor(self.cluster_result["point_colors"], dtype=torch.float, device="cuda")
-        print(f"Cluster finished: {len(self.cluster_result['cluster_labels'])} labels")
 
     def setup_web_viewer_tabs(self, viewer, server, tabs):
         with tabs.add_tab("Semantic"):
@@ -537,13 +543,15 @@ class ViewerOptions:
         )
 
         @cluster_button.on_click
-        def _(_):
+        def _(event):
             cluster_button.visible = False
             clustering_button.visible = True
+            self.print_cluster_start_message(event.client)
             with server.atomic():
                 self.renderer.cluster_in_3d()
             cluster_button.visible = True
             clustering_button.visible = False
+            self.print_cluster_finished_message(event.client)
 
             # switch output type to cluster3d
             self._switch_renderer_output_type("cluster3d")
@@ -648,10 +656,24 @@ class ViewerOptions:
 
         viewer.rerender_for_all_client()
 
+    def print_cluster_start_message(self, client=None):
+        message = "Cluster takes some time. The viewer will not response any requests during this process (may including the 'Close' button below), please be patient...<br/>You will be noticed when it is completed."
+        print(message)
+        self._show_message(client, message)
+
+    def print_cluster_finished_message(self, client=None):
+        message = f"Cluster completed: {len(self.cluster_result['cluster_labels'])} labels"
+        print(message)
+        self._show_message(client, message)
+
     def _show_message(self, client, message: str):
-        with client.add_gui_modal("Message") as modal:
-            client.add_gui_markdown(message)
-            close_button = client.add_gui_button("Close")
+        target = client
+        if target is None:
+            target = self.server
+
+        with target.add_gui_modal("Message") as modal:
+            target.add_gui_markdown(message)
+            close_button = target.add_gui_button("Close")
 
             @close_button.on_click
             def _(_) -> None:
