@@ -1,3 +1,7 @@
+"""
+Most codes are copied from: https://github.com/Jumpat/SegAnyGAussians/blob/v2/train_contrastive_feature.py
+"""
+
 import os.path
 from collections import namedtuple
 from typing import Any, Optional, Union, Dict

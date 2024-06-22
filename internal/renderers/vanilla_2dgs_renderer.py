@@ -1,3 +1,7 @@
+"""
+Most codes are copied from https://github.com/hbb1/2d-gaussian-splatting/blob/main/train.py
+"""
+
 from typing import Dict, Tuple, Union, Callable, Optional, List
 
 import lightning
