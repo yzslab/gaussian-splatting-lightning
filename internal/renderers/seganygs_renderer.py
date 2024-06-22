@@ -282,6 +282,10 @@ class ViewerOptions:
         self._feature_map = None
         self.feature_list = []
 
+        self.segment_result_save_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            "segments",
+        )
         self.cluster_result_save_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
             "clusters",
@@ -384,6 +388,8 @@ class ViewerOptions:
 
     def _segment(self):
         if len(self.feature_list) == 0:
+            self.segment_mask = None
+            self.similarities = None
             return
 
         scale_conditioned_semantic_features = self.scale_conditioned_semantic_features.cuda()
@@ -526,6 +532,52 @@ class ViewerOptions:
                 point_number.value = 0
             viewer.rerender_for_all_client()
 
+        # pop a point
+        pop_prompt_point_button = server.gui.add_button("Pop a Point", color="orange")
+
+        @pop_prompt_point_button.on_click
+        def _(_):
+            with server.atomic():
+                try:
+                    self.feature_list.pop()
+                    point_number.value -= 1
+                    self._segment()
+                except:
+                    pass
+            viewer.rerender_for_all_client()
+
+        server.gui.add_markdown("")
+        with server.gui.add_folder("Save"):
+            save_name = server.gui.add_text("Name", initial_value="")
+            save_button = server.gui.add_button("Save")
+
+            @save_button.on_click
+            def _(event):
+                if self._filename_check(save_name.value) is False:
+                    self._show_message(event.client, "Invalid name")
+                    return
+                if self.segment_mask is None:
+                    self._show_message(event.client, "Mask is empty")
+                    return
+                save_to = os.path.join(self.segment_result_save_dir, f"{save_name.value}.pt")
+                if os.path.exists(save_to) is True:
+                    self._show_message(event.client, "File already exists")
+                    return
+
+                os.makedirs(self.segment_result_save_dir, exist_ok=True)
+                save_button.disabled = True
+                with server.atomic():
+                    torch.save({
+                        "mask": self.segment_mask,
+                        "similarities": self.similarities,
+                        "query_features": self.feature_list,
+                        "scale": self.scale,
+                        "similarity_score": self.similarity_score,
+                        "gamma": self.similarity_score_gamma,
+                    }, save_to)
+                save_button.disabled = False
+                self._show_message(event.client, f"Saved to '{save_to}'")
+
     """
     Cluster
     """
@@ -555,6 +607,20 @@ class ViewerOptions:
 
             # switch output type to cluster3d
             self._switch_renderer_output_type("cluster3d")
+
+        reshuffle_color_button = server.gui.add_button("Reshuffle Color", color="green")
+
+        @reshuffle_color_button.on_click
+        def _(event):
+            if self.cluster_result is None:
+                self._show_message(event.client, "Please click 'Re-Cluster in 3D' first")
+                return
+            cluster_result = self.cluster_result
+            with server.atomic():
+                new_color = SegAnyGSUtils.cluster_label2colors(cluster_result["seg_score"])
+                cluster_result["point_colors"] = new_color
+                self.cluster_result = cluster_result
+            viewer.rerender_for_all_client()
 
     def _setup_save_cluster(self):
         viewer, server = self.viewer, self.server
@@ -685,3 +751,6 @@ class ViewerOptions:
                     modal.close()
                 except:
                     pass
+
+    def _filename_check(self, name) -> bool:
+        return re.search("^[a-zA-Z0-9_\-.]+$", name) is not None

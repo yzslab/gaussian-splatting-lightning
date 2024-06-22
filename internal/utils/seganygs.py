@@ -46,6 +46,13 @@ class SegAnyGSUtils:
         colors = colors / colors.max(dim=0).values
         return colors
 
+    @classmethod
+    def cluster_label2colors(cls, seg_score):
+        label_to_color = np.random.rand(1000, 3)
+        point_colors = label_to_color[seg_score.argmax(dim=-1).cpu().numpy()]
+        point_colors[seg_score.max(dim=-1)[0].detach().cpu().numpy() < 0.5] = (0, 0, 0)
+
+        return point_colors
 
     @classmethod
     def cluster_3d(cls, scale_conditioned_semantic_features: torch.Tensor):
@@ -62,9 +69,7 @@ class SegAnyGSUtils:
 
         seg_score = torch.einsum('nc,bc->bn', cluster_centers.cpu(), scale_conditioned_semantic_features.cpu())
 
-        label_to_color = np.random.rand(1000, 3)
-        point_colors = label_to_color[seg_score.argmax(dim=-1).cpu().numpy()]
-        point_colors[seg_score.max(dim=-1)[0].detach().cpu().numpy() < 0.5] = (0, 0, 0)
+        point_colors = cls.cluster_label2colors(seg_score=seg_score)
 
         return cluster_labels, cluster_centers, seg_score, point_colors
 
@@ -77,7 +82,6 @@ class SegAnyGSUtils:
             "seg_score": cluster_result[2],
             "point_colors": cluster_result[3],
         }
-
 
     @classmethod
     def get_similarities(
