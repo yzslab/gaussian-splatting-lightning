@@ -299,6 +299,9 @@ python main.py fit \
   ```bash
   python viewer.py outputs/Truck/seganygs
   ```
+  <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/0b98a8ed-77d7-436d-b9f8-c5b51af5ba52"></video>
+
+
 
 ## 3. Evaluation
 
