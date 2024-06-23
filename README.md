@@ -25,7 +25,7 @@
 * <a href="https://ty424.github.io/AbsGS.github.io/">AbsGS</a> / EfficientGS
 * <a href="https://github.com/hbb1/2d-gaussian-splatting">2D Gaussian Splatting</a>
 * <a href="https://jumpat.github.io/SAGA/">Segment Any 3D Gaussians (v2)</a>
-* Reconstruct a large scale scene with the partitioning strategy likes <a href="https://vastgaussian.github.io/">VastGaussian</a> (see <a href="#211-reconstruct-a-large-scale-scene-with-the-partitioning-strategy-likes-vastgaussian">2.1.1</a> below)
+* Reconstruct a large scale scene with the partitioning strategy likes <a href="https://vastgaussian.github.io/">VastGaussian</a> (see <a href="#211-reconstruct-a-large-scale-scene-with-the-partitioning-strategy-likes-vastgaussian">2.11.</a> below)
 * Load a large number of images without OOM
 * Interactive web viewer
   * Load multiple models
