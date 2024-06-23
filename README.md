@@ -308,7 +308,7 @@ There is no single script to finish the whole pipeline. Please refer to below co
 * Partitioning
   * MatrixCity: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/matrix_city_aerial_split.ipynb">notebooks/matrix_city_aerial_split.ipynb</a>
   * Colmap: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/colmap_aerial_split.ipynb">notebooks/colmap_aerial_split.ipynb</a>
-* Training:
+* Training
   * MatrixCity: Included in its partitioning notebook
   * Colmap: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/utils/train_colmap_partitions.py">utils/train_colmap_partitions.py</a>
 * Optional LightGaussian pruning
