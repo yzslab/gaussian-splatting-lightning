@@ -25,7 +25,8 @@
 * <a href="https://ty424.github.io/AbsGS.github.io/">AbsGS</a> / EfficientGS
 * <a href="https://github.com/hbb1/2d-gaussian-splatting">2D Gaussian Splatting</a>
 * <a href="https://jumpat.github.io/SAGA/">Segment Any 3D Gaussians (v2)</a>
-* Load arbitrary number of images without OOM
+* Reconstruct a large scale scene with the partitioning strategy likes <a href="https://vastgaussian.github.io/">VastGaussian</a>
+* Load a large number of images without OOM
 * Interactive web viewer
   * Load multiple models
   * Model transform
@@ -302,7 +303,15 @@ python main.py fit \
   ```
   <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/0b98a8ed-77d7-436d-b9f8-c5b51af5ba52"></video>
 
-
+### 2.11. Reconstruct a large scale scene with the partitioning strategy likes <a href="https://vastgaussian.github.io/">VastGaussian</a>
+There is no single script to finish the whole pipeline. Please refer to below contents about how to reconstruct a large scale scene.
+* Partitioning
+  * MatrixCity: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/matrix_city_aerial_split.ipynb">notebooks/matrix_city_aerial_split.ipynb</a>
+  * Colmap: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/colmap_aerial_split.ipynb">notebooks/colmap_aerial_split.ipynb</a>
+* Training: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/utils/train_colmap_partitions.py">utils/train_colmap_partitions.py</a>
+* Pruning: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/partition_light_gaussian_pruning.ipynb">notebooks/partition_light_gaussian_pruning.ipynb</a>
+* Finetune after pruning: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/utils/finetune_partition.py">utils/finetune_partition.py</a>
+* Merging: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/merge_partitions.ipynb">notebooks/merge_partitions.ipynb</a>
 
 ## 3. Evaluation
 
