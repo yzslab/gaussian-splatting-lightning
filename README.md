@@ -307,6 +307,7 @@ There is no single script to finish the whole pipeline. Please refer to below co
 | Baseline | New Model |
 | --- | --- |
 | <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/3a990247-b57b-4ba8-8e9d-7346a3bd41e3"></video> | <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/afeea69f-ed74-4c50-843a-e5d480eb66ef"></video> |
+|  | <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/ab89e4cf-80c0-4e99-88bc-3ec5ca047e19"></video> |
 * First generate appearance groups (Colmap or PhotoTourism dataset only)
 ```bash
 python utils/generate_image_apperance_groups.py PATH_TO_DATASET_DIR \
