@@ -850,9 +850,12 @@ def populate_render_tab(
     with load_folder:
         def scan_camera_path_files():
             file_list = []
-            for i in os.listdir(camera_path_file_dir):
-                if i.endswith(".pt"):
-                    file_list.append(i[:-3])
+            try:
+                for i in os.listdir(camera_path_file_dir):
+                    if i.endswith(".pt"):
+                        file_list.append(i[:-3])
+            except:
+                pass
             return file_list
 
         camera_path_file_dropdown = server.gui.add_dropdown(
