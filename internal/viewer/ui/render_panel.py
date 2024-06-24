@@ -441,7 +441,7 @@ def populate_render_tab(
 
     camera_type = server.gui.add_dropdown(
         "Camera Type",
-        ("Perspective"),
+        ("Perspective",),
         initial_value="Perspective",
         hint="Camera model to render with.",
     )
