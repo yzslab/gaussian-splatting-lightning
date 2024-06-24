@@ -16,7 +16,7 @@
   * <a href="https://city-super.github.io/matrixcity/">MatrixCity</a>
   * <a href="https://www.cs.ubc.ca/~kmyi/imw2020/data.html">PhotoTourism</a>
 * Dynamic object mask
-* Appearance variation support
+* Images with variable appearance (New model released on 06-24)
 * Deformable Gaussians
   * <a href="https://ingra14m.github.io/Deformable-Gaussians/">Deformable 3D Gaussians</a>
   * <a href="https://guanjunwu.github.io/4dgs/index.html">4D Gaussian</a> (Viewer Only)
@@ -146,21 +146,6 @@ You can use `utils/image_downsample.py` to downsample your images, e.g. 4x downs
 ```bash
 --data.params.train_max_num_images_to_cache 1024
 ```
-* Enable appearance model to train on appearance variation images (colmap dataset only)
-```bash
-# 1. Generate appearance groups
-python generate_image_apperance_groups.py PATH_TO_DATASET \
-    --camera \
-    --name appearance_group_by_camera
-    
-# 2. Enable appearance model
-python main.py fit \
-    ... \
-    --model.renderer AppearanceMLPRenderer \
-    --data.params.colmap.appearance_groups appearance_group_by_camera \
-    ...
-```
-
 ### 2.3. Use <a href="https://github.com/nerfstudio-project/gsplat">nerfstudio-project/gsplat</a>
 Make sure that command `which nvcc` can produce output, or gsplat will be disabled automatically.
 ```bash
@@ -315,6 +300,25 @@ There is no single script to finish the whole pipeline. Please refer to below co
   * Pruning: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/partition_light_gaussian_pruning.ipynb">notebooks/partition_light_gaussian_pruning.ipynb</a>
   * Finetune after pruning: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/utils/finetune_partition.py">utils/finetune_partition.py</a>
 * Merging: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/merge_partitions.ipynb">notebooks/merge_partitions.ipynb</a>
+
+
+### 2.12. Images with variable appearance
+* First generate appearance groups (Colmap or PhotoTourism dataset only)
+```bash
+python generate_image_apperance_groups.py PATH_TO_DATASET_DIR \
+    --image \
+    --name appearance_image_dedicated  # the name will be used later
+```
+The images in a group will share a common appearance embedding. The command above will assign each image a group, which means that will not share any appearance embedding between images.
+
+* Then start training
+```bash
+python main.py fit \
+    --config configs/appearance_embedding_renderer/view_dependent.yaml \
+    --data.path PATH_TO_DATASET_DIR \
+    --data.params.colmap.appearance_groups appearance_image_dedicated  # value here should be the same as the one provided to `--name` above
+```
+If you are using PhotoTourism dataset, please replace `--data.params.colmap.` with `--data.params.phototourism.`, and specify the dataset type with `--data.type phototourism`.
 
 ## 3. Evaluation
 
