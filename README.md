@@ -15,27 +15,25 @@
   * <a href="https://github.com/facebookresearch/NSVF?tab=readme-ov-file#dataset">NSVF (Synthetic only)</a>
   * <a href="https://city-super.github.io/matrixcity/">MatrixCity</a>
   * <a href="https://www.cs.ubc.ca/~kmyi/imw2020/data.html">PhotoTourism</a>
-* Dynamic object mask
-* Images with variable appearance (New model released on 06-24, see <a href="#212-images-with-variable-appearance">2.12.</a>)
-  | Baseline | New Model |
-  | --- | --- |
-  | <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/3a990247-b57b-4ba8-8e9d-7346a3bd41e3"></video> | <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/afeea69f-ed74-4c50-843a-e5d480eb66ef"></video> |
-* Deformable Gaussians
-  * <a href="https://ingra14m.github.io/Deformable-Gaussians/">Deformable 3D Gaussians</a>
-  * <a href="https://guanjunwu.github.io/4dgs/index.html">4D Gaussian</a> (Viewer Only)
-* <a href="https://niujinshuchong.github.io/mip-splatting/">Mip-Splatting</a>
-* <a href="https://lightgaussian.github.io/">LightGaussian</a>
-* <a href="https://ty424.github.io/AbsGS.github.io/">AbsGS</a> / EfficientGS
-* <a href="https://github.com/hbb1/2d-gaussian-splatting">2D Gaussian Splatting</a>
-* <a href="https://jumpat.github.io/SAGA/">Segment Any 3D Gaussians (v2)</a>
-* Reconstruct a large scale scene with the partitioning strategy like <a href="https://vastgaussian.github.io/">VastGaussian</a> (see <a href="#211-reconstruct-a-large-scale-scene-with-the-partitioning-strategy-like-vastgaussian">2.11.</a> below)
-* Load a large number of images without OOM
-* Interactive web viewer
+* <a href="#4-web-viewer">Interactive web viewer</a>
   * Load multiple models
   * Model transform
   * Scene editor
   * Video camera path editor
 * Video renderer
+* Load a large number of images without OOM
+* Dynamic object mask
+* Derived algorithms
+  * Images with variable appearance (New model released on 06-24, see <a href="#212-images-with-variable-appearance">2.12.</a>)
+  * Deformable Gaussians
+    * <a href="#25-deformable-3d-gaussians">Deformable 3D Gaussians</a>
+    * <a href="#43-load-model-trained-by-other-implementations">4D Gaussian</a> (Viewer Only)
+  * <a href="#26-mip-splatting">Mip-Splatting</a>
+  * <a href="#27-lightgaussian">LightGaussian</a>
+  * <a href="#28-absgs--efficientgs">AbsGS / EfficientGS</a>
+  * <a href="#29-2d-gaussian-splatting">2D Gaussian Splatting</a>
+  * <a href="#210-segment-any-3d-gaussians">Segment Any 3D Gaussians</a>
+  * Reconstruct a large scale scene with the partitioning strategy like <a href="https://vastgaussian.github.io/">VastGaussian</a> (see <a href="#211-reconstruct-a-large-scale-scene-with-the-partitioning-strategy-like-vastgaussian">2.11.</a> below)
 ## 1. Installation
 ### 1.1. Clone repository
 
@@ -306,6 +304,9 @@ There is no single script to finish the whole pipeline. Please refer to below co
 
 
 ### 2.12. Images with variable appearance
+| Baseline | New Model |
+| --- | --- |
+| <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/3a990247-b57b-4ba8-8e9d-7346a3bd41e3"></video> | <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/afeea69f-ed74-4c50-843a-e5d480eb66ef"></video> |
 * First generate appearance groups (Colmap or PhotoTourism dataset only)
 ```bash
 python generate_image_apperance_groups.py PATH_TO_DATASET_DIR \
