@@ -1,0 +1,19 @@
+model:
+  gaussian:
+    optimization:
+      feature_extra_lr_init: 2e-3
+    sh_degree: 0
+    extra_feature_dims: 64
+  renderer:
+    class_path: internal.renderers.gsplat_appearance_embedding_renderer.GSplatAppearanceEmbeddingRenderer
+    init_args:
+      model:
+        is_view_dependent: true
+      optimization:
+        warm_up: 1000
+data:
+  params:
+    val_max_num_images_to_cache: -1
+    test_max_num_images_to_cache: -1
+    colmap:
+      split_mode: "reconstruction"

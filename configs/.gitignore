@@ -27,3 +27,5 @@
 !gsplat-absgrad-experiment.yaml
 !vanilla_2dgs.yaml
 !segany_splatting.yaml
+!appearance_embedding_renderer/view_dependent.yaml
+!appearance_embedding_renderer/view_independent.yaml
