@@ -24,15 +24,15 @@
 * Load a large number of images without OOM
 * Dynamic object mask
 * Derived algorithms
-  * Images with variable appearance (New model released on 06-24, see <a href="#212-images-with-variable-appearance">2.12.</a>)
+  * <a href="#212-images-with-variable-appearance">Images with variable appearance</a> (New model released on 06-24, see <a href="#212-images-with-variable-appearance">2.12.</a>)
   * Deformable Gaussians
-    * <a href="#25-deformable-3d-gaussians">Deformable 3D Gaussians</a>
-    * <a href="#43-load-model-trained-by-other-implementations">4D Gaussian</a> (Viewer Only)
-  * <a href="#26-mip-splatting">Mip-Splatting</a>
-  * <a href="#27-lightgaussian">LightGaussian</a>
-  * <a href="#28-absgs--efficientgs">AbsGS / EfficientGS</a>
-  * <a href="#29-2d-gaussian-splatting">2D Gaussian Splatting</a>
-  * <a href="#210-segment-any-3d-gaussians">Segment Any 3D Gaussians</a>
+    * <a href="#25-deformable-3d-gaussians">Deformable 3D Gaussians (2.5.)</a>
+    * <a href="#43-load-model-trained-by-other-implementations">4D Gaussian (4.3.)</a> (Viewer Only)
+  * <a href="#26-mip-splatting">Mip-Splatting (2.6.)</a>
+  * <a href="#27-lightgaussian">LightGaussian (2.7.)</a>
+  * <a href="#28-absgs--efficientgs">AbsGS / EfficientGS (2.8.)</a>
+  * <a href="#29-2d-gaussian-splatting">2D Gaussian Splatting (2.9.)</a>
+  * <a href="#210-segment-any-3d-gaussians">Segment Any 3D Gaussians (2.10.)</a>
   * Reconstruct a large scale scene with the partitioning strategy like <a href="https://vastgaussian.github.io/">VastGaussian</a> (see <a href="#211-reconstruct-a-large-scale-scene-with-the-partitioning-strategy-like-vastgaussian">2.11.</a> below)
 ## 1. Installation
 ### 1.1. Clone repository
