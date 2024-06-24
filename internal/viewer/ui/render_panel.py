@@ -856,6 +856,8 @@ def populate_render_tab(
                         file_list.append(i[:-3])
             except:
                 pass
+            if len(file_list) == 0:
+                file_list.append("")
             return file_list
 
         camera_path_file_dropdown = server.gui.add_dropdown(
