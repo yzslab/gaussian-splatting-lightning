@@ -16,7 +16,10 @@
   * <a href="https://city-super.github.io/matrixcity/">MatrixCity</a>
   * <a href="https://www.cs.ubc.ca/~kmyi/imw2020/data.html">PhotoTourism</a>
 * Dynamic object mask
-* Images with variable appearance (New model released on 06-24)
+* Images with variable appearance (New model released on 06-24, see <a href="#212-images-with-variable-appearance">2.12.</a>)
+  | Baseline | New Model |
+  | --- | --- |
+  | <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/3a990247-b57b-4ba8-8e9d-7346a3bd41e3"></video> | <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/afeea69f-ed74-4c50-843a-e5d480eb66ef"></video> |
 * Deformable Gaussians
   * <a href="https://ingra14m.github.io/Deformable-Gaussians/">Deformable 3D Gaussians</a>
   * <a href="https://guanjunwu.github.io/4dgs/index.html">4D Gaussian</a> (Viewer Only)
