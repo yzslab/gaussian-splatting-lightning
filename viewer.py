@@ -429,9 +429,25 @@ class Viewer:
 
         return model, renderer, training_output_base_dir, dataset_type, checkpoint
 
+    def show_message(self, message: str, client=None):
+        target = client
+        if client is None:
+            target = self._server
+        with target.gui.add_modal("Message") as modal:
+            target.gui.add_markdown(message)
+            close_button = target.gui.add_button("Close")
+
+            @close_button.on_click
+            def _(_) -> None:
+                try:
+                    modal.close()
+                except:
+                    pass
+
     def start(self, block: bool = True, server_config_fun=None, tab_config_fun=None, enable_renderer_options: bool = True):
         # create viser server
         server = viser.ViserServer(host=self.host, port=self.port)
+        self._server = server
         server.gui.configure_theme(
             control_layout="collapsible",
             show_logo=False,

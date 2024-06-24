@@ -13,6 +13,10 @@
 # limitations under the License.
 
 from __future__ import annotations
+
+import os
+import re
+import traceback
 from pathlib import Path
 import colorsys
 import dataclasses
@@ -23,6 +27,7 @@ import datetime
 import numpy as onp
 import splines
 import splines.quaternion
+import torch
 import viser
 import json
 import viser.transforms as tf
@@ -398,9 +403,11 @@ def populate_render_tab(
     if extra_args is None:
         extra_args = []
 
+    camera_path_file_dir = datapath / "camera_paths"
+
     fov_degrees = server.gui.add_slider(
         "FOV",
-        initial_value=90.0,
+        initial_value=75.,
         min=0.1,
         max=175.0,
         step=0.01,
@@ -434,7 +441,7 @@ def populate_render_tab(
 
     camera_type = server.gui.add_dropdown(
         "Camera Type",
-        ("Perspective", "Fisheye", "Equirectangular"),
+        ("Perspective"),
         initial_value="Perspective",
         hint="Camera model to render with.",
     )
@@ -711,12 +718,22 @@ def populate_render_tab(
         "Generate Command",
         color="green",
         icon=viser.Icon.FILE_EXPORT,
-        hint="Generate the ns-render command for rendering the camera path.",
+        hint="Generate the command for rendering the camera path.",
     )
 
     @render_button.on_click
     def _(event: viser.GuiEvent) -> None:
         assert event.client is not None
+
+        if is_filename_valid(render_name_text.value) is False:
+            viewer.show_message("Invalid filename", event.client)
+            return
+
+        json_outfile = camera_path_file_dir / f"{render_name_text.value}.json"
+        # if os.path.exists(json_outfile) is True:
+        #     viewer.show_message("File already exists", event.client)
+        #     return
+
         num_frames = int(framerate_number.value * duration_number.value)
         json_data = {}
         # json data has the properties:
@@ -737,7 +754,9 @@ def populate_render_tab(
         # aspect: float
         # first populate the keyframes:
         keyframes = []
+        raw_keyframes = []
         for keyframe, dummy in camera_path._keyframes.values():
+            raw_keyframes.append(keyframe)
             pose = tf.SE3.from_rotation_and_translation(
                 tf.SO3(keyframe.wxyz) @ tf.SO3.from_x_radians(onp.pi),
                 keyframe.position,
@@ -793,10 +812,10 @@ def populate_render_tab(
         json_data["camera_path"] = camera_path_list
 
         # now write the json file
-        json_outfile = datapath / "camera_paths" / f"{render_name_text.value}.json"
         json_outfile.parent.mkdir(parents=True, exist_ok=True)
         with open(json_outfile.absolute(), "w") as outfile:
             json.dump(json_data, outfile, indent=4, ensure_ascii=False)
+        torch.save(raw_keyframes, camera_path_file_dir / f"{render_name_text.value}.pt")
         # now show the command
         with event.client.gui.add_modal("Render Command") as modal:
             dataname = datapath.name
@@ -825,7 +844,59 @@ def populate_render_tab(
             def _(_) -> None:
                 modal.close()
 
+    # load camera path
+    server.gui.add_markdown("  ")
+    load_folder = server.gui.add_folder("Load")
+    with load_folder:
+        def scan_camera_path_files():
+            file_list = []
+            for i in os.listdir(camera_path_file_dir):
+                if i.endswith(".pt"):
+                    file_list.append(i[:-3])
+            return file_list
+
+        camera_path_file_dropdown = server.gui.add_dropdown(
+            label="Camera Path",
+            options=scan_camera_path_files(),
+            initial_value="",
+        )
+        refresh_file_list_button = server.gui.add_button(
+            label="Refresh",
+        )
+        load_camera_path_file_button = server.gui.add_button(
+            label="Load",
+            color="orange",
+        )
+
+        @refresh_file_list_button.on_click
+        def _(_):
+            camera_path_file_dropdown.options = scan_camera_path_files()
+
+        @load_camera_path_file_button.on_click
+        def _(event):
+            if is_filename_valid(camera_path_file_dropdown.value) is False:
+                viewer.show_message("Invalid filename", event.client)
+                return
+
+            file_path = os.path.join(camera_path_file_dir, f"{camera_path_file_dropdown.value}.pt")
+            if os.path.exists(file_path) is False:
+                viewer.show_message("File not found", event.client)
+                return
+
+            try:
+                raw_keyframes = torch.load(file_path)
+                for i in raw_keyframes:
+                    camera_path.add_camera(i)
+                camera_path.update_spline()
+            except Exception as e:
+                traceback.print_exc()
+                viewer.show_message("Error occurred while parsing camera path file", event.client)
+
     camera_path = CameraPath(server, viewer)
     camera_path.default_fov = fov_degrees.value / 180.0 * onp.pi
 
     transform_controls: List[viser.SceneNodeHandle] = []
+
+
+def is_filename_valid(name):
+    return re.search("^[a-zA-Z0-9_\-. ]+$", name) is not None
