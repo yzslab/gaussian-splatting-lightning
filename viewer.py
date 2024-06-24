@@ -36,6 +36,7 @@ class Viewer:
             cameras_json: str = None,
             vanilla_deformable: bool = False,
             vanilla_gs4d: bool = False,
+            vanilla_gs2d: bool = False,
             up: list[float] = None,
             default_camera_position: List[float] = None,
             default_camera_look_at: List[float] = None,
@@ -43,6 +44,9 @@ class Viewer:
             no_render_panel: bool = False,
             gsplat: bool = False,
             dssplat: bool = False,
+            seganygs: str = None,
+            vanilla_seganygs: bool = False,
+            vanilla_mip: bool = False,
     ):
         self.device = torch.device("cuda")
 
@@ -54,6 +58,7 @@ class Viewer:
         self.sh_degree = sh_degree
         self.enable_transform = enable_transform
         self.show_cameras = show_cameras
+        self.extra_video_render_args = []
 
         self.up_direction = np.asarray([0., 0., 1.])
         self.camera_center = np.asarray([0., 0., 0.])
@@ -64,6 +69,19 @@ class Viewer:
         self.use_dssplat = dssplat
 
         load_from = self._search_load_file(model_paths[0])
+
+        # detect whether a SegAnyGS output
+        if seganygs is None and load_from.endswith(".ckpt"):
+            seganygs_tag_file_path = os.path.join(os.path.dirname(os.path.dirname(load_from)), "seganygs")
+            if os.path.exists(seganygs_tag_file_path) is True:
+                print("SegAny Splatting model detected")
+                seganygs = load_from
+                with open(seganygs_tag_file_path, "r") as f:
+                    load_from = self._search_load_file(f.read())
+
+        if vanilla_seganygs is True:
+            load_from = load_from[:-len(os.path.basename(load_from))]
+            load_from = os.path.join(load_from, "scene_point_cloud.ply")
 
         self.simplified_model = True
         self.show_edit_panel = True
@@ -79,6 +97,10 @@ class Viewer:
         # TODO: load multiple models more elegantly
         # load and create models
         model, renderer, training_output_base_dir, dataset_type, self.checkpoint = self._load_model_from_file(load_from)
+        # whether a 2DGS model
+        if load_from.endswith(".ply") and model.get_scaling.shape[-1] == 2:
+            print("2DGS ply detected")
+            vanilla_gs2d = True
 
         def get_load_iteration() -> int:
             return int(os.path.basename(os.path.dirname(load_from)).replace("iteration_", ""))
@@ -102,6 +124,14 @@ class Viewer:
             )
             self.show_edit_panel = False
             self.show_render_panel = False
+        elif vanilla_gs2d is True:
+            from internal.renderers.vanilla_2dgs_renderer import Vanilla2DGSRenderer
+            renderer = Vanilla2DGSRenderer()
+            self.extra_video_render_args.append("--vanilla_gs2d")
+        elif vanilla_seganygs is True:
+            renderer = self._load_vanilla_seganygs(load_from)
+        elif vanilla_mip is True:
+            renderer = self._load_vanilla_mip(load_from)
 
         # reorient the scene
         cameras_json_path = cameras_json
@@ -155,6 +185,11 @@ class Viewer:
             self.loaded_model_count += len(addition_models)
 
         self.gaussian_model = model
+
+        if seganygs is not None:
+            print("loading SegAnyGaussian...")
+            renderer = self._load_seganygs(seganygs)
+
         # create renderer
         self.viewer_renderer = ViewerRenderer(
             model,
@@ -167,6 +202,84 @@ class Viewer:
     @staticmethod
     def _search_load_file(model_path: str) -> str:
         return GaussianModelLoader.search_load_file(model_path)
+
+    def _load_seganygs(self, path):
+        load_from = self._search_load_file(path)
+        assert load_from.endswith(".ckpt")
+        ckpt = torch.load(load_from, map_location="cpu")
+
+        from internal.segany_splatting import SegAnySplatting
+        model = SegAnySplatting(**ckpt["hyper_parameters"])
+        model.setup_parameters(ckpt["state_dict"]["gaussian_semantic_features"].shape[0])
+        model.load_state_dict(ckpt["state_dict"])
+        model.on_load_checkpoint(ckpt)
+        model.eval()
+
+        semantic_features = model.get_processed_semantic_features()
+        scale_gate = model.scale_gate
+        del model
+        del ckpt
+        torch.cuda.empty_cache()
+
+        from internal.renderers.seganygs_renderer import SegAnyGSRenderer
+        return SegAnyGSRenderer(semantic_features=semantic_features, scale_gate=scale_gate)
+
+    def _load_vanilla_seganygs(self, path):
+        from plyfile import PlyData
+        from internal.utils.gaussian_utils import Gaussian
+
+        max_iteration = -1
+        load_from = None
+        model_output = os.path.dirname(os.path.dirname(path))
+        for i in os.listdir(model_output):
+            if i.startswith("iteration_") is False:
+                continue
+            ply_file_path = os.path.join(model_output, i, "contrastive_feature_point_cloud.ply")
+            if os.path.exists(ply_file_path) is False:
+                continue
+            try:
+                iteration = int(i.split("_")[1])
+            except:
+                break
+            if iteration > max_iteration:
+                load_from = ply_file_path
+        assert load_from is not None, "'contrastive_feature_point_cloud.ply' not found"
+        print(f"load SegAnyGS from '{load_from}'...")
+
+        plydata = PlyData.read(load_from)
+        semantic_features = torch.tensor(
+            Gaussian.load_array_from_plyelement(plydata.elements[0], "f_"),
+            dtype=torch.float,
+            device=self.device,
+        )
+
+        scale_gate_state_dict = torch.load(os.path.join(os.path.dirname(load_from), "scale_gate.pt"), map_location="cpu")
+        scale_gate = torch.nn.Sequential(
+            torch.nn.Linear(1, 32, bias=True),
+            torch.nn.Sigmoid()
+        )
+        scale_gate.load_state_dict(scale_gate_state_dict)
+        scale_gate = scale_gate.to(self.device)
+
+        from internal.renderers.seganygs_renderer import SegAnyGSRenderer
+        return SegAnyGSRenderer(semantic_features=semantic_features, scale_gate=scale_gate, anti_aliased=False)
+
+    def _load_vanilla_mip(self, load_from):
+        from plyfile import PlyData
+        from internal.renderers.mip_splatting_gsplat_renderer import MipSplattingGSplatRenderer
+
+        plydata = PlyData.read(load_from)
+        filter_3d = torch.nn.Parameter(torch.tensor(
+            plydata.elements[0]["filter_3D"][..., np.newaxis],
+            dtype=torch.float,
+            device=self.device,
+        ), requires_grad=False)
+
+        # TODO: read `kernel_size` from cfg_args
+        renderer = MipSplattingGSplatRenderer()
+        renderer.filter_3d = filter_3d
+
+        return renderer
 
     def _reorient(self, cameras_json_path: str, mode: str, dataset_type: str = None):
         transform = torch.eye(4, dtype=torch.float)
@@ -266,9 +379,9 @@ class Viewer:
         #         for i in self.camera_handles:
         #             i.scale = self.camera_scale_slider.value
 
-        with viser_server.add_gui_folder("Cameras"):
-            self.toggle_camera_button = viser_server.add_gui_button("Toggle Camera Visibility")
-            # self.camera_scale_slider = viser_server.add_gui_slider(
+        with viser_server.gui.add_folder("Cameras"):
+            self.toggle_camera_button = viser_server.gui.add_button("Toggle Camera Visibility")
+            # self.camera_scale_slider = viser_server.gui.add_slider(
             #     "Camera Scale",
             #     min=0.,
             #     max=1.,
@@ -322,10 +435,26 @@ class Viewer:
 
         return model, renderer, training_output_base_dir, dataset_type, checkpoint
 
-    def start(self, block: bool = True, server_config_fun=None, tab_config_fun=None):
+    def show_message(self, message: str, client=None):
+        target = client
+        if client is None:
+            target = self._server
+        with target.gui.add_modal("Message") as modal:
+            target.gui.add_markdown(message)
+            close_button = target.gui.add_button("Close")
+
+            @close_button.on_click
+            def _(_) -> None:
+                try:
+                    modal.close()
+                except:
+                    pass
+
+    def start(self, block: bool = True, server_config_fun=None, tab_config_fun=None, enable_renderer_options: bool = True):
         # create viser server
         server = viser.ViserServer(host=self.host, port=self.port)
-        server.configure_theme(
+        self._server = server
+        server.gui.configure_theme(
             control_layout="collapsible",
             show_logo=False,
         )
@@ -333,15 +462,15 @@ class Viewer:
         if server_config_fun is not None:
             server_config_fun(self, server)
 
-        tabs = server.add_gui_tab_group()
+        tabs = server.gui.add_tab_group()
 
         if tab_config_fun is not None:
             tab_config_fun(self, server, tabs)
 
         with tabs.add_tab("General"):
             # add render options
-            with server.add_gui_folder("Render"):
-                self.max_res_when_static = server.add_gui_slider(
+            with server.gui.add_folder("Render"):
+                self.max_res_when_static = server.gui.add_slider(
                     "Max Res",
                     min=128,
                     max=3840,
@@ -349,7 +478,7 @@ class Viewer:
                     initial_value=1920,
                 )
                 self.max_res_when_static.on_update(self._handle_option_updated)
-                self.jpeg_quality_when_static = server.add_gui_slider(
+                self.jpeg_quality_when_static = server.gui.add_slider(
                     "JPEG Quality",
                     min=0,
                     max=100,
@@ -358,14 +487,14 @@ class Viewer:
                 )
                 self.jpeg_quality_when_static.on_update(self._handle_option_updated)
 
-                self.max_res_when_moving = server.add_gui_slider(
+                self.max_res_when_moving = server.gui.add_slider(
                     "Max Res when Moving",
                     min=128,
                     max=3840,
                     step=128,
                     initial_value=1280,
                 )
-                self.jpeg_quality_when_moving = server.add_gui_slider(
+                self.jpeg_quality_when_moving = server.gui.add_slider(
                     "JPEG Quality when Moving",
                     min=0,
                     max=100,
@@ -373,8 +502,10 @@ class Viewer:
                     initial_value=60,
                 )
 
-            with server.add_gui_folder("Model"):
-                self.scaling_modifier = server.add_gui_slider(
+            self.viewer_renderer.setup_options(self, server)
+
+            with server.gui.add_folder("Model"):
+                self.scaling_modifier = server.gui.add_slider(
                     "Scaling Modifier",
                     min=0.,
                     max=1.,
@@ -384,7 +515,7 @@ class Viewer:
                 self.scaling_modifier.on_update(self._handle_option_updated)
 
                 if self.viewer_renderer.gaussian_model.max_sh_degree > 0:
-                    self.active_sh_degree_slider = server.add_gui_slider(
+                    self.active_sh_degree_slider = server.gui.add_slider(
                         "Active SH Degree",
                         min=0,
                         max=self.viewer_renderer.gaussian_model.max_sh_degree,
@@ -407,7 +538,7 @@ class Viewer:
                             self.available_appearance_options[i] = (0, self.available_appearance_options[i])
                     self.available_appearance_options[DROPDOWN_USE_DIRECT_APPEARANCE_EMBEDDING_VALUE] = None
 
-                    self.appearance_id = server.add_gui_slider(
+                    self.appearance_id = server.gui.add_slider(
                         "Appearance Direct",
                         min=0,
                         max=max_input_id,
@@ -416,7 +547,7 @@ class Viewer:
                         visible=max_input_id > 0
                     )
 
-                    self.normalized_appearance_id = server.add_gui_slider(
+                    self.normalized_appearance_id = server.gui.add_slider(
                         "Normalized Appearance Direct",
                         min=0.,
                         max=1.,
@@ -426,7 +557,7 @@ class Viewer:
 
                     appearance_options = list(self.available_appearance_options.keys())
 
-                    self.appearance_group_dropdown = server.add_gui_dropdown(
+                    self.appearance_group_dropdown = server.gui.add_dropdown(
                         "Appearance Group",
                         options=appearance_options,
                         initial_value=appearance_options[0],
@@ -435,7 +566,7 @@ class Viewer:
                     self.normalized_appearance_id.on_update(self._handle_appearance_embedding_slider_updated)
                     self.appearance_group_dropdown.on_update(self._handel_appearance_group_dropdown_updated)
 
-                self.time_slider = server.add_gui_slider(
+                self.time_slider = server.gui.add_slider(
                     "Time",
                     min=0.,
                     max=1.,
@@ -450,7 +581,7 @@ class Viewer:
 
             UpDirectionFolder(self, server)
 
-            go_to_scene_center = server.add_gui_button(
+            go_to_scene_center = server.gui.add_button(
                 "Go to scene center",
             )
 
@@ -480,7 +611,11 @@ class Viewer:
                     enable_transform=self.enable_transform,
                     background_color=self.background_color,
                     sh_degree=self.sh_degree,
+                    extra_args=self.extra_video_render_args,
                 )
+
+        if enable_renderer_options is True:
+            self.viewer_renderer.renderer.setup_web_viewer_tabs(self, server, tabs)
 
         # register hooks
         server.on_client_connect(self._handle_new_client)
@@ -528,7 +663,10 @@ class Viewer:
             return
 
         # get appearance ids according to the dropdown value
-        appearance_id, normalized_appearance_id = self.available_appearance_options[self.appearance_group_dropdown.value]
+        v = self.available_appearance_options.get(self.appearance_group_dropdown.value, None)
+        if v is None:
+            return
+        appearance_id, normalized_appearance_id = v
         # update sliders
         self.appearance_id.value = appearance_id
         self.normalized_appearance_id.value = normalized_appearance_id
@@ -605,6 +743,7 @@ if __name__ == "__main__":
     parser.add_argument("--cameras-json", "--cameras_json", type=str, default=None)
     parser.add_argument("--vanilla_deformable", action="store_true", default=False)
     parser.add_argument("--vanilla_gs4d", action="store_true", default=False)
+    parser.add_argument("--vanilla_gs2d", action="store_true", default=False)
     parser.add_argument("--up", nargs=3, required=False, type=float, default=None)
     parser.add_argument("--default_camera_position", "--dcp", nargs=3, required=False, type=float, default=None)
     parser.add_argument("--default_camera_look_at", "--dcla", nargs=3, required=False, type=float, default=None)
@@ -614,6 +753,10 @@ if __name__ == "__main__":
                         help="Use GSPlat renderer for ply file")
     parser.add_argument("--dssplat", action="store_true", default=False,
                         help="Use ds_splat renderer for ply file")
+    parser.add_argument("--seganygs", type=str, default=None,
+                        help="Path to a SegAnyGaussian model output directory or checkpoint file")
+    parser.add_argument("--vanilla_seganygs", action="store_true", default=False)
+    parser.add_argument("--vanilla_mip", action="store_true", default=False)
     parser.add_argument("--float32_matmul_precision", "--fp", type=str, default=None)
     args = parser.parse_args()
 

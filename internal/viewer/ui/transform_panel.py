@@ -43,7 +43,7 @@ class TransformPanel:
         self.model_t_xyz_text_handle = []
         self.model_r_xyz_text_handle = []
 
-        self.pose_control_size = server.add_gui_slider(
+        self.pose_control_size = server.gui.add_slider(
             "Pose Control Size",
             min=0.,
             max=10.,
@@ -54,9 +54,9 @@ class TransformPanel:
 
         # create gui folder for each model
         for i in range(n_models):
-            with server.add_gui_folder("Model {} Transform".format(i)):
+            with server.gui.add_folder("Model {} Transform".format(i)):
                 # model size control
-                size_slider = server.add_gui_number(
+                size_slider = server.gui.add_number(
                     "Size",
                     min=0.,
                     # max=5.,
@@ -71,7 +71,7 @@ class TransformPanel:
                     np.asarray([1., 0., 0., 0.]),
                     np.zeros((3,)),
                 ))
-                model_show_transform_control_checkbox = server.add_gui_checkbox(
+                model_show_transform_control_checkbox = server.gui.add_checkbox(
                     "Pose Control",
                     initial_value=False,
                 )
@@ -79,7 +79,7 @@ class TransformPanel:
                 self.model_show_transform_control_checkboxes.append(model_show_transform_control_checkbox)
 
                 # add text input (synchronize with model pose control) that control model pose more precisely
-                t_xyz_text_handle = server.add_gui_vector3(
+                t_xyz_text_handle = server.gui.add_vector3(
                     "t_xyz",
                     initial_value=(0., 0., 0.),
                     step=0.01,
@@ -87,7 +87,7 @@ class TransformPanel:
                 self._make_t_xyz_text_callback(i, t_xyz_text_handle)
                 self.model_t_xyz_text_handle.append(t_xyz_text_handle)
 
-                r_xyz_text_handle = server.add_gui_vector3(
+                r_xyz_text_handle = server.gui.add_vector3(
                     "r_xyz",
                     initial_value=(0., 0., 0.),
                     # min=(-180, -180, -180),

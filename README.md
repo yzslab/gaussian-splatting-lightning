@@ -1,4 +1,8 @@
 # Gaussian Splatting PyTorch Lightning Implementation
+* <a href="#1-installation">Installation</a>
+* <a href="#2-training">Training</a>
+* <a href="#4-web-viewer">Web Viewer</a>
+* <a href="https://github.com/yzslab/gaussian-splatting-lightning/releases">Changelog</a>
 ## Known issues
 * Multi-GPU training can only be enabled after densification
 ## Features
@@ -19,7 +23,10 @@
 * <a href="https://niujinshuchong.github.io/mip-splatting/">Mip-Splatting</a>
 * <a href="https://lightgaussian.github.io/">LightGaussian</a>
 * <a href="https://ty424.github.io/AbsGS.github.io/">AbsGS</a> / EfficientGS
-* Load arbitrary number of images without OOM
+* <a href="https://github.com/hbb1/2d-gaussian-splatting">2D Gaussian Splatting</a>
+* <a href="https://jumpat.github.io/SAGA/">Segment Any 3D Gaussians (v2)</a>
+* Reconstruct a large scale scene with the partitioning strategy like <a href="https://vastgaussian.github.io/">VastGaussian</a> (see <a href="#211-reconstruct-a-large-scale-scene-with-the-partitioning-strategy-like-vastgaussian">2.11.</a> below)
+* Load a large number of images without OOM
 * Interactive web viewer
   * Load multiple models
   * Model transform
@@ -85,6 +92,12 @@ pip install -r requirements.txt
     pip install git+https://github.com/yzslab/gsplat.git
     ```
 
+* If you need SegAnyGaussian
+  * gsplat (see command above)
+  * `pip install hdbscan scikit-learn==1.3.2 git+https://github.com/facebookresearch/segment-anything.git`
+  * <a href="https://github.com/facebookresearch/pytorch3d/blob/main/INSTALL.md">facebookresearch/pytorch3d</a>
+  * Download <a href="https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth">ViT-H SAM model</a>, place it to the root dir of this repo.: `wget -O sam_vit_h_4b8939.pth https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth`
+
 ## 2. Training
 ### 2.1. Basic command
 ```bash
@@ -93,6 +106,12 @@ python main.py fit \
     -n EXPERIMENT_NAME
 ```
 It can detect some dataset type automatically. You can also specify type with option `--data.type`. Possible values are: `colmap`, `blender`, `nsvf`, `nerfies`, `matrixcity`, `phototourism`.
+
+<b>[NOTE]</b> By default, only checkpoint files will be produced on training end. If you need ply file in vanilla 3DGS's format (can be loaded by SIBR_viewer or some WebGL/GPU based viewer):
+  * [Option 1]: Convert checkpoint file to ply: `python utils/ckpt2ply.py TRAINING_OUTPUT_PATH`, e.g.:
+    * `python utils/ckpt2ply.py outputs/lego`
+    * `python utils/ckpt2ply.py outputs/lego/checkpoints/epoch=300-step=30000.ckpt`
+  * [Option 2]: Start training with option: `--model.save_ply true`
 ### 2.2. Some useful options
 * Run training with web viewer
 ```bash
@@ -216,6 +235,87 @@ python main.py fit \
     --data.path ...
 ```
 
+### 2.9. <a href="https://surfsplatting.github.io/">2D Gaussian Splatting</a>
+* Install `diff-surfel-rasterization` first
+  ```bash
+  pip install git+https://github.com/hbb1/diff-surfel-rasterization.git@3a9357f6a4b80ba319560be7965ed6a88ec951c6
+  ```
+
+* Then start training
+  ```bash
+  ... fit \
+      --config configs/vanilla_2dgs.yaml \
+      --data.path ...
+  ```
+  
+### 2.10. <a href="https://jumpat.github.io/SAGA/">Segment Any 3D Gaussians</a>
+* First, train a 3DGS scene using gsplat
+  ```bash
+  python main.py fit \
+      --config configs/gsplat.yaml \
+      --data.path data/Truck \
+      -n Truck -v gsplat  # trained model will save to `outputs/Truck/gsplat`
+  ```
+* Then generate SAM masks and their scales
+  * Masks
+    ```bash
+    python utils/get_sam_masks.py data/Truck/images
+    ```
+    You can specify the path to SAM checkpoint via argument `-c PATH_TO_SAM_CKPT`
+  
+  * Scales
+    ```bash
+    python utils/get_sam_mask_scales.py outputs/Truck/gsplat
+    ```
+  
+  Both the masks and scales will be saved in `data/Truck/semantics`, the structure of `data/Truck` will like this:
+  ```bash
+  ├── images  # The images of your dataset
+      ├── 000001.jpg
+      ├── 000002.jpg
+      ...
+  ├── semantic  # Generate by `get_sam_masks.py` and `get_sam_mask_scales.py`
+      ├── masks
+          ├── 000001.jpg.pt
+          ├── 000002.jpg.pt
+          ...
+      └── scales
+          ├── 000001.jpg.pt
+          ├── 000002.jpg.pt
+          ...
+  ├── sparse  # colmap sparse database
+      ...
+  ```
+
+* Train SegAnyGS
+  ```bash
+  python seganygs.py fit \
+      --config configs/segany_splatting.yaml \
+      --data.path data/Truck \
+      --model.initialize_from outputs/Truck/gsplat \
+      -n Truck -v seganygs  # save to `outputs/Truck/seganygs`
+  ```
+  The value of `--model.initialize_from` is the path to the trained 3DGS model
+
+* Start the web viewer to perform segmentation or cluster
+  ```bash
+  python viewer.py outputs/Truck/seganygs
+  ```
+  <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/0b98a8ed-77d7-436d-b9f8-c5b51af5ba52"></video>
+
+### 2.11. Reconstruct a large scale scene with the partitioning strategy like <a href="https://vastgaussian.github.io/">VastGaussian</a>
+There is no single script to finish the whole pipeline. Please refer to below contents about how to reconstruct a large scale scene.
+* Partitioning
+  * MatrixCity: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/matrix_city_aerial_split.ipynb">notebooks/matrix_city_aerial_split.ipynb</a>
+  * Colmap: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/colmap_aerial_split.ipynb">notebooks/colmap_aerial_split.ipynb</a>
+* Training
+  * MatrixCity: Included in its partitioning notebook
+  * Colmap: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/utils/train_colmap_partitions.py">utils/train_colmap_partitions.py</a>
+* Optional LightGaussian pruning
+  * Pruning: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/partition_light_gaussian_pruning.ipynb">notebooks/partition_light_gaussian_pruning.ipynb</a>
+  * Finetune after pruning: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/utils/finetune_partition.py">utils/finetune_partition.py</a>
+* Merging: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/merge_partitions.ipynb">notebooks/merge_partitions.ipynb</a>
+
 ## 3. Evaluation
 
 ### Evaluate on validation set
@@ -282,11 +382,34 @@ python viewer.py \
 ```
 
 * <a href="https://github.com/hustvl/4DGaussians">hustvl/4DGaussians</a>
-
 ```bash
 python viewer.py \
     4DGaussians/outputs/lego \
     --vanilla_gs4d
+```
+
+* <a href="https://github.com/hbb1/2d-gaussian-splatting">hbb1/2d-gaussian-splatting</a>
+```bash
+# Install `diff-surfel-rasterization` first
+pip install git+https://github.com/hbb1/diff-surfel-rasterization.git@3a9357f6a4b80ba319560be7965ed6a88ec951c6
+# Then start viewer
+python viewer.py \
+    2d-gaussian-splatting/outputs/Truck \
+    --vanilla_gs2d
+```
+
+* <a href="https://github.com/Jumpat/SegAnyGAussians">Jumpat/SegAnyGAussians</a>
+```bash
+python viewer.py \
+    SegAnyGAussians/outputs/Truck \
+    --vanilla_seganygs
+```
+
+* <a href="https://github.com/autonomousvision/mip-splatting">autonomousvision/mip-splatting</a>
+```bash
+python viewer.py \
+    mip-splatting/outputs/bicycle \
+    --vanilla_mip
 ```
 
 ## 5. F.A.Q.

@@ -31,6 +31,66 @@ class Gaussian(internal.utils.gaussian_utils.Gaussian):
                           [np.sin(theta), np.cos(theta), 0],
                           [0, 0, 1]])
 
+    @staticmethod
+    def transform_shs(shs_feat, rotation_matrix):
+        """
+        https://github.com/graphdeco-inria/gaussian-splatting/issues/176#issuecomment-2147223570
+        """
+
+        if shs_feat.shape[2] <= 1:
+            return shs_feat
+
+        shs_feat = torch.tensor(shs_feat, dtype=torch.float).transpose(1, 2)
+
+        from e3nn import o3
+        import einops
+        from einops import einsum
+
+        ## rotate shs
+        P = np.array([[0, 0, 1], [1, 0, 0], [0, 1, 0]])  # switch axes: yzx -> xyz
+        permuted_rotation_matrix = np.linalg.inv(P) @ rotation_matrix @ P
+        rot_angles = o3._rotation.matrix_to_angles(torch.from_numpy(permuted_rotation_matrix.astype(np.float32)))
+
+        # Construction coefficient
+        D_1 = o3.wigner_D(1, rot_angles[0], - rot_angles[1], rot_angles[2])
+        D_2 = o3.wigner_D(2, rot_angles[0], - rot_angles[1], rot_angles[2])
+        D_3 = o3.wigner_D(3, rot_angles[0], - rot_angles[1], rot_angles[2])
+
+        # rotation of the shs features
+        one_degree_shs = shs_feat[:, 0:3]
+        one_degree_shs = einops.rearrange(one_degree_shs, 'n shs_num rgb -> n rgb shs_num')
+        one_degree_shs = einsum(
+            D_1,
+            one_degree_shs,
+            "... i j, ... j -> ... i",
+        )
+        one_degree_shs = einops.rearrange(one_degree_shs, 'n rgb shs_num -> n shs_num rgb')
+        shs_feat[:, 0:3] = one_degree_shs
+
+        if shs_feat.shape[1] >= 4:
+            two_degree_shs = shs_feat[:, 3:8]
+            two_degree_shs = einops.rearrange(two_degree_shs, 'n shs_num rgb -> n rgb shs_num')
+            two_degree_shs = einsum(
+                D_2,
+                two_degree_shs,
+                "... i j, ... j -> ... i",
+            )
+            two_degree_shs = einops.rearrange(two_degree_shs, 'n rgb shs_num -> n shs_num rgb')
+            shs_feat[:, 3:8] = two_degree_shs
+
+            if shs_feat.shape[1] >= 9:
+                three_degree_shs = shs_feat[:, 8:15]
+                three_degree_shs = einops.rearrange(three_degree_shs, 'n shs_num rgb -> n rgb shs_num')
+                three_degree_shs = einsum(
+                    D_3,
+                    three_degree_shs,
+                    "... i j, ... j -> ... i",
+                )
+                three_degree_shs = einops.rearrange(three_degree_shs, 'n rgb shs_num -> n shs_num rgb')
+                shs_feat[:, 8:15] = three_degree_shs
+
+        return shs_feat.transpose(1, 2).numpy()
+
     def rescale(self, scale: float):
         if scale != 1.:
             self.xyz *= scale
@@ -50,7 +110,7 @@ class Gaussian(internal.utils.gaussian_utils.Gaussian):
 
         return self.rotate_by_matrix(rotation_matrix)
 
-    def rotate_by_matrix(self, rotation_matrix, keep_sh_degree: bool = True):
+    def rotate_by_matrix(self, rotation_matrix):
         # rotate xyz
         self.xyz = np.asarray(np.matmul(self.xyz, rotation_matrix.T))
 
@@ -79,36 +139,7 @@ class Gaussian(internal.utils.gaussian_utils.Gaussian):
         # rotations_from_matrix = wxyz_quaternions
         # self.rotations = rotations_from_matrix
 
-        if keep_sh_degree is False:
-            print("set sh_degree=0 when rotation transform enabled")
-            self.sh_degrees = 0
-        else:
-            """
-            If the scene has been rotated, 
-            in order to get the correct color as without rotation,
-            we should rotate the view direction opposite.
-            E.g., 
-                the scene is rotated by R: means3D' = R @ means3D, 
-                then when calculating colors, 
-                the correct view direction should be: R.T @ (means3D' - camera_center).
-                
-            Based on the how the SHs multiply with view directions, we know how to rotate the SHs.
-            """
-            # rotate sh_degree=1 if exists
-            if self.sh_degrees > 0:
-                print("rotate sh_degree=1")
-                degree_1 = self.features_rest[..., :3]  # [n, 3-rgb, 3-coefficients], 3 coefficients per-channel
-                rotation_matrix_inverse = rotation_matrix.T
-                rotation_matrix_inverse_reorder = rotation_matrix_inverse[[1, 2, 0], :][:, [1, 2, 0]]
-                sign_matrix = np.asarray([
-                    [-1, 0, 0],
-                    [0, 1, 0],
-                    [0, 0, -1],
-                ], dtype=np.float32)
-                rotated_degree_1 = degree_1 @ sign_matrix @ rotation_matrix_inverse_reorder @ sign_matrix
-                self.features_rest[..., :3] = rotated_degree_1
-
-                # TODO: rotate higher degree SHs
+        self.features_rest = self.transform_shs(self.features_rest, rotation_matrix)
 
     def translation(self, x: float, y: float, z: float):
         if x == 0. and y == 0. and z == 0.:

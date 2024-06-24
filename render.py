@@ -24,6 +24,7 @@ def initializer_viewer_renderer(
         enable_transform: bool,
         sh_degree: int,
         background_color,
+        renderer_override,
         device,
 ) -> ViewerRenderer:
     model_list = []
@@ -36,6 +37,9 @@ def initializer_viewer_renderer(
 
     if len(model_paths) > 1:
         renderer = VanillaRenderer()
+    if renderer_override is not None:
+        print(f"Renderer: {renderer_override.__class__}")
+        renderer = renderer_override
 
     model_manager = SimplifiedGaussianModelManager(model_list, enable_transform, device)
 
@@ -164,6 +168,7 @@ if __name__ == "__main__":
     parser.add_argument("--image-save-batch", "-b", type=int, default=8,
                         help="increase this to speedup rendering, but more memory will be consumed")
     parser.add_argument("--disable-transform", action="store_true", default=False)
+    parser.add_argument("--vanilla_gs2d", action="store_true", default=False)
     args = parser.parse_args()
 
     device = torch.device("cuda")
@@ -171,11 +176,17 @@ if __name__ == "__main__":
     with open(args.camera_path_filename, "r") as f:
         camera_path = json.load(f)
 
+    renderer_override = None
+    if args.vanilla_gs2d is True:
+        from internal.renderers.vanilla_2dgs_renderer import Vanilla2DGSRenderer
+
+        renderer_override = Vanilla2DGSRenderer()
     renderer = initializer_viewer_renderer(
         args.model_paths,
         enable_transform=camera_path["enable_transform"],
         sh_degree=camera_path["sh_degree"],
         background_color=camera_path["background_color"],
+        renderer_override=renderer_override,
         device=device,
     )
 

@@ -1,6 +1,6 @@
 import lightning
 import torch
-from typing import Any, Union, List, Tuple, Optional
+from typing import Any, Union, List, Tuple, Optional, Dict, Callable
 from internal.cameras.cameras import Camera
 from internal.models.gaussian_model import GaussianModel
 
@@ -12,6 +12,7 @@ class Renderer(torch.nn.Module):
             pc: GaussianModel,
             bg_color: torch.Tensor,
             scaling_modifier=1.0,
+            render_types: list = None,
             **kwargs,
     ):
         pass
@@ -24,6 +25,7 @@ class Renderer(torch.nn.Module):
             pc: GaussianModel,
             bg_color: torch.Tensor,
             scaling_modifier=1.0,
+            render_types: list = None,
             **kwargs,
     ):
         return self(
@@ -51,6 +53,9 @@ class Renderer(torch.nn.Module):
     def setup(self, stage: str, *args: Any, **kwargs: Any) -> Any:
         pass
 
+    def get_metric_calculators(self) -> Tuple[Union[None, Callable], Union[None, Callable]]:
+        return None, None
+
     def training_setup(self, module: lightning.LightningModule) -> Tuple[
         Optional[Union[
             List[torch.optim.Optimizer],
@@ -65,3 +70,17 @@ class Renderer(torch.nn.Module):
 
     def on_load_checkpoint(self, module, checkpoint):
         pass
+
+    def setup_web_viewer_tabs(self, viewer, server, tabs):
+        pass
+
+    def get_available_output_types(self) -> Dict:
+        return {
+            "rgb": "render",
+        }
+
+    def is_type_depth_map(self, t: str) -> bool:
+        return False
+
+    def is_type_normal_map(self, t: str) -> bool:
+        return False

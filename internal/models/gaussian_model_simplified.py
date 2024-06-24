@@ -45,6 +45,15 @@ class GaussianModelSimplified(nn.Module):
         self._features_extra = self._features_extra.to(device)
         return self
 
+    def to(self, *args, **kwargs):
+        self._xyz = self._xyz.to(*args, **kwargs)
+        self._scaling = self._scaling.to(*args, **kwargs)
+        self._rotation = self._rotation.to(*args, **kwargs)
+        self._opacity = self._opacity.to(*args, **kwargs)
+        self._features = self._features.to(*args, **kwargs)
+        self._features_extra = self._features_extra.to(*args, **kwargs)
+        return super().to(*args, **kwargs)
+
     @classmethod
     def construct_from_state_dict(cls, state_dict, active_sh_degree, device):
         # init_args = {

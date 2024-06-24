@@ -1,6 +1,7 @@
 *
 !.gitignore
 !ddp.yaml
+!ddp_not_find_unused.yaml
 !blender.yaml
 !appearance.yaml
 !experiment.yaml
@@ -25,3 +26,5 @@
 !gsplat-absgrad.yaml
 !gsplat-absgrad-experiment.yaml
 !ds_splat.yaml
+!vanilla_2dgs.yaml
+!segany_splatting.yaml

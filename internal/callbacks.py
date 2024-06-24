@@ -1,6 +1,21 @@
-import time
-
+import os
+import sys
+import math
 from lightning.pytorch.callbacks import Callback
+from lightning.pytorch.callbacks.progress.tqdm_progress import TQDMProgressBar, Tqdm
+
+
+class SaveCheckpoint(Callback):
+    def on_train_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+        if trainer.global_rank != 0:
+            return
+        checkpoint_path = os.path.join(
+            pl_module.hparams["output_path"],
+            "checkpoints",
+            "epoch={}-step={}.ckpt".format(trainer.current_epoch, trainer.global_step),
+        )
+        os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
+        trainer.save_checkpoint(checkpoint_path)
 
 
 class SaveGaussian(Callback):
@@ -37,3 +52,48 @@ class StopImageSavingThreads(Callback):
                 if thread.is_alive() is True:
                     still_alive_threads.append(thread)
             alive_threads = still_alive_threads
+
+
+class ProgressBar(TQDMProgressBar):
+    def __init__(self, refresh_rate: int = 1, process_position: int = 0):
+        super().__init__(refresh_rate, process_position + 1)
+        self.on_epoch_metrics = {}
+
+    def get_metrics(self, trainer, model):
+        # only return latest logged metrics
+        items = trainer._logger_connector.metrics["pbar"]
+        return items
+
+    def on_train_start(self, trainer, pl_module) -> None:
+        super().on_train_start(trainer, pl_module)
+        self.max_epochs = trainer.max_epochs
+        if self.max_epochs < 0:
+            self.max_epochs = math.ceil(trainer.max_steps / len(trainer.datamodule.dataparser_outputs.train_set))
+
+        self.epoch_progress_bar = Tqdm(
+            desc=self.train_description,
+            position=(2 * self.process_position) - 1,
+            disable=self.is_disabled,
+            leave=False,
+            dynamic_ncols=True,
+            file=sys.stdout,
+            total=self.max_epochs,
+        )
+
+    def on_train_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+        super().on_train_epoch_end(trainer, pl_module)
+        self.on_epoch_metrics.update(self.get_metrics(trainer, pl_module))
+        self.epoch_progress_bar.set_postfix(self.on_epoch_metrics)
+        self.epoch_progress_bar.update()
+
+    def on_validation_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+        super().on_validation_epoch_end(trainer, pl_module)
+        self.on_epoch_metrics.update(self.get_metrics(trainer, pl_module))
+
+
+class ValidateOnTrainEnd(Callback):
+    def on_train_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+        if trainer.is_last_batch is False or trainer.current_epoch % trainer.check_val_every_n_epoch != 0:
+            trainer.validating = True
+            trainer._evaluation_loop.run()
+            trainer.validating = False

@@ -6,7 +6,7 @@ import shutil
 from concurrent.futures import ThreadPoolExecutor
 from rich.progress import track
 import random
-from typing import Literal, Tuple, Optional
+from typing import Literal, Tuple, Optional, Any
 from PIL import Image
 import numpy as np
 import cv2
@@ -23,6 +23,7 @@ from internal.dataparsers.nsvf_dataparser import NSVFDataParser
 from internal.dataparsers.nerfies_dataparser import NerfiesDataparser
 from internal.dataparsers.matrix_city_dataparser import MatrixCityDataParser
 from internal.dataparsers.phototourism_dataparser import PhotoTourismDataParser
+from internal.dataparsers.segany_colmap_dataparser import SegAnyColmapDataParser
 from internal.utils.graphics_utils import store_ply, BasicPointCloud
 
 from tqdm import tqdm
@@ -43,8 +44,10 @@ class Dataset(torch.utils.data.Dataset):
         return len(self.image_set)
 
     def get_image(self, index) -> Tuple[str, torch.Tensor, Optional[torch.Tensor]]:
-        # TODO: resize
+        if self.image_set.image_paths[index] is None:
+            return self.image_set.image_names[index], None, None
 
+        # TODO: resize
         pil_image = Image.open(self.image_set.image_paths[index])
         numpy_image = np.array(pil_image, dtype="uint8")
 
@@ -114,8 +117,11 @@ class Dataset(torch.utils.data.Dataset):
 
         return self.image_set.image_names[index], image, mask
 
-    def __getitem__(self, index) -> Tuple[Camera, Tuple]:
-        return self.image_cameras[index], self.get_image(index)
+    def get_extra_data(self, index):
+        return self.image_set.extra_data_processor(self.image_set.extra_data[index])
+
+    def __getitem__(self, index) -> Tuple[Camera, Tuple, Any]:
+        return self.image_cameras[index], self.get_image(index), self.get_extra_data(index)
 
 
 class CacheDataLoader(torch.utils.data.DataLoader):
@@ -244,7 +250,7 @@ class DataModule(LightningDataModule):
             self,
             path: str,
             params: DatasetParams,
-            type: Literal["colmap", "blender", "nsvf", "nerfies", "matrixcity", "phototourism"] = None,
+            type: Literal["colmap", "blender", "nsvf", "nerfies", "matrixcity", "phototourism", "segany_colmap"] = None,
             distributed: bool = False,
             undistort_image: bool = False,
             val_on_train: bool = False,
@@ -300,6 +306,8 @@ class DataModule(LightningDataModule):
             dataparser = MatrixCityDataParser(params=self.hparams["params"].matrix_city, **dataparser_params)
         elif self.hparams["type"] == "phototourism":
             dataparser = PhotoTourismDataParser(params=self.hparams["params"].phototourism, **dataparser_params)
+        elif self.hparams["type"] == "segany_colmap":
+            dataparser = SegAnyColmapDataParser(params=self.hparams["params"].segany_colmap, **dataparser_params)
         else:
             raise ValueError("unsupported dataset type {}".format(self.hparams["type"]))
 
@@ -361,7 +369,7 @@ class DataModule(LightningDataModule):
             ).numpy()
             cameras = []
             for idx, image in enumerate(self.dataparser_outputs.train_set):
-                image_name, _, _, camera = image
+                image_name, _, _, camera, _ = image
                 cameras.append({
                     'id': idx,
                     'img_name': image_name,
@@ -383,12 +391,15 @@ class DataModule(LightningDataModule):
             )
 
             # write cfg_args
-            with open(os.path.join(output_path, "cfg_args"), "w") as f:
-                f.write("Namespace(sh_degree={}, white_background={}, source_path='{}')".format(
-                    self.trainer.lightning_module.hparams["gaussian"].sh_degree,
-                    True if torch.all(self.trainer.lightning_module.background_color == 1.) else False,
-                    self.hparams["path"],
-                ))
+            try:
+                with open(os.path.join(output_path, "cfg_args"), "w") as f:
+                    f.write("Namespace(sh_degree={}, white_background={}, source_path='{}')".format(
+                        self.trainer.lightning_module.hparams["gaussian"].sh_degree,
+                        True if torch.all(self.trainer.lightning_module.background_color == 1.) else False,
+                        self.hparams["path"],
+                    ))
+            except:
+                pass
 
     def train_dataloader(self) -> TRAIN_DATALOADERS:
         return CacheDataLoader(

@@ -14,3 +14,5 @@
 !mip_splatting_gsplat_renderer.py
 !gsplat_hit_pixel_count_renderer.py
 !ds_splat_renderer.py
+!vanilla_2dgs_renderer.py
+!seganygs_renderer.py
