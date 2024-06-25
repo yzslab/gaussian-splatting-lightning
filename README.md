@@ -24,7 +24,6 @@
 * Load a large number of images without OOM
 * Dynamic object mask
 * Derived algorithms
-  * <a href="#212-images-with-variable-appearance">Images with variable appearance</a> (New model released on 06-24, see <a href="#212-images-with-variable-appearance">2.12.</a>)
   * Deformable Gaussians
     * <a href="#25-deformable-3d-gaussians">Deformable 3D Gaussians (2.5.)</a>
     * <a href="#43-load-model-trained-by-other-implementations">4D Gaussian (4.3.)</a> (Viewer Only)
@@ -34,6 +33,7 @@
   * <a href="#29-2d-gaussian-splatting">2D Gaussian Splatting (2.9.)</a>
   * <a href="#210-segment-any-3d-gaussians">Segment Any 3D Gaussians (2.10.)</a>
   * Reconstruct a large scale scene with the partitioning strategy like <a href="https://vastgaussian.github.io/">VastGaussian</a> (see <a href="#211-reconstruct-a-large-scale-scene-with-the-partitioning-strategy-like-vastgaussian">2.11.</a> below)
+  * <a href="#212-appearance-model">New Appearance Model (2.12.)</a>: improve the quality when images have various appearances
 ## 1. Installation
 ### 1.1. Clone repository
 
@@ -74,12 +74,6 @@ pip install -r requirements.txt
 ```
 
 ### 1.5. Install optional packages
-* If you want to train with appearance variation images
-
-  ```bash
-  pip install git+https://github.com/NVlabs/tiny-cuda-nn/#subdirectory=bindings/torch
-  ```
-
 * If you want to use nerfstudio-project/gsplat
   * Vanilla version
 
@@ -303,7 +297,15 @@ There is no single script to finish the whole pipeline. Please refer to below co
 * Merging: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/merge_partitions.ipynb">notebooks/merge_partitions.ipynb</a>
 
 
-### 2.12. Images with variable appearance
+### 2.12. Appearance Model
+With appearance model, the reconstruction quality can be improved when your images have various appearance, such as different exposure, white balance, contrast and even day and night.
+
+This model assign an extra feature vector $\boldsymbol{\ell}^{(g)}$ to each 3D Gaussian and an appearance embedding vector $\boldsymbol{\ell}^{(a)}$ to each appearance group. Both of them will be used as the input of a lightweight MLP to calculate the color.
+
+$$ \mathbf{C} = f \left ( \boldsymbol{\ell}^{(g)}, \boldsymbol{\ell}^{(a)} \right ) $$
+
+Please refer to <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/internal/renderers/gsplat_appearance_embedding_renderer.py">internal/renderers/gsplat_appearance_embedding_renderer.py</a> for more details.
+  
 | Baseline | New Model |
 | --- | --- |
 | <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/3a990247-b57b-4ba8-8e9d-7346a3bd41e3"></video> | <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/afeea69f-ed74-4c50-843a-e5d480eb66ef"></video> |
