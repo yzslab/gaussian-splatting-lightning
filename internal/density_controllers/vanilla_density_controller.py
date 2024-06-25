@@ -1,9 +1,34 @@
-from typing import Dict, Type, Tuple, Optional, Union, List
-from dataclasses import field
+from typing import Tuple, Optional, Union, List
+from dataclasses import dataclass
 import torch
 from lightning import LightningModule
 
 from .density_controller import DensityController, DensityControllerImpl
+
+
+@dataclass
+class VanillaDensityController(DensityController):
+    percent_dense: float = 0.01
+
+    densification_interval: int = 100
+
+    opacity_reset_interval: int = 3000
+
+    densify_from_iter: int = 500
+
+    densify_until_iter: int = 15_000
+
+    densify_grad_threshold: float = 0.0002
+
+    cull_opacity_threshold: float = 0.005
+    """threshold of opacity for culling gaussians."""
+
+    camera_extent_factor: float = 1.
+
+    absgrad: bool = False
+
+    def instantiate(self, *args, **kwargs) -> DensityControllerImpl:
+        return VanillaDensityControllerImpl(self)
 
 
 class VanillaDensityControllerImpl(DensityControllerImpl):
@@ -17,12 +42,8 @@ class VanillaDensityControllerImpl(DensityControllerImpl):
             torch.optim.lr_scheduler.LRScheduler,
         ]]
     ]:
-        # Getting hparams here looks a little bit wired, but some hparams only can be obtained here.
-        # TODO: refactor
-        self.hparams = pl_module.hparams
-        self.optimization_hparams = pl_module.optimization_hparams
-        self.cameras_extent = pl_module.cameras_extent
-        self.prune_extent = pl_module.prune_extent
+        self.cameras_extent = pl_module.trainer.datamodule.dataparser_outputs.camera_extent * self.config.camera_extent_factor
+        self.prune_extent = pl_module.trainer.datamodule.prune_extent * self.config.camera_extent_factor
 
         return None, None
 
@@ -33,34 +54,29 @@ class VanillaDensityControllerImpl(DensityControllerImpl):
 
         with torch.no_grad():
             # Densification
-            if global_step < self.hparams["gaussian"].optimization.densify_until_iter:
+            if global_step < self.config.densify_until_iter:
                 gaussians = gaussian_model
                 gaussians.max_radii2D[visibility_filter] = torch.max(
                     gaussians.max_radii2D[visibility_filter],
                     radii[visibility_filter]
                 )
-                if self.hparams["absgrad"] is True:
+                if self.config.absgrad is True:
                     viewspace_point_tensor.grad = viewspace_point_tensor.absgrad
                 gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter, scale=viewspace_points_grad_scale)
 
-                if global_step > self.optimization_hparams.densify_from_iter and global_step % self.optimization_hparams.densification_interval == 0:
-                    size_threshold = 20 if global_step > self.optimization_hparams.opacity_reset_interval else None
+                if global_step > self.config.densify_from_iter and global_step % self.config.densification_interval == 0:
+                    size_threshold = 20 if global_step > self.config.opacity_reset_interval else None
                     gaussians.densify_and_prune(
-                        self.hparams["gaussian"].optimization.densify_grad_threshold,
-                        self.hparams["gaussian"].optimization.cull_opacity_threshold,
+                        self.config.densify_grad_threshold,
+                        self.config.cull_opacity_threshold,
+                        percent_dense=self.config.percent_dense,
                         extent=self.cameras_extent,
                         prune_extent=self.prune_extent,
                         max_screen_size=size_threshold,
                     )
 
-                if global_step % self.hparams["gaussian"].optimization.opacity_reset_interval == 0 or \
+                if global_step % self.config.opacity_reset_interval == 0 or \
                         (
-                                torch.all(pl_module.background_color == 1.) and global_step == self.hparams[
-                            "gaussian"].optimization.densify_from_iter
+                                torch.all(pl_module.background_color == 1.) and global_step == self.config.densify_from_iter
                         ):
                     gaussians.reset_opacity()
-
-
-class VanillaDensityController(DensityController):
-    def instantiate(self, *args, **kwargs) -> DensityControllerImpl:
-        return VanillaDensityControllerImpl()

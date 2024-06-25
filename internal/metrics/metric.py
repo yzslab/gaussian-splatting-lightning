@@ -4,7 +4,7 @@ from internal.configs.instantiate_config import InstantiatableConfig
 
 
 class MetricImpl(torch.nn.Module):
-    def __init__(self, config: InstantiatableConfig, *args, **kwargs) -> None:
+    def __init__(self, config, *args, **kwargs) -> None:
         super().__init__()
         self.config = config
 

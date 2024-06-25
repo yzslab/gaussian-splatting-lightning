@@ -1,11 +1,14 @@
-from dataclasses import dataclass
-from typing import Tuple, Union, List, Dict, Optional
+from typing import Tuple, Union, List, Dict, Optional, Type
 import torch
 from lightning import LightningModule
 from internal.configs.instantiate_config import InstantiatableConfig
 
 
 class DensityControllerImpl(torch.nn.Module):
+    def __init__(self, config, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.config = config
+
     def forward(self, outputs: dict, batch, gaussian_model, global_step: int, pl_module: LightningModule) -> None:
         pass
 
@@ -28,7 +31,6 @@ class DensityControllerImpl(torch.nn.Module):
         pass
 
 
-@dataclass
 class DensityController(InstantiatableConfig):
     def instantiate(self, *args, **kwargs) -> DensityControllerImpl:
         pass

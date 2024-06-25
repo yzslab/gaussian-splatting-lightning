@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Literal, Any
 import torch
 from torchmetrics.image import PeakSignalNoiseRatio
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
@@ -10,6 +10,10 @@ from ..configs.instantiate_config import InstantiatableConfig
 
 @dataclass
 class VanillaMetrics(Metric):
+    lambda_dssim: float = 0.2
+
+    rgb_diff_loss: Literal["l1", "l2"] = "l1"
+
     def instantiate(self, *args, **kwargs) -> MetricImpl:
         return VanillaMetricsImpl(self)
 
@@ -24,11 +28,9 @@ class VanillaMetricsImpl(MetricImpl):
         self.psnr = PeakSignalNoiseRatio()
         self.no_state_dict_models["lpips"] = LearnedPerceptualImagePatchSimilarity(normalize=True)
 
-        # TODO: hparams should be obtain via dataclass
-        optimization_hparams = pl_module.hparams["gaussian"].optimization
-        self.lambda_dssim = optimization_hparams.lambda_dssim
+        self.lambda_dssim = self.config.lambda_dssim
         self.rgb_diff_loss_fn = self._l1_loss
-        if optimization_hparams.rgb_diff_loss == "l2":
+        if self.config.rgb_diff_loss == "l2":
             print("Use L2 loss")
             self.rgb_diff_loss_fn = self._l2_loss
 

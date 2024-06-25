@@ -22,7 +22,7 @@ from internal.renderers import Renderer, VanillaRenderer
 from internal.metrics.metric import Metric
 from internal.metrics.vanilla_metrics import VanillaMetrics
 from internal.density_controllers.density_controller import DensityController
-from internal.density_controllers.vanilla_controller import VanillaDensityController
+from internal.density_controllers.vanilla_density_controller import VanillaDensityController
 from jsonargparse import lazy_instance
 
 from internal.utils.sh_utils import eval_sh
@@ -42,8 +42,7 @@ class GaussianSplatting(LightningModule):
             max_save_val_output: int = -1,
             renderer: Renderer = lazy_instance(VanillaRenderer),
             metric: Metric = lazy_instance(VanillaMetrics),
-            density_controller: DensityController = lazy_instance(VanillaDensityController),
-            absgrad: bool = False,
+            density: DensityController = lazy_instance(VanillaDensityController),
             save_ply: bool = False,
             web_viewer: bool = False,
     ) -> None:
@@ -60,7 +59,7 @@ class GaussianSplatting(LightningModule):
         self.renderer = renderer
 
         # instantiate density controller
-        self.density_controller = density_controller.instantiate()
+        self.density_controller = density.instantiate()
 
         # metrics
         self.metric = metric.instantiate()
@@ -238,9 +237,6 @@ class GaussianSplatting(LightningModule):
         return False
 
     def on_train_start(self) -> None:
-        global_step = self.trainer.global_step + 1
-        if global_step < self.hparams["gaussian"].optimization.densify_until_iter and self.trainer.world_size > 1:
-            print("[WARNING] DDP should only be enabled after finishing densify (after densify_until_iter={} iterations, but {} currently)".format(self.hparams["gaussian"].optimization.densify_until_iter, global_step))
         super().on_train_start()
 
         if self.hparams["web_viewer"] is True and self.trainer.global_rank == 0:
@@ -503,13 +499,8 @@ class GaussianSplatting(LightningModule):
         return self.validation_step(batch, batch_idx, name="test")
 
     def configure_optimizers(self):
-        self.cameras_extent = self.trainer.datamodule.dataparser_outputs.camera_extent
-        self.prune_extent = self.trainer.datamodule.prune_extent
         # gaussian_model.training_setup() must be called here, where parameters have been moved to GPUs
-        self.gaussian_model.training_setup(self.hparams["gaussian"].optimization, self.cameras_extent)
-        # scale after optimizer being configured, avoid lr scaling
-        self.cameras_extent *= self.hparams["camera_extent_factor"]
-        self.prune_extent *= self.hparams["camera_extent_factor"]
+        self.gaussian_model.training_setup(self.hparams["gaussian"].optimization, self.trainer.datamodule.dataparser_outputs.camera_extent)
 
         # initialize lists that store optimizers and schedulers
         optimizers = [
