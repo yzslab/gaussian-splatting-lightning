@@ -2,6 +2,7 @@ model:
   gaussian:
     optimization:
       cull_opacity_threshold: 0.05
+  metric: internal.metrics.gs2d_metrics.GS2DMetrics
   renderer: internal.renderers.vanilla_2dgs_renderer.Vanilla2DGSRenderer
 data:
   params:

@@ -17,7 +17,8 @@ class VanillaDensityControllerImpl(DensityControllerImpl):
             torch.optim.lr_scheduler.LRScheduler,
         ]]
     ]:
-        # TODO: density controller related hyper params should be moved to `VanillaDensityController`
+        # Getting hparams here looks a little bit wired, but some hparams only can be obtained here.
+        # TODO: refactor
         self.hparams = pl_module.hparams
         self.optimization_hparams = pl_module.optimization_hparams
         self.cameras_extent = pl_module.cameras_extent

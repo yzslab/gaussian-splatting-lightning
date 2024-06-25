@@ -18,13 +18,9 @@ class Vanilla2DGSRenderer(Renderer):
     def __init__(
             self,
             depth_ratio: float = 0.,
-            lambda_normal: float = 0.05,
-            lambda_dist: float = 0.,
     ):
         super().__init__()
         self.depth_ratio = depth_ratio
-        self.lambda_normal = lambda_normal
-        self.lambda_dist = lambda_dist
 
     def forward(
             self,
@@ -193,32 +189,6 @@ class Vanilla2DGSRenderer(Renderer):
         normal_map = torch.nn.functional.normalize(torch.cross(dx, dy, dim=-1), dim=-1)
         output[1:-1, 1:-1, :] = normal_map
         return output
-
-    def train_metrics(self, pl_module, step: int, batch, outputs):
-        metrics, prog_bar = pl_module.vanilla_train_metric_calculator(pl_module, step, batch, outputs)
-
-        # regularization
-        lambda_normal = self.lambda_normal if step > 7000 else 0.0
-        lambda_dist = self.lambda_dist if step > 3000 else 0.0
-
-        rend_dist = outputs["rend_dist"]
-        rend_normal = outputs['rend_normal']
-        surf_normal = outputs['surf_normal']
-        normal_error = (1 - (rend_normal * surf_normal).sum(dim=0))[None]
-        normal_loss = lambda_normal * (normal_error).mean()
-        dist_loss = lambda_dist * (rend_dist).mean()
-
-        # update metrics
-        metrics["loss"] = metrics["loss"] + dist_loss + normal_loss
-        metrics["normal_loss"] = normal_loss
-        prog_bar["normal_loss"] = False
-        metrics["dist_loss"] = dist_loss
-        prog_bar["dist_loss"] = False
-
-        return metrics, prog_bar
-
-    def get_metric_calculators(self) -> Tuple[Union[None, Callable], Union[None, Callable]]:
-        return self.train_metrics, None
 
     def get_available_output_types(self) -> Dict:
         return {
