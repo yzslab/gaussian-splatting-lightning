@@ -23,6 +23,8 @@ from internal.configs.light_gaussian import LightGaussian
 from internal.models.gaussian_model import GaussianModel
 # from internal.models.appearance_model import AppearanceModel
 from internal.renderers import Renderer, VanillaRenderer
+from internal.density_controllers.density_controller import DensityController
+from internal.density_controllers.vanilla_controller import VanillaDensityController
 from internal.utils.ssim import ssim
 from jsonargparse import lazy_instance
 
@@ -46,6 +48,7 @@ class GaussianSplatting(LightningModule):
             save_val_output: bool = False,
             max_save_val_output: int = -1,
             renderer: Renderer = lazy_instance(VanillaRenderer),
+            density_controller: DensityController = lazy_instance(VanillaDensityController),
             absgrad: bool = False,
             save_ply: bool = False,
             web_viewer: bool = False,
@@ -71,6 +74,9 @@ class GaussianSplatting(LightningModule):
         self.light_gaussian_hparams = light_gaussian
 
         self.renderer = renderer
+
+        # instantiate density controller
+        self.density_controller = density_controller.instantiate()
 
         # metrics
         self.lambda_dssim = gaussian.optimization.lambda_dssim
@@ -143,10 +149,11 @@ class GaussianSplatting(LightningModule):
             prefix: str,
             on_step: bool,
             on_epoch: bool,
+            name_prefix: str = "",
     ):
         for name in metrics:
             self.log(
-                f"{prefix}/{name}",
+                f"{prefix}/{name_prefix}{name}",
                 metrics[name],
                 prog_bar=prog_bar[name],
                 on_step=on_step,
@@ -174,6 +181,7 @@ class GaussianSplatting(LightningModule):
             )
 
         self.renderer.setup(stage, lightning_module=self)
+        self.density_controller.setup(stage=stage, pl_module=self)
 
         # get metric calculator from renderer if available
         train_metric_calculator, validation_metric_calculator = self.renderer.get_metric_calculators()
@@ -222,6 +230,8 @@ class GaussianSplatting(LightningModule):
 
         # call for renderer
         self.renderer.on_load_checkpoint(self, checkpoint)
+        # call density controller's hook
+        self.density_controller.on_load_checkpoint(self, checkpoint)
 
         super().on_load_checkpoint(checkpoint)
 
@@ -367,13 +377,17 @@ class GaussianSplatting(LightningModule):
         outputs = self(camera)
         # metrics
         metrics, prog_bar = self.train_metric_calculator(self, global_step, batch, outputs)
+        # metrics from density controller
+        density_controller_metrics = self.density_controller.get_train_metrics(outputs, batch, self.gaussian_model, global_step, self)
+        metrics["loss"] = metrics["loss"] + density_controller_metrics[0].get("loss", 0.)
+        # log metrics
         self.log_metrics(metrics, prog_bar, prefix="train", on_step=True, on_epoch=False)
-
-        image, viewspace_point_tensor, visibility_filter, radii = outputs["render"], outputs["viewspace_points"], \
-            outputs["visibility_filter"], outputs["radii"]
-
-        # retrieve viewspace_points_grad_scale if provided
-        viewspace_points_grad_scale = outputs.get("viewspace_points_grad_scale", None)
+        self.log_metrics(
+            density_controller_metrics[0],
+            density_controller_metrics[1],
+            prefix="train", on_step=True, on_epoch=False,
+            name_prefix="dc_",
+        )
 
         # log learning rate and gaussian count every 100 iterations (without plus one step)
         if self.trainer.global_step % 100 == 0:
@@ -395,46 +409,7 @@ class GaussianSplatting(LightningModule):
         self.manual_backward(metrics["loss"])
 
         # before gradient descend
-        with torch.no_grad():
-            # Densification
-            if global_step < self.hparams["gaussian"].optimization.densify_until_iter:
-                # if viewspace_point_tensor.shape[0] != visibility_filter.shape[0]:
-                #     # viewspace_point_tensor and radii only contain visible gaussians
-                #
-                #     original_viewspace_point_tensor = viewspace_point_tensor
-                #     original_radii = radii
-                #
-                #     viewspace_point_tensor = torch.zeros((visibility_filter.shape[0], 2), dtype=original_viewspace_point_tensor.dtype, device=original_viewspace_point_tensor.device)
-                #     viewspace_point_tensor.grad = torch.zeros_like(viewspace_point_tensor)
-                #     viewspace_point_tensor.grad[visibility_filter] = original_viewspace_point_tensor.grad
-                #     radii = torch.zeros((visibility_filter.shape[0],), dtype=original_radii.dtype, device=original_radii.device)
-                #     radii[visibility_filter] = original_radii
-
-                gaussians = self.gaussian_model
-                gaussians.max_radii2D[visibility_filter] = torch.max(
-                    gaussians.max_radii2D[visibility_filter],
-                    radii[visibility_filter]
-                )
-                if self.hparams["absgrad"] is True:
-                    viewspace_point_tensor.grad = viewspace_point_tensor.absgrad
-                gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter, scale=viewspace_points_grad_scale)
-
-                if global_step > self.optimization_hparams.densify_from_iter and global_step % self.optimization_hparams.densification_interval == 0:
-                    size_threshold = 20 if global_step > self.optimization_hparams.opacity_reset_interval else None
-                    gaussians.densify_and_prune(
-                        self.hparams["gaussian"].optimization.densify_grad_threshold,
-                        self.hparams["gaussian"].optimization.cull_opacity_threshold,
-                        extent=self.cameras_extent,
-                        prune_extent=self.prune_extent,
-                        max_screen_size=size_threshold,
-                    )
-
-                if global_step % self.hparams["gaussian"].optimization.opacity_reset_interval == 0 or \
-                        (
-                                torch.all(self.background_color == 1.) and global_step == self.hparams[
-                            "gaussian"].optimization.densify_from_iter
-                        ):
-                    gaussians.reset_opacity()
+        self.density_controller(outputs, batch, self.gaussian_model, global_step, self)
 
         # optimize
         for optimizer in optimizers:
@@ -513,7 +488,19 @@ class GaussianSplatting(LightningModule):
         # forward
         outputs = self(camera)
         metrics, prog_bar = self.validation_metric_calculator(self, batch, outputs)
+        # metrics from density controller
+        density_controller_metrics = self.density_controller.get_validation_metrics(outputs, batch, self.gaussian_model, self)
+        metrics["loss"] = metrics["loss"] + density_controller_metrics[0].get("loss", 0.)
+
+        # log metrics
         self.log_metrics(metrics, prog_bar, prefix=name, on_step=False, on_epoch=True)
+        self.log_metrics(
+            density_controller_metrics[0],
+            density_controller_metrics[1],
+            prefix="train", on_step=True, on_epoch=False,
+            name_prefix="dc_",
+        )
+
 
         # write validation image
         if self.trainer.global_rank == 0 and self.hparams["save_val_output"] is True and (
@@ -630,18 +617,27 @@ class GaussianSplatting(LightningModule):
         ]
         schedulers = []
 
+        def add_optimizers_and_schedulers(new_optimizers, new_schedulers):
+            nonlocal optimizers
+            nonlocal schedulers
+
+            if new_optimizers is not None:
+                if isinstance(new_optimizers, list):
+                    optimizers += new_optimizers
+                else:
+                    optimizers.append(new_optimizers)
+            if new_schedulers is not None:
+                if isinstance(new_schedulers, list):
+                    schedulers += new_schedulers
+                else:
+                    schedulers.append(new_schedulers)
+
         # renderer optimizer and scheduler setup
         renderer_optimizer, renderer_scheduler = self.renderer.training_setup(self)
-        if renderer_optimizer is not None:
-            if isinstance(renderer_optimizer, list):
-                optimizers += renderer_optimizer
-            else:
-                optimizers.append(renderer_optimizer)
-        if renderer_scheduler is not None:
-            if isinstance(renderer_scheduler, list):
-                schedulers += renderer_scheduler
-            else:
-                schedulers.append(renderer_scheduler)
+        add_optimizers_and_schedulers(renderer_optimizer, renderer_scheduler)
+        # density controller
+        dc_optimizer, dc_scheduler = self.density_controller.configure_optimizers(self)
+        add_optimizers_and_schedulers(dc_optimizer, dc_scheduler)
 
         return optimizers, schedulers
 
