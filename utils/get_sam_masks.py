@@ -9,6 +9,7 @@ import torch
 import numpy as np
 from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
 from common import AsyncTensorSaver, AsyncImageReader, AsyncImageSaver
+from distibuted_tasks import configure_arg_parser, get_task_list_with_args
 
 parser = argparse.ArgumentParser()
 parser.add_argument("image_path", type=str, default=None)
@@ -17,6 +18,7 @@ parser.add_argument("--sam_ckpt", "-c", type=str, default="sam_vit_h_4b8939.pth"
 parser.add_argument("--sam_arch", type=str, default="vit_h")
 parser.add_argument("--preview", action="store_true", default=False)
 parser.add_argument("--ext", "-e", nargs="+", default=["jpg", "jpeg", "JPG", "JPEG"])
+configure_arg_parser(parser)
 args = parser.parse_args()
 
 MODEL_DEVICE = "cuda"
@@ -59,6 +61,8 @@ image_list = list(image_name_set.keys())
 assert len(image_list) > 0, "Not a image can be found"
 print(f"{len(image_list)} images found")
 image_list.sort()
+
+image_list = get_task_list_with_args(args, image_list)
 
 image_reader = AsyncImageReader(image_list)
 image_saver = AsyncImageSaver()
