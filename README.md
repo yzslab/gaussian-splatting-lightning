@@ -34,6 +34,7 @@
   * <a href="#210-segment-any-3d-gaussians">Segment Any 3D Gaussians (2.10.)</a>
   * Reconstruct a large scale scene with the partitioning strategy like <a href="https://vastgaussian.github.io/">VastGaussian</a> (see <a href="#211-reconstruct-a-large-scale-scene-with-the-partitioning-strategy-like-vastgaussian">2.11.</a> below)
   * <a href="#212-appearance-model">New Appearance Model (2.12.)</a>: improve the quality when images have various appearances
+  * <a href="#213-3dgs-mcmc">3D Gaussian Splatting as Markov Chain Monte Carlo (2.13.)</a>
 ## 1. Installation
 ### 1.1. Clone repository
 
@@ -331,6 +332,21 @@ python main.py fit \
     --data.params.colmap.appearance_groups appearance_image_dedicated  # value here should be the same as the one provided to `--name` above
 ```
 If you are using PhotoTourism dataset, please replace `--data.params.colmap.` with `--data.params.phototourism.`, and specify the dataset type with `--data.type phototourism`.
+
+### 2.13. <a href="https://ubc-vision.github.io/3dgs-mcmc/">3DGS-MCMC</a>
+* Install `submodules/mcmc_relocation` first
+  ```bash
+  pip install submodules/mcmc_relocation
+  ```
+* Then training
+  ```bash
+  ... fit \
+      --config configs/gsplat-mcmc.yaml \
+      --model.density.cap_max MAX_NUM_GAUSSIANS \
+      ...
+  ```
+  
+Refer to <a href="https://github.com/ubc-vision/3dgs-mcmc">ubc-vision/3dgs-mcmc</a>, <a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/internal/density_controllers/mcmc_density_controller.p">internal/density_controllers/mcmc_density_controller.py</a> and <a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/internal/metrics/mcmc_metrics.py">internal/metrics/mcmc_metrics.py</a> for more details.
 
 ## 3. Evaluation
 
