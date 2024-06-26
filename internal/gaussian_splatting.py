@@ -2,7 +2,7 @@ import os.path
 import queue
 import threading
 import traceback
-from typing import Tuple, List, Dict, Union, Any
+from typing import Tuple, List, Dict, Union, Any, Callable
 from typing_extensions import Self
 
 import torch.optim
@@ -80,6 +80,9 @@ class GaussianSplatting(LightningModule):
         self.max_image_saving_threads = 16
         self.image_queue = queue.Queue(maxsize=self.max_image_saving_threads)
         self.image_saving_threads = []
+
+        # hooks
+        self.on_train_batch_end_hooks: List[Callable[[Dict, Any, GaussianModel, int, Self], None]] = []
 
     def log_metrics(
             self,
@@ -377,6 +380,10 @@ class GaussianSplatting(LightningModule):
         self.light_gaussian_prune(global_step)
 
         self.renderer.after_training_step(self.trainer.global_step, self)
+
+        for i in self.on_train_batch_end_hooks:
+            i(outputs, batch, self.gaussian_model, global_step, self)
+
         super().on_train_batch_end(outputs, batch, batch_idx)
 
     def on_validation_batch_start(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> None:

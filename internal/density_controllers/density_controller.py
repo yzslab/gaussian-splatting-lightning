@@ -9,6 +9,7 @@ class DensityControllerImpl(torch.nn.Module):
         super().__init__(*args, **kwargs)
         self.config = config
 
+    # TODO: Gaussian Model should be provided on setup or here?
     def forward(self, outputs: dict, batch, gaussian_model, global_step: int, pl_module: LightningModule) -> None:
         pass
 

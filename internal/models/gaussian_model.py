@@ -161,13 +161,23 @@ class GaussianModel(nn.Module):
         l = [
             {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
             {'params': [self._features_dc], 'lr': training_args.feature_lr, "name": "f_dc"},
-            # {'params': [self._features_rest], 'lr': training_args.feature_lr / 20.0, "name": "f_rest"},
             {'params': [self._features_rest], 'lr': training_args.feature_rest_lr_init, "name": "f_rest"},
             {'params': [self._opacity], 'lr': training_args.opacity_lr, "name": "opacity"},
             {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
             {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"},
             {'params': [self._features_extra], 'lr': training_args.feature_extra_lr_init, "name": "f_extra"},
         ]
+
+        # Tuple[attr_name, param_group_name]
+        self.param_names = {
+            ("_xyz", "xyz"),
+            ("_features_dc", "f_dc"),
+            ("_features_rest", "f_rest"),
+            ("_opacity", "opacity"),
+            ("_scaling", "scaling"),
+            ("_rotation", "rotation"),
+            ("_features_extra", "f_extra"),
+        }
 
         print("spatial_lr_scale={}, learning_rates={}".format(self.spatial_lr_scale, {i["name"]: i["lr"] for i in l}))
 
@@ -407,15 +417,36 @@ class GaussianModel(nn.Module):
 
         return optimizable_tensors
 
-    def densification_postfix(self, new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling,
-                              new_rotation, new_features_extra):
-        d = {"xyz": new_xyz,
-             "f_dc": new_features_dc,
-             "f_rest": new_features_rest,
-             "opacity": new_opacities,
-             "scaling": new_scaling,
-             "rotation": new_rotation,
-             "f_extra": new_features_extra, }
+    def densification_postfix_by_tensor_dict(self, tensor_dict):
+        return self.densification_postfix(
+            new_xyz=tensor_dict["_xyz"],
+            new_features_dc=tensor_dict["_features_dc"],
+            new_features_rest=tensor_dict["_features_rest"],
+            new_opacities=tensor_dict["_opacity"],
+            new_scaling=tensor_dict["_scaling"],
+            new_rotation=tensor_dict["_rotation"],
+            new_features_extra=tensor_dict["_features_extra"],
+        )
+
+    def densification_postfix(
+            self,
+            new_xyz,
+            new_features_dc,
+            new_features_rest,
+            new_opacities,
+            new_scaling,
+            new_rotation,
+            new_features_extra,
+    ):
+        d = {
+            "xyz": new_xyz,
+            "f_dc": new_features_dc,
+            "f_rest": new_features_rest,
+            "opacity": new_opacities,
+            "scaling": new_scaling,
+            "rotation": new_rotation,
+            "f_extra": new_features_extra,
+        }
 
         optimizable_tensors = self.cat_tensors_to_optimizer(d)
         self._xyz = optimizable_tensors["xyz"]

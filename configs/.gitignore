@@ -30,3 +30,4 @@
 !appearance_embedding_renderer/view_dependent.yaml
 !appearance_embedding_renderer/view_independent.yaml
 !random_background.yaml
+!gsplat-mcmc.yaml

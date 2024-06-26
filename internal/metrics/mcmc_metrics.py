@@ -1,3 +1,10 @@
+"""
+3D Gaussian Splatting as Markov Chain Monte Carlo
+https://ubc-vision.github.io/3dgs-mcmc/
+
+Most codes are copied from https://github.com/ubc-vision/3dgs-mcmc
+"""
+
 from typing import Tuple, Dict, Any
 import torch
 
