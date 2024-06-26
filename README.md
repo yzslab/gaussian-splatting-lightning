@@ -335,16 +335,19 @@ If you are using PhotoTourism dataset, please replace `--data.params.colmap.` wi
 
 ### 2.13. <a href="https://ubc-vision.github.io/3dgs-mcmc/">3DGS-MCMC</a>
 * Install `submodules/mcmc_relocation` first
-  ```bash
-  pip install submodules/mcmc_relocation
-  ```
+
+```bash
+pip install submodules/mcmc_relocation
+```
+
 * Then training
-  ```bash
-  ... fit \
-      --config configs/gsplat-mcmc.yaml \
-      --model.density.cap_max MAX_NUM_GAUSSIANS \
-      ...
-  ```
+
+```bash
+... fit \
+    --config configs/gsplat-mcmc.yaml \
+    --model.density.cap_max MAX_NUM_GAUSSIANS \
+    ...
+```
   
 Refer to <a href="https://github.com/ubc-vision/3dgs-mcmc">ubc-vision/3dgs-mcmc</a>, <a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/internal/density_controllers/mcmc_density_controller.p">internal/density_controllers/mcmc_density_controller.py</a> and <a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/internal/metrics/mcmc_metrics.py">internal/metrics/mcmc_metrics.py</a> for more details.
 
