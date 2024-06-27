@@ -11,9 +11,11 @@ import math
 from lightning import LightningModule
 import torch
 from mcmc_relocation import compute_relocation
+from internal.utils.general_utils import inverse_sigmoid
 from internal.utils.gaussian_projection import compute_cov_3d
 
 from .density_controller import DensityController, DensityControllerImpl
+
 
 @dataclass
 class MCMCDensityController(DensityController):
@@ -57,6 +59,22 @@ class MCMCDensityControllerImpl(DensityControllerImpl):
         self.register_buffer("binoms", binoms)
 
         pl_module.on_train_batch_end_hooks.append(self._add_xyz_noise)
+
+    def configure_optimizers(self, pl_module: LightningModule) -> Tuple[
+        Optional[Union[
+            List[torch.optim.Optimizer],
+            torch.optim.Optimizer,
+        ]],
+        Optional[Union[
+            List[torch.optim.lr_scheduler.LRScheduler],
+            torch.optim.lr_scheduler.LRScheduler,
+        ]]
+    ]:
+        with torch.no_grad():
+            pl_module.gaussian_model._scaling.copy_(pl_module.gaussian_model._scaling + math.log(0.1))
+            pl_module.gaussian_model._opacity.copy_(inverse_sigmoid(torch.ones_like(pl_module.gaussian_model._opacity) * 0.5))
+
+        return None, None
 
     def forward(self, outputs: dict, batch, gaussian_model, global_step: int, pl_module: LightningModule) -> None:
         if global_step >= self.config.densify_until_iter:
