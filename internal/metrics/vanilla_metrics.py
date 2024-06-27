@@ -26,7 +26,7 @@ class VanillaMetricsImpl(MetricImpl):
 
     def setup(self, stage: str, pl_module):
         self.psnr = PeakSignalNoiseRatio()
-        self.no_state_dict_models["lpips"] = LearnedPerceptualImagePatchSimilarity(normalize=True)
+        self.no_state_dict_models["lpips"] = LearnedPerceptualImagePatchSimilarity(normalize=True, net_type="vgg")
 
         self.lambda_dssim = self.config.lambda_dssim
         self.rgb_diff_loss_fn = self._l1_loss
