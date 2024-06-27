@@ -14,6 +14,11 @@ class VanillaMetrics(Metric):
 
     rgb_diff_loss: Literal["l1", "l2"] = "l1"
 
+    lpips_net_type: Literal["vgg", "alex", "squeeze"] = "alex"
+    """
+    the vanilla 3DGS uses 'vgg', but 'alex' is faster
+    """
+
     def instantiate(self, *args, **kwargs) -> MetricImpl:
         return VanillaMetricsImpl(self)
 
@@ -26,7 +31,7 @@ class VanillaMetricsImpl(MetricImpl):
 
     def setup(self, stage: str, pl_module):
         self.psnr = PeakSignalNoiseRatio()
-        self.no_state_dict_models["lpips"] = LearnedPerceptualImagePatchSimilarity(normalize=True, net_type="vgg")
+        self.no_state_dict_models["lpips"] = LearnedPerceptualImagePatchSimilarity(normalize=True, net_type=self.config.lpips_net_type)
 
         self.lambda_dssim = self.config.lambda_dssim
         self.rgb_diff_loss_fn = self._l1_loss
