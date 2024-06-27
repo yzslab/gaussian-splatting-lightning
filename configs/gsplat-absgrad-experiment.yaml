@@ -5,9 +5,7 @@ data:
     colmap:
       split_mode: "experiment"
 model:
-  gaussian:
-    optimization:
-      densify_grad_threshold: 0.0006
   renderer: internal.renderers.gsplat_renderer.GSPlatRenderer
   density:
+    densify_grad_threshold: 0.0006
     absgrad: true
