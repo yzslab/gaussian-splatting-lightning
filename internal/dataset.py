@@ -393,7 +393,7 @@ class DataModule(LightningDataModule):
             # write cfg_args
             try:
                 with open(os.path.join(output_path, "cfg_args"), "w") as f:
-                    f.write("Namespace(sh_degree={}, white_background={}, source_path='{}', eval=True, resolution=1, data_device='cpu')".format(
+                    f.write("Namespace(sh_degree={}, white_background={}, source_path='{}', images='images', eval=True, resolution=1, data_device='cpu')".format(
                         self.trainer.lightning_module.hparams["gaussian"].sh_degree,
                         True if torch.all(self.trainer.lightning_module.background_color == 1.) else False,
                         self.hparams["path"],
