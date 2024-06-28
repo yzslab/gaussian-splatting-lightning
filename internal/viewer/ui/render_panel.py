@@ -98,6 +98,8 @@ class CameraPath:
         self.loop: bool = False
         self.smoothness: float = 0.5  # Tension / alpha term.
         self.default_fov: float = 0.0
+        self.framerate: float = 0
+        self.duration: float = 0
 
     def set_keyframes_visible(self, visible: bool) -> None:
         self._keyframes_visible = visible
@@ -118,7 +120,7 @@ class CameraPath:
             fov=keyframe.override_fov_value if keyframe.override_fov_enabled else self.default_fov,
             aspect=keyframe.aspect,
             scale=0.1,
-            color=(127, 127, 127),
+            color=(255, 0, 255),
             wxyz=keyframe.wxyz,
             position=keyframe.position,
             visible=self._keyframes_visible,
@@ -323,6 +325,10 @@ class CameraPath:
                 self._spline = None
             return
 
+        num_frames = int(self.duration * self.framerate)
+        if num_frames <= 0:
+            return
+
         # Update internal splines.
         self._orientation_spline = splines.quaternion.KochanekBartels(
             [
@@ -378,7 +384,7 @@ class CameraPath:
         # Update visualized spline.
         num_keyframes = len(keyframes) + 1 if self.loop else len(keyframes)
         points_array = onp.array(
-            [self._position_spline.evaluate(t) for t in onp.linspace(0, num_keyframes - 1, num_keyframes * 100)]
+            [self._position_spline.evaluate(t) for t in onp.linspace(0, num_keyframes - 1, num_frames)]
         )
         colors_array = onp.array([colorsys.hls_to_rgb(h, 0.5, 1.0) for h in onp.linspace(0.0, 1.0, len(points_array))])
         self._spline = self._server.add_point_cloud(
@@ -578,8 +584,8 @@ def populate_render_tab(
 
     playback_folder = server.gui.add_folder("Playback")
     with playback_folder:
-        duration_number = server.gui.add_number("Duration (sec)", min=0.0, max=1e8, step=0.0001, initial_value=4.0)
-        framerate_number = server.gui.add_number("Frame rate (FPS)", min=0.1, max=240.0, step=1e-8, initial_value=30.0)
+        duration_number = server.gui.add_number("Duration (sec)", min=0.0, max=1e8, step=0.001, initial_value=4.0)
+        framerate_number = server.gui.add_number("Frame rate (FPS)", min=0.1, max=240.0, step=1e-2, initial_value=30.0)
         framerate_buttons = server.gui.add_button_group("", ("24", "30", "60"))
 
         @framerate_buttons.on_click
@@ -686,6 +692,10 @@ def populate_render_tab(
             old.remove()
         else:
             preview_frame_slider = old
+
+        camera_path.duration = duration_number.value
+        camera_path.framerate = framerate_number.value
+        camera_path.update_spline()
 
     # Play the camera trajectory when the play button is pressed.
     @play_button.on_click
@@ -898,7 +908,11 @@ def populate_render_tab(
                 viewer.show_message("Error occurred while parsing camera path file", event.client)
 
     camera_path = CameraPath(server, viewer)
+    camera_path.loop = loop.value
+    camera_path.smoothness = smoothness.value
     camera_path.default_fov = fov_degrees.value / 180.0 * onp.pi
+    camera_path.duration = duration_number.value
+    camera_path.framerate = framerate_number.value
 
     transform_controls: List[viser.SceneNodeHandle] = []
 
