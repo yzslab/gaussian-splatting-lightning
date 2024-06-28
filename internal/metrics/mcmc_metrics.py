@@ -27,11 +27,11 @@ class MCMCMetricsImpl(VanillaMetricsImpl):
         scale_reg_loss = self.config.scale_reg * torch.abs(gaussian_model.get_scaling).mean()
 
         basic_metrics[0]["loss"] = basic_metrics[0]["loss"] + opacity_reg_loss + scale_reg_loss
-        basic_metrics[0]["opacity_reg"] = opacity_reg_loss
-        basic_metrics[0]["scale_reg"] = scale_reg_loss
+        basic_metrics[0]["o_reg"] = opacity_reg_loss
+        basic_metrics[0]["s_reg"] = scale_reg_loss
 
-        basic_metrics[1]["opacity_reg"] = True
-        basic_metrics[1]["scale_reg"] = True
+        basic_metrics[1]["o_reg"] = True
+        basic_metrics[1]["s_reg"] = True
 
         return basic_metrics
 
