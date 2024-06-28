@@ -76,18 +76,13 @@ pip install -r requirements.txt
 
 ### 1.5. Install optional packages
 * If you want to use nerfstudio-project/gsplat
-  * Vanilla version
-
-    ```bash
-    pip install gsplat==0.1.11
-    ```
-
-  * If you need MipSplatting, LightGaussian
-
+  
     ```bash
     pip install git+https://github.com/yzslab/gsplat.git
     ```
-
+  
+  This command will install my modified version, which is required by LightGaussian and Mip-Splatting. If you do not need them, you can also install vanilla gsplat <a href="https://github.com/nerfstudio-project/gsplat/tree/v0.1.12">v0.1.12</a>.
+  
 * If you need SegAnyGaussian
   * gsplat (see command above)
   * `pip install hdbscan scikit-learn==1.3.2 git+https://github.com/facebookresearch/segment-anything.git`
