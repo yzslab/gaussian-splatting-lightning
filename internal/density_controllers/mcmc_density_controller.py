@@ -185,6 +185,8 @@ class MCMCDensityControllerImpl(DensityControllerImpl):
                 del gaussian_model.optimizer.state[group['params'][0]]
                 group["params"][0] = torch.nn.Parameter(tensor.requires_grad_(True))
                 gaussian_model.optimizer.state[group['params'][0]] = stored_state
+            else:
+                group["params"][0] = torch.nn.Parameter(tensor.requires_grad_(True))
 
             optimizable_tensors[group["name"]] = group["params"][0]
 
