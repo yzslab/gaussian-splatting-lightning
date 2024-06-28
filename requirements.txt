@@ -5,7 +5,7 @@ plyfile==0.8.1
 tensorboard
 wandb
 tqdm
-viser==0.2.1
+viser==0.2.2
 opencv-python==4.8.*
 matplotlib
 ./submodules/diff-gaussian-rasterization
