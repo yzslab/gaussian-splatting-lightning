@@ -32,20 +32,13 @@ class VanillaDensityController(DensityController):
 
 
 class VanillaDensityControllerImpl(DensityControllerImpl):
-    def configure_optimizers(self, pl_module: LightningModule) -> Tuple[
-        Optional[Union[
-            List[torch.optim.Optimizer],
-            torch.optim.Optimizer,
-        ]],
-        Optional[Union[
-            List[torch.optim.lr_scheduler.LRScheduler],
-            torch.optim.lr_scheduler.LRScheduler,
-        ]]
-    ]:
-        self.cameras_extent = pl_module.trainer.datamodule.dataparser_outputs.camera_extent * self.config.camera_extent_factor
-        self.prune_extent = pl_module.trainer.datamodule.prune_extent * self.config.camera_extent_factor
+    def setup(self, stage: str, pl_module: LightningModule) -> None:
+        super().setup(stage, pl_module)
 
-        return None, None
+        if stage == "fit":
+            self.cameras_extent = pl_module.trainer.datamodule.dataparser_outputs.camera_extent * self.config.camera_extent_factor
+            self.prune_extent = pl_module.trainer.datamodule.prune_extent * self.config.camera_extent_factor
+
 
     def forward(self, outputs: dict, batch, gaussian_model, global_step: int, pl_module: LightningModule) -> None:
         viewspace_point_tensor, visibility_filter, radii = outputs["viewspace_points"], outputs["visibility_filter"], outputs["radii"]

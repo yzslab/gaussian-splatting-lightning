@@ -50,6 +50,7 @@ class MCMCDensityControllerImpl(DensityControllerImpl):
     def setup(self, stage: str, pl_module: LightningModule) -> None:
         super().setup(stage, pl_module)
 
+        # initialize binoms
         N_max = self.config.N_max
         binoms = torch.zeros((N_max, N_max), dtype=torch.float, device=pl_module.device)
         for n in range(N_max):
@@ -58,23 +59,18 @@ class MCMCDensityControllerImpl(DensityControllerImpl):
 
         self.register_buffer("binoms", binoms)
 
+        # initialize opacities and scales
+        if stage == "fit":
+            self._opacities_and_scales_initialization(pl_module.gaussian_model)
+
         pl_module.on_train_batch_end_hooks.append(self._add_xyz_noise)
 
-    def configure_optimizers(self, pl_module: LightningModule) -> Tuple[
-        Optional[Union[
-            List[torch.optim.Optimizer],
-            torch.optim.Optimizer,
-        ]],
-        Optional[Union[
-            List[torch.optim.lr_scheduler.LRScheduler],
-            torch.optim.lr_scheduler.LRScheduler,
-        ]]
-    ]:
+    @staticmethod
+    def _opacities_and_scales_initialization(gaussian_model) -> None:
+        # looks like it does not affect the final result
         with torch.no_grad():
-            pl_module.gaussian_model._scaling.copy_(pl_module.gaussian_model._scaling + math.log(0.1))
-            pl_module.gaussian_model._opacity.copy_(inverse_sigmoid(torch.ones_like(pl_module.gaussian_model._opacity) * 0.5))
-
-        return None, None
+            gaussian_model._scaling.copy_(gaussian_model._scaling + math.log(0.1))
+            gaussian_model._opacity.copy_(inverse_sigmoid(torch.ones_like(gaussian_model._opacity) * 0.5))
 
     def forward(self, outputs: dict, batch, gaussian_model, global_step: int, pl_module: LightningModule) -> None:
         if global_step >= self.config.densify_until_iter:

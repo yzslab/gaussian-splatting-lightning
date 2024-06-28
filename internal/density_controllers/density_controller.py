@@ -16,18 +16,6 @@ class DensityControllerImpl(torch.nn.Module):
     def setup(self, stage: str, pl_module: LightningModule) -> None:
         pass
 
-    def configure_optimizers(self, pl_module: LightningModule) -> Tuple[
-        Optional[Union[
-            List[torch.optim.Optimizer],
-            torch.optim.Optimizer,
-        ]],
-        Optional[Union[
-            List[torch.optim.lr_scheduler.LRScheduler],
-            torch.optim.lr_scheduler.LRScheduler,
-        ]]
-    ]:
-        return None, None
-
     def on_load_checkpoint(self, module, checkpoint):
         pass
 

@@ -533,9 +533,6 @@ class GaussianSplatting(LightningModule):
         # renderer optimizer and scheduler setup
         renderer_optimizer, renderer_scheduler = self.renderer.training_setup(self)
         add_optimizers_and_schedulers(renderer_optimizer, renderer_scheduler)
-        # density controller
-        dc_optimizer, dc_scheduler = self.density_controller.configure_optimizers(self)
-        add_optimizers_and_schedulers(dc_optimizer, dc_scheduler)
 
         return optimizers, schedulers
 
