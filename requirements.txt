@@ -8,5 +8,6 @@ tqdm
 viser==0.2.2
 opencv-python==4.8.*
 matplotlib
+mediapy==1.2.2
 ./submodules/diff-gaussian-rasterization
 ./submodules/simple-knn

@@ -75,7 +75,8 @@ pip install -r requirements.txt
 ```
 
 ### 1.5. Install optional packages
-* If you want to use nerfstudio-project/gsplat
+* <a href="https://ffmpeg.org/">ffmpeg</a> is required if you want to render video: `sudo apt install -y ffmpeg`
+* If you want to use <a href="https://github.com/nerfstudio-project/gsplat">nerfstudio-project/gsplat</a>
   
     ```bash
     pip install git+https://github.com/yzslab/gsplat.git
@@ -83,7 +84,7 @@ pip install -r requirements.txt
   
   This command will install my modified version, which is required by LightGaussian and Mip-Splatting. If you do not need them, you can also install vanilla gsplat <a href="https://github.com/nerfstudio-project/gsplat/tree/v0.1.12">v0.1.12</a>.
   
-* If you need SegAnyGaussian
+* If you need <a href="#210-segment-any-3d-gaussians">SegAnyGaussian</a>
   * gsplat (see command above)
   * `pip install hdbscan scikit-learn==1.3.2 git+https://github.com/facebookresearch/segment-anything.git`
   * <a href="https://github.com/facebookresearch/pytorch3d/blob/main/INSTALL.md">facebookresearch/pytorch3d</a>
