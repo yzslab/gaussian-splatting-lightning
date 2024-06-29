@@ -422,7 +422,7 @@ python viewer.py \
 * <a href="https://github.com/hbb1/2d-gaussian-splatting">hbb1/2d-gaussian-splatting</a>
 ```bash
 # Install `diff-surfel-rasterization` first
-pip install git+https://github.com/hbb1/diff-surfel-rasterization.git@3a9357f6a4b80ba319560be7965ed6a88ec951c6
+pip install git+https://github.com/hbb1/diff-surfel-rasterization.git@28c928a36ea19407cd9754d068bd9a9535216979
 # Then start viewer
 python viewer.py \
     2d-gaussian-splatting/outputs/Truck \
