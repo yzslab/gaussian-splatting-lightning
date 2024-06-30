@@ -34,7 +34,6 @@ class GaussianSplatting(LightningModule):
             gaussian: ModelParams,
             light_gaussian: LightGaussian,
             save_iterations: List[int],
-            camera_extent_factor: float = 1.,
             background_color: Tuple[float, float, float] = (0., 0., 0.),
             random_background: bool = False,
             output_path: str = None,
