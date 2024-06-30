@@ -115,7 +115,8 @@ class MCMCDensityControllerImpl(DensityControllerImpl):
             gaussian_model._xyz.add_(noise)
 
     def compute_relocation(self, opacity_old, scale_old, N) -> Tuple[torch.Tensor, torch.Tensor]:
-        assert torch.all(N <= self.config.N_max)  # whether such a check is necessary?
+        # assert torch.all(N <= self.config.N_max)  # whether such a check is necessary?
+        N.clamp_(min=1., max=self.config.N_max - 1)
         return compute_relocation(
             opacity_old,
             scale_old,
