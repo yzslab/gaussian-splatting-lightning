@@ -17,8 +17,13 @@ class ScaleGateUtils:
 
 class SegAnyGSUtils:
     @classmethod
-    def get_pca_projection_matrix(cls, semantic_features: torch.Tensor, n_components: int = 3):
-        randint = torch.randint(0, semantic_features.shape[0], [200_000])
+    def get_pca_projection_matrix(cls, semantic_features: torch.Tensor, n_components: int = 3, seed: int = 42):
+        generator = None
+        if seed is not None:
+            generator = torch.Generator()
+            generator.manual_seed(seed)
+
+        randint = torch.randint(0, semantic_features.shape[0], [200_000], generator=generator)
         X = semantic_features[randint, :]
 
         n = X.shape[0]
@@ -43,7 +48,7 @@ class SegAnyGSUtils:
     def get_pca_projected_colors(cls, semantic_features, pca_projection_matrix):
         colors = (semantic_features @ pca_projection_matrix)
         colors = colors - colors.min(dim=0).values
-        colors = colors / colors.max(dim=0).values
+        colors = colors / (colors.max(dim=0).values + 1e-6)
         return colors
 
     @classmethod
