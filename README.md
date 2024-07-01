@@ -158,7 +158,7 @@ You will get improved PSNR and SSIM with more GPUs:
 python main.py fit \
     --config ... \
     --data.path DATASET_PATH \
-    --model.gaussian.optimization.densify_until_iter 15000 \
+    --model.density.densify_until_iter 15000 \
     --max_steps 15000
 # Then resume, and enable multi-GPU
 python main.py fit \
