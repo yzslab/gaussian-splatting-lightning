@@ -33,11 +33,15 @@ class SegAnyGSRenderer(Renderer):
 
         self.scale_conditioned_semantic_features = SegAnyGSUtils.get_scale_conditioned_semantic_features(self.semantic_features, self.scale_gate, self.initial_scale)
 
-        self.pca_projection_matrix = SegAnyGSUtils.get_pca_projection_matrix(self.semantic_features)
-        self.pca_colors = SegAnyGSUtils.get_pca_projected_colors(self.semantic_features, self.pca_projection_matrix)
+        # PCA
+        normalized_semantic_features = torch.nn.functional.normalize(self.semantic_features, dim=-1)
+        self.pca_projection_matrix = SegAnyGSUtils.get_pca_projection_matrix(normalized_semantic_features)
+        self.pca_colors = SegAnyGSUtils.get_pca_projected_colors(normalized_semantic_features, self.pca_projection_matrix)
+        # scale conditioned PCA
+        self.scale_conditioned_pca_projection_matrix = torch.nn.functional.normalize(self.pca_projection_matrix * self.scale_gate(self.initial_scale).unsqueeze(-1).to(self.pca_projection_matrix.device), dim=-1)
         self.scale_gated_pca_colors = SegAnyGSUtils.get_pca_projected_colors(
             self.scale_conditioned_semantic_features,
-            self.pca_projection_matrix,
+            self.scale_conditioned_pca_projection_matrix,
         )
 
         self.segment_mask = None
@@ -54,7 +58,9 @@ class SegAnyGSRenderer(Renderer):
         self.color_producers = {
             "rgb": self._shs_to_rgb,
             "depth": self._depth_as_color,
+            "pca2d": self._semantic_features_as_color,
             "pca3d": self._pca_as_color,
+            "scale_gated_pca2d": self._scale_gated_semantic_features_as_color,
             "scale_gated_pca3d": self._scale_gated_pca_as_color,
             "cluster3d": self._cluster_as_color,
             "segment3d": self._segment_as_color,
@@ -66,13 +72,20 @@ class SegAnyGSRenderer(Renderer):
         self.available_output_types = {
             "rgb": "rgb",
             "depth": "depth",
+            "pca2d": "semantic_features",
             "pca3d": "pca3d",
+            "scale_gated_pca2d": "semantic_features_scale_gated",
             "scale_gated_pca3d": "pca3d_scale_gated",
             "cluster3d": "cluster3d",
             "segment3d": "segment3d",
             "segment3d_out": "segment3d_out",
             "segment3d_removed": "segment3d_removed",
             "segment3d_similarities": "segment3d_similarities",
+        }
+
+        self.output_post_processor = {
+            "pca2d": self._get_pca_projected_color,
+            "scale_gated_pca2d": self._get_scale_gated_pca_projected_color,
         }
 
     def forward(
@@ -105,6 +118,9 @@ class SegAnyGSRenderer(Renderer):
         for i in render_types:
             colors, rasterize_bg_color, new_opacities = self.color_producers[i](project_results, pc, viewpoint_camera, bg_color, opacities)
             outputs[self.available_output_types[i]] = self.rasterize(project_results, img_height=img_height, img_width=img_width, colors=colors, bg_color=rasterize_bg_color, opacities=new_opacities)
+            output_processor = self.output_post_processor.get(i)
+            if output_processor is not None:
+                outputs[self.available_output_types[i]] = output_processor(outputs[self.available_output_types[i]])
 
         return outputs
 
@@ -138,8 +154,26 @@ class SegAnyGSRenderer(Renderer):
     def _depth_as_color(self, project_results, pc: GaussianModel, viewpoint_camera, bg_color, opacities):
         return project_results[1].unsqueeze(-1), torch.zeros((1,), dtype=torch.float, device=bg_color.device), opacities
 
+    def _semantic_features_as_color(self, project_results, pc: GaussianModel, viewpoint_camera, bg_color, opacities):
+        return self.semantic_features, torch.zeros((self.semantic_features.shape[-1],), dtype=torch.float, device=bg_color.device), opacities
+
+    def _get_pca_projected_color(self, feature_map):
+        return SegAnyGSUtils.get_pca_projected_colors(
+            semantic_features=torch.nn.functional.normalize(feature_map.permute(1, 2, 0).view(-1, feature_map.shape[0]), dim=-1),
+            pca_projection_matrix=self.pca_projection_matrix,
+        ).view(*feature_map.shape[1:], 3).permute(2, 0, 1)
+
     def _pca_as_color(self, project_results, pc: GaussianModel, viewpoint_camera, bg_color, opacities):
         return self.pca_colors, bg_color, opacities
+
+    def _scale_gated_semantic_features_as_color(self, project_results, pc: GaussianModel, viewpoint_camera, bg_color, opacities):
+        return self.scale_conditioned_semantic_features.to(bg_color.device), torch.zeros((self.scale_conditioned_semantic_features.shape[-1],), dtype=torch.float, device=bg_color.device), opacities
+
+    def _get_scale_gated_pca_projected_color(self, feature_map):
+        return SegAnyGSUtils.get_pca_projected_colors(
+            semantic_features=torch.nn.functional.normalize(feature_map.permute(1, 2, 0).view(-1, feature_map.shape[0]), dim=-1),
+            pca_projection_matrix=self.scale_conditioned_pca_projection_matrix,
+        ).view(*feature_map.shape[1:], 3).permute(2, 0, 1)
 
     def _scale_gated_pca_as_color(self, project_results, pc: GaussianModel, viewpoint_camera, bg_color, opacities):
         return self.scale_gated_pca_colors, bg_color, opacities
@@ -224,8 +258,10 @@ class OptionCallbacks:
                 semantic_features * self.scale_gate(scale).to(semantic_features.device),
                 dim=-1,
             )
+            scale_conditioned_pca_projection_matrix = torch.nn.functional.normalize(self.renderer.pca_projection_matrix * self.scale_gate(scale).to(semantic_features.device).unsqueeze(-1), dim=-1)
 
             self.renderer.scale_conditioned_semantic_features = scale_conditioned_semantic_features
+            self.renderer.scale_conditioned_pca_projection_matrix = scale_conditioned_pca_projection_matrix
             for i in on_features_updated_callbacks:
                 i(scale_conditioned_semantic_features)
 
@@ -235,7 +271,10 @@ class OptionCallbacks:
         return update_scale_conditioned_features
 
     def update_scale_conditioned_pca_colors(self, scale_conditioned_semantic_features):
-        self.renderer.scale_gated_pca_colors = SegAnyGSUtils.get_pca_projected_colors(scale_conditioned_semantic_features, self.renderer.pca_projection_matrix)
+        self.renderer.scale_gated_pca_colors = SegAnyGSUtils.get_pca_projected_colors(
+            scale_conditioned_semantic_features,
+            self.renderer.scale_conditioned_pca_projection_matrix,
+        )
 
     def get_update_selected_point_number_by_mask_callback(self, point_number):
         def update_point_number(mask):
