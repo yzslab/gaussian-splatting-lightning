@@ -79,9 +79,9 @@ try:
 
             # preview
             if args.preview is True:
-                image_embedding_flatten = image_embedding.permute(1, 2, 0).reshape((-1, image_embedding.shape[0]))
-                pca_projection_matrix = SegAnyGSUtils.get_pca_projection_matrix(semantic_features=image_embedding_flatten)
-                pca_color = SegAnyGSUtils.get_pca_projected_colors(image_embedding_flatten, pca_projection_matrix)
+                image_embedding_flatten_normalized = torch.nn.functional.normalize(image_embedding.permute(1, 2, 0).reshape((-1, image_embedding.shape[0])), dim=-1)
+                pca_projection_matrix = SegAnyGSUtils.get_pca_projection_matrix(semantic_features=image_embedding_flatten_normalized)
+                pca_color = SegAnyGSUtils.get_pca_projected_colors(image_embedding_flatten_normalized, pca_projection_matrix)
                 feature_preview = pca_color.reshape((image_embedding.shape[1], image_embedding.shape[2], -1))
                 feature_preview = (feature_preview * 255).to(torch.uint8).cpu().numpy()
                 image_saver.save(feature_preview, os.path.join(feature_preview_dir, f"{image_name}.png"))
