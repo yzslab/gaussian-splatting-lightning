@@ -8,6 +8,7 @@ from typing_extensions import Self
 import torch.optim
 import torchvision
 import wandb
+import csv
 from lightning.pytorch.core.module import MODULE_OPTIMIZERS
 from lightning.pytorch import LightningDataModule, LightningModule
 from lightning.pytorch.utilities.types import OptimizerLRScheduler, LRSchedulerPLType, STEP_OUTPUT
@@ -28,6 +29,7 @@ from jsonargparse import lazy_instance
 from internal.utils.sh_utils import eval_sh
 from internal.utils.graphics_utils import store_ply
 
+
 class GaussianSplatting(LightningModule):
     def __init__(
             self,
@@ -38,6 +40,7 @@ class GaussianSplatting(LightningModule):
             random_background: bool = False,
             output_path: str = None,
             save_val_output: bool = False,
+            save_val_metrics: bool = None,
             max_save_val_output: int = -1,
             renderer: Renderer = lazy_instance(VanillaRenderer),
             metric: Metric = lazy_instance(VanillaMetrics),
@@ -80,6 +83,8 @@ class GaussianSplatting(LightningModule):
         self.max_image_saving_threads = 16
         self.image_queue = queue.Queue(maxsize=self.max_image_saving_threads)
         self.image_saving_threads = []
+
+        self.val_metrics: List[Tuple[str, Dict]] = []
 
         # hooks
         self.on_train_batch_end_hooks: List[Callable[[Dict, Any, GaussianModel, int, Self], None]] = []
@@ -147,6 +152,9 @@ class GaussianSplatting(LightningModule):
                 )
             else:
                 self._initialize_gaussians_from_trained_model()
+        else:
+            if self.hparams["save_val_metrics"] is None:
+                self.hparams["save_val_metrics"] = True
 
         self.renderer.setup(stage=stage, lightning_module=self)
         self.metric.setup(stage=stage, pl_module=self)
@@ -436,6 +444,7 @@ class GaussianSplatting(LightningModule):
         outputs = self(camera)
         metrics, prog_bar = self.metric.get_validate_metrics(self, self.gaussian_model, batch, outputs)
         self.log_metrics(metrics, prog_bar, prefix=name, on_step=False, on_epoch=True)
+        self.val_metrics.append((image_info[0], metrics))
 
         # write validation image
         if self.trainer.global_rank == 0 and self.hparams["save_val_output"] is True and (
@@ -481,7 +490,7 @@ class GaussianSplatting(LightningModule):
                 self.image_saving_threads.append(thread)
                 thread.start()
 
-    def on_validation_epoch_end(self) -> None:
+    def on_validation_epoch_end(self, name="val") -> None:
         super().on_validation_epoch_end()
         for i in range(len(self.image_saving_threads)):
             self.image_queue.put(None)
@@ -489,13 +498,44 @@ class GaussianSplatting(LightningModule):
             i.join()
         self.image_saving_threads = []
 
+        # save metrics
+        if self.hparams["save_val_metrics"] is True and self.global_rank == 0 and len(self.val_metrics) > 0:
+            metrics_output_dir = os.path.join(self.hparams["output_path"], "metrics")
+            os.makedirs(metrics_output_dir, exist_ok=True)
+            step = max(self.trainer.global_step, self.restored_global_step)
+
+            metric_list_key_by_name = {}  # [metric_name] = metric_value_list
+            metric_fields = list(self.val_metrics[0][1].keys())
+            for i in metric_fields:
+                metric_list_key_by_name[i] = []
+
+            with open(os.path.join(metrics_output_dir, f"{name}-step={step}.csv"), "w") as f:
+                metrics_writer = csv.writer(f)
+                metrics_writer.writerow(["name"] + list(metric_fields))
+
+                for image_name, metrics in self.val_metrics:
+                    metric_row = [image_name]
+                    for metric_name in metric_fields:
+                        metric_list_key_by_name[metric_name].append(metrics[metric_name])
+                        metric_row.append("{:.8f}".format(metrics[metric_name].item()))
+                    metrics_writer.writerow(metric_row)
+
+                # calculate mean metrics
+                metrics_writer.writerow([""] + ["" for _ in range(len(metric_fields))])
+                mean_metrics = ["MEAN"]
+                for i in metric_fields:
+                    mean_metrics.append("{:.8f}".format(torch.stack(metric_list_key_by_name[i]).mean(dim=0).item()))
+                metrics_writer.writerow(mean_metrics)
+
+        self.val_metrics.clear()
+
     def on_test_epoch_start(self) -> None:
         super().on_test_epoch_start()
         self.on_validation_epoch_start()
 
     def on_test_epoch_end(self) -> None:
         super().on_test_epoch_end()
-        self.on_validation_epoch_end()
+        self.on_validation_epoch_end(name="test")
 
     def save_images(self):
         while True:
