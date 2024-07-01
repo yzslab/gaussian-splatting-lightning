@@ -1,3 +1,4 @@
+import traceback
 from typing import Literal, Any, Tuple, Optional, Union, List, Dict
 
 import lightning
@@ -184,6 +185,9 @@ class Feature3DGSRenderer(Renderer):
     def is_type_feature_map(self, t: str) -> bool:
         return t == "features"
 
+    def setup_web_viewer_tabs(self, viewer, server, tabs):
+        self.viewer_options = ViewerOptions(self, viewer, server, tabs)
+
     # @staticmethod
     # def feature_visualize(image: torch.Tensor):
     #     from internal.utils.seganygs import SegAnyGSUtils
@@ -212,3 +216,60 @@ class Feature3DGSRenderer(Renderer):
         vis_feature = (vis_feature - feature_pca_postprocess_sub) / feature_pca_postprocess_div
         vis_feature = vis_feature.clamp(0.0, 1.0).float().reshape((fmap.shape[2], fmap.shape[3], 3)).permute(2, 0, 1)
         return vis_feature
+
+
+class ViewerOptions:
+    def __init__(self, renderer, viewer, server, tabs):
+        from viser import ViserServer
+
+        self.renderer = renderer
+        self.viewer = viewer
+        self.server: ViserServer = server
+        self.tabs = tabs
+
+        # self._setup()
+
+    def _setup(self):
+        with self.tabs.add_tab("Semantic"):
+            with self.server.gui.add_folder(
+                    label="Load Model",
+            ) as f:
+                type_dropdown = self.server.gui.add_dropdown(
+                    label="Type",
+                    options=["SAM"],
+                )
+                path_text = self.server.gui.add_text(
+                    label="Path",
+                    initial_value="sam_vit_h_4b8939.pth",
+                )
+                load_model_button = self.server.gui.add_button(
+                    label="Load",
+                )
+
+                @load_model_button.on_click
+                def _(_):
+                    load_model_button.disabled = True
+                    with self.server.atomic():
+                        try:
+                            self._load_sam_model(path_text.value)
+                            message = "Loaded successfully"
+                            model_loaded = True
+                        except Exception as e:
+                            model_loaded = False
+                            message = repr(e)
+                            traceback.print_exc()
+                    if model_loaded is True:
+                        f.remove()
+                    else:
+                        load_model_button.disabled = False
+                    self.viewer.show_message(message)
+
+    @property
+    def device(self):
+        return self.viewer.device
+
+    def _load_sam_model(self, path, arch="vit_h"):
+        assert path.endswith(".ckpt")
+        from segment_anything import SamPredictor, sam_model_registry
+        self._sam = sam_model_registry[arch](checkpoint=path).to(self.device)
+        self._predictor = SamPredictor(self._sam)
