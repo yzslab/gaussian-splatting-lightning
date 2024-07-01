@@ -1,2 +1,2 @@
 model:
-  renderer: internal.renderers.ds_splat_renderer.OpenRenderer
+  renderer: internal.renderers.ds_splat_renderer.DsRenderer

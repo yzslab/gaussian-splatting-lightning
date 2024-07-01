@@ -9,7 +9,7 @@ from typing import Optional
 from internal.utils.sh_utils import eval_sh
 
 
-class OpenRenderer(Renderer):
+class DsRenderer(Renderer):
     def __init__(
         self, precompute_cov_3d: bool = False, precompute_colors: bool = False
     ):

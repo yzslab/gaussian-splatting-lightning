@@ -78,6 +78,11 @@ pip install -r requirements.txt
   ```bash
   pip install git+https://github.com/NVlabs/tiny-cuda-nn/#subdirectory=bindings/torch
   ```
+* If you want to use ds-splat:
+
+    ```bash
+    pip install ds-splat==0.0.1
+    ```
 
 * If you want to use nerfstudio-project/gsplat
   * Vanilla version
