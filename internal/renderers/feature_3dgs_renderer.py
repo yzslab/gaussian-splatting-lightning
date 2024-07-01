@@ -43,6 +43,9 @@ class Feature3DGSRenderer(Renderer):
         self.feature_decoder_lr = feature_decoder_lr
         self.rasterize_batch = rasterize_batch
 
+        # update this when feature updated
+        self.pca_projected_color = None
+
     def setup(self, stage: str, *args: Any, **kwargs: Any) -> Any:
         n_actual_feature_dims = self.n_feature_dims
 
@@ -121,7 +124,7 @@ class Feature3DGSRenderer(Renderer):
                     opacities=opacities,
                     anti_aliased=False,
                 )
-        if "features" in render_types or "features_pca" in render_types:
+        if "features" in render_types or "features_vanilla_pca_2d" in render_types:
             rendered_features_list = []
             feature_bg_color = torch.zeros((self.rasterize_batch,), dtype=torch.float, device=self.features.device)
             for i in range(self.n_actual_feature_dims // self.rasterize_batch):
@@ -135,8 +138,28 @@ class Feature3DGSRenderer(Renderer):
                     anti_aliased=False,
                 ))
             outputs["features"] = self.feature_decoder(torch.concat(rendered_features_list, dim=0))
-        if "features_pca_2d" in render_types:
-            outputs["features_pca_2d"] = self.feature_visualize(outputs["features"])
+        if "features_vanilla_pca_2d" in render_types:
+            outputs["features_vanilla_pca_2d"] = self.feature_visualize(outputs["features"])
+        if "features_pca_3d" in render_types:
+            if getattr(self, "pca_projected_color", None) is None:
+                from internal.utils.seganygs import SegAnyGSUtils
+                normalized_features = torch.nn.functional.normalize(self.features, dim=-1)
+                self.pca_projected_color = SegAnyGSUtils.get_pca_projected_colors(
+                    semantic_features=normalized_features,
+                    pca_projection_matrix=SegAnyGSUtils.get_pca_projection_matrix(semantic_features=normalized_features),
+                )
+            features_pca_3d = GSPlatRenderer.rasterize_simplified(
+                project_results,
+                viewpoint_camera=viewpoint_camera,
+                colors=self.pca_projected_color,
+                bg_color=bg_color,
+                opacities=opacities,
+                anti_aliased=False,
+            )
+            view_shape = (3, -1)
+            features_pca_3d = features_pca_3d - torch.min(features_pca_3d.view(view_shape), dim=1, keepdim=True).values.unsqueeze(-1)
+            features_pca_3d = features_pca_3d / (torch.max(features_pca_3d.view(view_shape), dim=1, keepdim=True).values.unsqueeze(-1) + 1e-9)
+            outputs["features_pca_3d"] = features_pca_3d
 
         return outputs
 
@@ -153,8 +176,24 @@ class Feature3DGSRenderer(Renderer):
     def get_available_output_types(self) -> Dict:
         return {
             "rgb": "render",
-            "features_pca_2d": "features_pca_2d",
+            "features": "features",
+            "features_vanilla_pca_2d": "features_vanilla_pca_2d",
+            "features_pca_3d": "features_pca_3d",
         }
+
+    def is_type_feature_map(self, t: str) -> bool:
+        return t == "features"
+
+    # @staticmethod
+    # def feature_visualize(image: torch.Tensor):
+    #     from internal.utils.seganygs import SegAnyGSUtils
+    #
+    #     feature_map = image.permute(1, 2, 0).view((-1, image.shape[0]))
+    #     normalized_feature_map = torch.nn.functional.normalize(feature_map, dim=-1)
+    #     pca_projection_matrix = SegAnyGSUtils.get_pca_projection_matrix(normalized_feature_map)
+    #     pca_projected_colors = SegAnyGSUtils.get_pca_projected_colors(normalized_feature_map, pca_projection_matrix)
+    #     pca_feature_map = pca_projected_colors.view(*image.shape[1:], pca_projected_colors.shape[-1]).permute(2, 0, 1)
+    #     return pca_feature_map
 
     @staticmethod
     def feature_visualize(feature):
