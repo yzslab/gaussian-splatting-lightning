@@ -11,6 +11,19 @@ def get_task_list(n_processors: int, current_processor_id: int, all_tasks: list)
     return all_tasks[slice_start:slice_end]
 
 
+def configure_arg_parser(parser):
+    parser.add_argument("--total-tasks", type=int, default=1)
+    parser.add_argument("--current-task-id", type=int, default=1, help="Start from 1")
+
+
+def get_task_list_with_args(args, all_tasks: list):
+    return get_task_list(
+        n_processors=args.total_tasks,
+        current_processor_id=args.current_task_id,
+        all_tasks=all_tasks,
+    )
+
+
 if __name__ == "__main__":
     tasks = list(range(17))
     print(tasks)

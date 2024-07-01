@@ -53,7 +53,6 @@ class GaussianModel(nn.Module):
         self.xyz_gradient_accum = torch.empty(0)
         self.denom = torch.empty(0)
         self.optimizer = None
-        self.percent_dense = 0
         self.spatial_lr_scale = 0
 
         self.setup_functions()
@@ -156,21 +155,29 @@ class GaussianModel(nn.Module):
         if training_args.spatial_lr_scale > 0:
             self.spatial_lr_scale = training_args.spatial_lr_scale
 
-        self.percent_dense = training_args.percent_dense
-
         # some tensor may still in CPU, move to the same device as the _xyz
         self.extra_params_to(self._xyz.device, self._xyz.dtype)
 
         l = [
             {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
             {'params': [self._features_dc], 'lr': training_args.feature_lr, "name": "f_dc"},
-            # {'params': [self._features_rest], 'lr': training_args.feature_lr / 20.0, "name": "f_rest"},
             {'params': [self._features_rest], 'lr': training_args.feature_rest_lr_init, "name": "f_rest"},
             {'params': [self._opacity], 'lr': training_args.opacity_lr, "name": "opacity"},
             {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
             {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"},
             {'params': [self._features_extra], 'lr': training_args.feature_extra_lr_init, "name": "f_extra"},
         ]
+
+        # Tuple[attr_name, param_group_name]
+        self.param_names = {
+            ("_xyz", "xyz"),
+            ("_features_dc", "f_dc"),
+            ("_features_rest", "f_rest"),
+            ("_opacity", "opacity"),
+            ("_scaling", "scaling"),
+            ("_rotation", "rotation"),
+            ("_features_extra", "f_extra"),
+        }
 
         print("spatial_lr_scale={}, learning_rates={}".format(self.spatial_lr_scale, {i["name"]: i["lr"] for i in l}))
 
@@ -410,15 +417,36 @@ class GaussianModel(nn.Module):
 
         return optimizable_tensors
 
-    def densification_postfix(self, new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling,
-                              new_rotation, new_features_extra):
-        d = {"xyz": new_xyz,
-             "f_dc": new_features_dc,
-             "f_rest": new_features_rest,
-             "opacity": new_opacities,
-             "scaling": new_scaling,
-             "rotation": new_rotation,
-             "f_extra": new_features_extra, }
+    def densification_postfix_by_tensor_dict(self, tensor_dict):
+        return self.densification_postfix(
+            new_xyz=tensor_dict["_xyz"],
+            new_features_dc=tensor_dict["_features_dc"],
+            new_features_rest=tensor_dict["_features_rest"],
+            new_opacities=tensor_dict["_opacity"],
+            new_scaling=tensor_dict["_scaling"],
+            new_rotation=tensor_dict["_rotation"],
+            new_features_extra=tensor_dict["_features_extra"],
+        )
+
+    def densification_postfix(
+            self,
+            new_xyz,
+            new_features_dc,
+            new_features_rest,
+            new_opacities,
+            new_scaling,
+            new_rotation,
+            new_features_extra,
+    ):
+        d = {
+            "xyz": new_xyz,
+            "f_dc": new_features_dc,
+            "f_rest": new_features_rest,
+            "opacity": new_opacities,
+            "scaling": new_scaling,
+            "rotation": new_rotation,
+            "f_extra": new_features_extra,
+        }
 
         optimizable_tensors = self.cat_tensors_to_optimizer(d)
         self._xyz = optimizable_tensors["xyz"]
@@ -433,7 +461,7 @@ class GaussianModel(nn.Module):
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device=self._xyz.device)
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device=self._xyz.device)
 
-    def densify_and_split(self, grads, grad_threshold, scene_extent, N=2):
+    def densify_and_split(self, grads, grad_threshold, percent_dense, scene_extent, N=2):
         n_init_points = self.get_xyz.shape[0]
         # Extract points that satisfy the gradient condition
         padded_grad = torch.zeros((n_init_points), device=self._xyz.device)
@@ -441,7 +469,7 @@ class GaussianModel(nn.Module):
         selected_pts_mask = torch.where(padded_grad >= grad_threshold, True, False)
         selected_pts_mask = torch.logical_and(selected_pts_mask,
                                               torch.max(self.get_scaling,
-                                                        dim=1).values > self.percent_dense * scene_extent)
+                                                        dim=1).values > percent_dense * scene_extent)
 
         stds = self.get_scaling[selected_pts_mask].repeat(N, 1)
         means = torch.zeros((stds.size(0), 3), device=self._xyz.device)
@@ -461,12 +489,12 @@ class GaussianModel(nn.Module):
             (selected_pts_mask, torch.zeros(N * selected_pts_mask.sum(), device=self._xyz.device, dtype=bool)))
         self.prune_points(prune_filter)
 
-    def densify_and_clone(self, grads, grad_threshold, scene_extent):
+    def densify_and_clone(self, grads, grad_threshold, percent_dense, scene_extent):
         # Extract points that satisfy the gradient condition
         selected_pts_mask = torch.where(torch.norm(grads, dim=-1) >= grad_threshold, True, False)
         selected_pts_mask = torch.logical_and(selected_pts_mask,
                                               torch.max(self.get_scaling,
-                                                        dim=1).values <= self.percent_dense * scene_extent)
+                                                        dim=1).values <= percent_dense * scene_extent)
 
         new_xyz = self._xyz[selected_pts_mask]
         new_features_dc = self._features_dc[selected_pts_mask]
@@ -479,12 +507,12 @@ class GaussianModel(nn.Module):
         self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling,
                                    new_rotation, new_features_extra)
 
-    def densify_and_prune(self, max_grad, min_opacity, extent, prune_extent, max_screen_size):
+    def densify_and_prune(self, max_grad, min_opacity, percent_dense, extent, prune_extent, max_screen_size):
         grads = self.xyz_gradient_accum / self.denom
         grads[grads.isnan()] = 0.0
 
-        self.densify_and_clone(grads, max_grad, extent)
-        self.densify_and_split(grads, max_grad, extent)
+        self.densify_and_clone(grads, max_grad, percent_dense=percent_dense, scene_extent=extent)
+        self.densify_and_split(grads, max_grad, percent_dense=percent_dense, scene_extent=extent)
 
         prune_mask = (self.get_opacity < min_opacity).squeeze()
         if max_screen_size:

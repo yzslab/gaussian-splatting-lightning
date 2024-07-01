@@ -133,6 +133,9 @@ class ClientThread(threading.Thread):
                 # if we haven't received a trigger in a while, switch to high resolution
                 if self.state == "low":
                     self.state = "high"  # switch to high resolution mode
+                    # skip rendering if resolution not higher
+                    if self.viewer.max_res_when_moving.value >= self.viewer.max_res_when_static.value:
+                        continue
                 else:
                     continue  # skip if already in high resolution mode
 

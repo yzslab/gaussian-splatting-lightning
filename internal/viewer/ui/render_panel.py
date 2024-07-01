@@ -83,6 +83,7 @@ class CameraPath:
         self._viewer = viewer
         self._keyframes: Dict[int, Tuple[Keyframe, viser.CameraFrustumHandle]] = {}
         self._keyframe_counter: int = 0
+        self._max_t = 0
         self._spline: Optional[viser.SceneNodeHandle] = None
         self._camera_edit_panel: Optional[viser.Gui3dContainerHandle] = None
 
@@ -97,7 +98,10 @@ class CameraPath:
         # These parameters should be overridden externally.
         self.loop: bool = False
         self.smoothness: float = 0.5  # Tension / alpha term.
+        self.constant_speed: bool = True
         self.default_fov: float = 0.0
+        self.framerate: float = 0
+        self.duration: float = 0
 
     def set_keyframes_visible(self, visible: bool) -> None:
         self._keyframes_visible = visible
@@ -118,7 +122,7 @@ class CameraPath:
             fov=keyframe.override_fov_value if keyframe.override_fov_enabled else self.default_fov,
             aspect=keyframe.aspect,
             scale=0.1,
-            color=(127, 127, 127),
+            color=(255, 0, 255),
             wxyz=keyframe.wxyz,
             position=keyframe.position,
             visible=self._keyframes_visible,
@@ -274,6 +278,7 @@ class CameraPath:
                 keyframe[0].override_fov_value if keyframe[0].override_fov_enabled else self.default_fov
                 for keyframe in self._keyframes.values()
             ],
+            self._position_spline.grid,
             tcb=(self.smoothness, 0.0, 0.0),
             endconditions="closed" if self.loop else "natural",
         )
@@ -281,7 +286,7 @@ class CameraPath:
         assert self._orientation_spline is not None
         assert self._position_spline is not None
         assert self._fov_spline is not None
-        max_t = len(self._keyframes) if self.loop else len(self._keyframes) - 1
+        max_t = self._max_t
         t = max_t * normalized_t
         quat = self._orientation_spline.evaluate(t)
         assert isinstance(quat, splines.quaternion.UnitQuaternion)
@@ -315,6 +320,15 @@ class CameraPath:
             model_poses,
         )
 
+    def get_keyframe_times(self):
+        keyframe_positions = [keyframe[0].position for keyframe in self._keyframes.values()]
+        if self.loop is True:
+            keyframe_positions += keyframe_positions[:1]
+        keyframe_distances = onp.linalg.norm(onp.diff(keyframe_positions, axis=0), axis=1)
+        keyframe_times = onp.concatenate([[0], onp.cumsum(keyframe_distances)])
+
+        return keyframe_times
+
     def update_spline(self) -> None:
         keyframes = list(self._keyframes.values())
         if len(keyframes) <= 1:
@@ -323,17 +337,30 @@ class CameraPath:
                 self._spline = None
             return
 
+        num_frames = int(self.duration * self.framerate)
+        if num_frames <= 0:
+            return
+
+        keyframe_times = None
+        max_t = len(keyframes) if self.loop else len(keyframes) - 1
+        if self.constant_speed is True:
+            keyframe_times = self.get_keyframe_times()
+            max_t = keyframe_times[-1]
+        self._max_t = max_t
+
         # Update internal splines.
         self._orientation_spline = splines.quaternion.KochanekBartels(
             [
                 splines.quaternion.UnitQuaternion.from_unit_xyzw(onp.roll(keyframe[0].wxyz, shift=-1))
                 for keyframe in keyframes
             ],
+            keyframe_times,
             tcb=(self.smoothness, 0.0, 0.0),
             endconditions="closed" if self.loop else "natural",
         )
         self._position_spline = splines.KochanekBartels(
             [keyframe[0].position for keyframe in keyframes],
+            keyframe_times,
             tcb=(self.smoothness, 0.0, 0.0),
             endconditions="closed" if self.loop else "natural",
         )
@@ -376,9 +403,8 @@ class CameraPath:
             ))
 
         # Update visualized spline.
-        num_keyframes = len(keyframes) + 1 if self.loop else len(keyframes)
         points_array = onp.array(
-            [self._position_spline.evaluate(t) for t in onp.linspace(0, num_keyframes - 1, num_keyframes * 100)]
+            [self._position_spline.evaluate(t) for t in onp.linspace(0, self._max_t, num_frames)]
         )
         colors_array = onp.array([colorsys.hls_to_rgb(h, 0.5, 1.0) for h in onp.linspace(0.0, 1.0, len(points_array))])
         self._spline = self._server.add_point_cloud(
@@ -523,7 +549,7 @@ def populate_render_tab(
 
     smoothness = server.gui.add_slider(
         "Spline Tension",
-        min=0.0,
+        min=-1.0,
         max=1.0,
         initial_value=0.0,
         step=0.01,
@@ -533,6 +559,17 @@ def populate_render_tab(
     @smoothness.on_update
     def _(_) -> None:
         camera_path.smoothness = smoothness.value
+        camera_path.update_spline()
+
+    constant_speed_checkbox = server.gui.add_checkbox(
+        "Constant Speed",
+        initial_value=True,
+        hint="Maintain a constant speed for camera movement",
+    )
+
+    @constant_speed_checkbox.on_update
+    def _(_) -> None:
+        camera_path.constant_speed = constant_speed_checkbox.value
         camera_path.update_spline()
 
     move_checkbox = server.gui.add_checkbox(
@@ -578,8 +615,8 @@ def populate_render_tab(
 
     playback_folder = server.gui.add_folder("Playback")
     with playback_folder:
-        duration_number = server.gui.add_number("Duration (sec)", min=0.0, max=1e8, step=0.0001, initial_value=4.0)
-        framerate_number = server.gui.add_number("Frame rate (FPS)", min=0.1, max=240.0, step=1e-8, initial_value=30.0)
+        duration_number = server.gui.add_number("Duration (sec)", min=0.0, max=1e8, step=0.001, initial_value=4.0)
+        framerate_number = server.gui.add_number("Frame rate (FPS)", min=0.1, max=240.0, step=1e-2, initial_value=30.0)
         framerate_buttons = server.gui.add_button_group("", ("24", "30", "60"))
 
         @framerate_buttons.on_click
@@ -686,6 +723,10 @@ def populate_render_tab(
             old.remove()
         else:
             preview_frame_slider = old
+
+        camera_path.duration = duration_number.value
+        camera_path.framerate = framerate_number.value
+        camera_path.update_spline()
 
     # Play the camera trajectory when the play button is pressed.
     @play_button.on_click
@@ -898,7 +939,11 @@ def populate_render_tab(
                 viewer.show_message("Error occurred while parsing camera path file", event.client)
 
     camera_path = CameraPath(server, viewer)
+    camera_path.loop = loop.value
+    camera_path.smoothness = smoothness.value
     camera_path.default_fov = fov_degrees.value / 180.0 * onp.pi
+    camera_path.duration = duration_number.value
+    camera_path.framerate = framerate_number.value
 
     transform_controls: List[viser.SceneNodeHandle] = []
 

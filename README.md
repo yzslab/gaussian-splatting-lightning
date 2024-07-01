@@ -15,24 +15,26 @@
   * <a href="https://github.com/facebookresearch/NSVF?tab=readme-ov-file#dataset">NSVF (Synthetic only)</a>
   * <a href="https://city-super.github.io/matrixcity/">MatrixCity</a>
   * <a href="https://www.cs.ubc.ca/~kmyi/imw2020/data.html">PhotoTourism</a>
-* Dynamic object mask
-* Appearance variation support
-* Deformable Gaussians
-  * <a href="https://ingra14m.github.io/Deformable-Gaussians/">Deformable 3D Gaussians</a>
-  * <a href="https://guanjunwu.github.io/4dgs/index.html">4D Gaussian</a> (Viewer Only)
-* <a href="https://niujinshuchong.github.io/mip-splatting/">Mip-Splatting</a>
-* <a href="https://lightgaussian.github.io/">LightGaussian</a>
-* <a href="https://ty424.github.io/AbsGS.github.io/">AbsGS</a> / EfficientGS
-* <a href="https://github.com/hbb1/2d-gaussian-splatting">2D Gaussian Splatting</a>
-* <a href="https://jumpat.github.io/SAGA/">Segment Any 3D Gaussians (v2)</a>
-* Reconstruct a large scale scene with the partitioning strategy like <a href="https://vastgaussian.github.io/">VastGaussian</a> (see <a href="#211-reconstruct-a-large-scale-scene-with-the-partitioning-strategy-like-vastgaussian">2.11.</a> below)
-* Load a large number of images without OOM
-* Interactive web viewer
+* <a href="#4-web-viewer">Interactive web viewer</a>
   * Load multiple models
   * Model transform
   * Scene editor
   * Video camera path editor
 * Video renderer
+* Load a large number of images without OOM
+* Dynamic object mask
+* Derived algorithms
+  * Deformable Gaussians
+    * <a href="#25-deformable-3d-gaussians">Deformable 3D Gaussians (2.5.)</a>
+    * <a href="#43-load-model-trained-by-other-implementations">4D Gaussian (4.3.)</a> (Viewer Only)
+  * <a href="#26-mip-splatting">Mip-Splatting (2.6.)</a>
+  * <a href="#27-lightgaussian">LightGaussian (2.7.)</a>
+  * <a href="#28-absgs--efficientgs">AbsGS / EfficientGS (2.8.)</a>
+  * <a href="#29-2d-gaussian-splatting">2D Gaussian Splatting (2.9.)</a>
+  * <a href="#210-segment-any-3d-gaussians">Segment Any 3D Gaussians (2.10.)</a>
+  * Reconstruct a large scale scene with the partitioning strategy like <a href="https://vastgaussian.github.io/">VastGaussian</a> (see <a href="#211-reconstruct-a-large-scale-scene-with-the-partitioning-strategy-like-vastgaussian">2.11.</a> below)
+  * <a href="#212-appearance-model">New Appearance Model (2.12.)</a>: improve the quality when images have various appearances
+  * <a href="#213-3dgs-mcmc">3D Gaussian Splatting as Markov Chain Monte Carlo (2.13.)</a>
 ## 1. Installation
 ### 1.1. Clone repository
 
@@ -73,31 +75,22 @@ pip install -r requirements.txt
 ```
 
 ### 1.5. Install optional packages
-* If you want to train with appearance variation images
 
-  ```bash
-  pip install git+https://github.com/NVlabs/tiny-cuda-nn/#subdirectory=bindings/torch
-  ```
+* <a href="https://ffmpeg.org/">ffmpeg</a> is required if you want to render video: `sudo apt install -y ffmpeg`
+* If you want to use <a href="https://github.com/nerfstudio-project/gsplat">nerfstudio-project/gsplat</a>
+  
+    ```bash
+    pip install git+https://github.com/yzslab/gsplat.git
+    ```
+  
+  This command will install my modified version, which is required by LightGaussian and Mip-Splatting. If you do not need them, you can also install vanilla gsplat <a href="https://github.com/nerfstudio-project/gsplat/tree/v0.1.12">v0.1.12</a>.
+
 * If you want to use ds-splat:
 
     ```bash
     pip install ds-splat==0.0.1
     ```
-
-* If you want to use nerfstudio-project/gsplat
-  * Vanilla version
-
-    ```bash
-    pip install gsplat==0.1.11
-    ```
-
-  * If you need MipSplatting, LightGaussian
-
-    ```bash
-    pip install git+https://github.com/yzslab/gsplat.git
-    ```
-
-* If you need SegAnyGaussian
+* If you need <a href="#210-segment-any-3d-gaussians">SegAnyGaussian</a>
   * gsplat (see command above)
   * `pip install hdbscan scikit-learn==1.3.2 git+https://github.com/facebookresearch/segment-anything.git`
   * <a href="https://github.com/facebookresearch/pytorch3d/blob/main/INSTALL.md">facebookresearch/pytorch3d</a>
@@ -151,21 +144,6 @@ You can use `utils/image_downsample.py` to downsample your images, e.g. 4x downs
 ```bash
 --data.params.train_max_num_images_to_cache 1024
 ```
-* Enable appearance model to train on appearance variation images (colmap dataset only)
-```bash
-# 1. Generate appearance groups
-python generate_image_apperance_groups.py PATH_TO_DATASET \
-    --camera \
-    --name appearance_group_by_camera
-    
-# 2. Enable appearance model
-python main.py fit \
-    ... \
-    --model.renderer AppearanceMLPRenderer \
-    --data.params.colmap.appearance_groups appearance_group_by_camera \
-    ...
-```
-
 ### 2.3. Use <a href="https://github.com/nerfstudio-project/gsplat">nerfstudio-project/gsplat</a>
 Make sure that command `which nvcc` can produce output, or gsplat will be disabled automatically.
 ```bash
@@ -186,7 +164,7 @@ You will get improved PSNR and SSIM with more GPUs:
 python main.py fit \
     --config ... \
     --data.path DATASET_PATH \
-    --model.gaussian.optimization.densify_until_iter 15000 \
+    --model.density.densify_until_iter 15000 \
     --max_steps 15000
 # Then resume, and enable multi-GPU
 python main.py fit \
@@ -309,6 +287,11 @@ python main.py fit \
   <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/0b98a8ed-77d7-436d-b9f8-c5b51af5ba52"></video>
 
 ### 2.11. Reconstruct a large scale scene with the partitioning strategy like <a href="https://vastgaussian.github.io/">VastGaussian</a>
+| Baseline | Partitioning |
+| --- | --- |
+| ![image](https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/d3cb7d1a-f319-4315-bfa3-b56e3a98b19e) | ![image](https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/12f930ee-eb5d-41c6-9fb7-6d043122a91c) |
+| ![image](https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/cec1bb13-15c0-4c6b-8d33-83bc21f2160e) | ![image](https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/6bfd0130-29be-401f-ac9f-ce07dffe9fdd) |
+
 There is no single script to finish the whole pipeline. Please refer to below contents about how to reconstruct a large scale scene.
 * Partitioning
   * MatrixCity: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/matrix_city_aerial_split.ipynb">notebooks/matrix_city_aerial_split.ipynb</a>
@@ -320,6 +303,56 @@ There is no single script to finish the whole pipeline. Please refer to below co
   * Pruning: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/partition_light_gaussian_pruning.ipynb">notebooks/partition_light_gaussian_pruning.ipynb</a>
   * Finetune after pruning: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/utils/finetune_partition.py">utils/finetune_partition.py</a>
 * Merging: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/merge_partitions.ipynb">notebooks/merge_partitions.ipynb</a>
+
+
+### 2.12. Appearance Model
+With appearance model, the reconstruction quality can be improved when your images have various appearance, such as different exposure, white balance, contrast and even day and night.
+
+This model assign an extra feature vector $\boldsymbol{\ell}^{(g)}$ to each 3D Gaussian and an appearance embedding vector $\boldsymbol{\ell}^{(a)}$ to each appearance group. Both of them will be used as the input of a lightweight MLP to calculate the color.
+
+$$ \mathbf{C} = f \left ( \boldsymbol{\ell}^{(g)}, \boldsymbol{\ell}^{(a)} \right ) $$
+
+Please refer to <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/internal/renderers/gsplat_appearance_embedding_renderer.py">internal/renderers/gsplat_appearance_embedding_renderer.py</a> for more details.
+  
+| Baseline | New Model |
+| --- | --- |
+| <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/3a990247-b57b-4ba8-8e9d-7346a3bd41e3"></video> | <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/afeea69f-ed74-4c50-843a-e5d480eb66ef"></video> |
+|  | <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/ab89e4cf-80c0-4e99-88bc-3ec5ca047e19"></video> |
+* First generate appearance groups (Colmap or PhotoTourism dataset only)
+```bash
+python utils/generate_image_apperance_groups.py PATH_TO_DATASET_DIR \
+    --image \
+    --name appearance_image_dedicated  # the name will be used later
+```
+The images in a group will share a common appearance embedding. The command above will assign each image a group, which means that will not share any appearance embedding between images.
+
+* Then start training
+```bash
+python main.py fit \
+    --config configs/appearance_embedding_renderer/view_dependent.yaml \
+    --data.path PATH_TO_DATASET_DIR \
+    --data.params.colmap.appearance_groups appearance_image_dedicated  # value here should be the same as the one provided to `--name` above
+```
+If you are using PhotoTourism dataset, please replace `--data.params.colmap.` with `--data.params.phototourism.`, and specify the dataset type with `--data.type phototourism`.
+
+### 2.13. <a href="https://ubc-vision.github.io/3dgs-mcmc/">3DGS-MCMC</a>
+* Install `submodules/mcmc_relocation` first
+
+```bash
+pip install submodules/mcmc_relocation
+```
+
+* Then training
+
+```bash
+... fit \
+    --config configs/gsplat-mcmc.yaml \
+    --model.density.cap_max MAX_NUM_GAUSSIANS \
+    ...
+```
+`MAX_NUM_GAUSSIANS` is the maximum number of Gaussians that will be used.
+  
+Refer to <a href="https://github.com/ubc-vision/3dgs-mcmc">ubc-vision/3dgs-mcmc</a>, <a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/internal/density_controllers/mcmc_density_controller.py">internal/density_controllers/mcmc_density_controller.py</a> and <a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/internal/metrics/mcmc_metrics.py">internal/metrics/mcmc_metrics.py</a> for more details.
 
 ## 3. Evaluation
 
@@ -396,7 +429,7 @@ python viewer.py \
 * <a href="https://github.com/hbb1/2d-gaussian-splatting">hbb1/2d-gaussian-splatting</a>
 ```bash
 # Install `diff-surfel-rasterization` first
-pip install git+https://github.com/hbb1/diff-surfel-rasterization.git@3a9357f6a4b80ba319560be7965ed6a88ec951c6
+pip install git+https://github.com/hbb1/diff-surfel-rasterization.git@28c928a36ea19407cd9754d068bd9a9535216979
 # Then start viewer
 python viewer.py \
     2d-gaussian-splatting/outputs/Truck \
@@ -436,28 +469,3 @@ Besides: You can also click the 'Reset up direction' button. Then the viewer wil
 
 <b>A: </b> This is expected because of the overhead of the image transfer over network. You can get around 10fps in 1080P resolution, which is enough for you to view the reconstruction quality.
 
-# License
-This repository is licensed under MIT license. Except some thirdparty dependencies (e.g. files in `submodules` directory), files and codes copied from other repositories, which are separately licensed.
-```text
-MIT License
-
-Copyright (c) 2023 yzslab
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```

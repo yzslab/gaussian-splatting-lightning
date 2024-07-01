@@ -146,6 +146,7 @@ class SegAnyGSRenderer(Renderer):
 
     def _cluster_as_color(self, project_results, pc: GaussianModel, viewpoint_camera, bg_color, opacities):
         if self.cluster_color is None:
+            # TODO: fix cluster twice sometimes
             try:
                 self.viewer_options.print_cluster_start_message()
             except:

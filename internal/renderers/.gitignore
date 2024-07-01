@@ -16,3 +16,4 @@
 !ds_splat_renderer.py
 !vanilla_2dgs_renderer.py
 !seganygs_renderer.py
+!gsplat_appearance_embedding_renderer.py

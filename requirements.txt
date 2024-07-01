@@ -5,8 +5,9 @@ plyfile==0.8.1
 tensorboard
 wandb
 tqdm
-viser==0.2.1
+viser==0.2.3
 opencv-python==4.8.*
 matplotlib
+mediapy==1.2.2
 ./submodules/diff-gaussian-rasterization
 ./submodules/simple-knn

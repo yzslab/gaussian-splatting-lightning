@@ -53,9 +53,6 @@ class Renderer(torch.nn.Module):
     def setup(self, stage: str, *args: Any, **kwargs: Any) -> Any:
         pass
 
-    def get_metric_calculators(self) -> Tuple[Union[None, Callable], Union[None, Callable]]:
-        return None, None
-
     def training_setup(self, module: lightning.LightningModule) -> Tuple[
         Optional[Union[
             List[torch.optim.Optimizer],

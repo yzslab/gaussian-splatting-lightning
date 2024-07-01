@@ -28,3 +28,8 @@
 !ds_splat.yaml
 !vanilla_2dgs.yaml
 !segany_splatting.yaml
+!appearance_embedding_renderer/view_dependent.yaml
+!appearance_embedding_renderer/view_independent.yaml
+!random_background.yaml
+!mcmc.yaml
+!gsplat-mcmc.yaml
