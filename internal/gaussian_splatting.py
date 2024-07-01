@@ -44,6 +44,7 @@ class GaussianSplatting(LightningModule):
             density: DensityController = lazy_instance(VanillaDensityController),
             save_ply: bool = False,
             web_viewer: bool = False,
+            initialize_from: str = None,
     ) -> None:
         super().__init__()
         self.automatic_optimization = False
@@ -108,12 +109,44 @@ class GaussianSplatting(LightningModule):
     def _random_background_color(self):
         return torch.rand(3)
 
+    def _initialize_gaussians_from_trained_model(self):
+        assert self.hparams["gaussian"].extra_feature_dims == 0
+
+        from internal.utils.gaussian_model_loader import GaussianModelLoader
+        load_from = GaussianModelLoader.search_load_file(self.hparams["initialize_from"])
+        if load_from.endswith(".ply") is True:
+            self.gaussian_model.load_ply(load_from, self.device)
+        else:
+            # load from ckpt
+            ckpt = torch.load(load_from, map_location=self.device)
+            # update model hyper params
+            self.gaussian_model.extra_feature_dims = ckpt["hyper_parameters"]["gaussian"].extra_feature_dims
+            self.gaussian_model.max_sh_degree = ckpt["hyper_parameters"]["gaussian"].sh_degree
+            self.gaussian_model.active_sh_degree = self.gaussian_model.max_sh_degree
+            # initialize params
+            self.gaussian_model.initialize_by_gaussian_number(ckpt["state_dict"]["gaussian_model._xyz"].shape[0])
+            # load state_dict
+            state_dict = {}
+            for i in ckpt["state_dict"]:
+                if i.startswith("gaussian_model."):
+                    state_dict[i[i.find(".") + 1:]] = ckpt["state_dict"][i]
+            self.gaussian_model.load_state_dict(state_dict)
+
+        # update hyper params
+        self.hparams["gaussian"].extra_feature_dims = self.gaussian_model.extra_feature_dims
+        self.hparams["gaussian"].sh_degree = self.gaussian_model.max_sh_degree
+
+        print(f"initialize from {load_from}: sh_degree={self.gaussian_model.max_sh_degree}, extra_feature_dims={self.gaussian_model.extra_feature_dims}")
+
     def setup(self, stage: str):
         if stage == "fit":
-            self.gaussian_model.create_from_pcd(
-                self.trainer.datamodule.point_cloud,
-                deivce=self.device,
-            )
+            if self.hparams["initialize_from"] is None:
+                self.gaussian_model.create_from_pcd(
+                    self.trainer.datamodule.point_cloud,
+                    deivce=self.device,
+                )
+            else:
+                self._initialize_gaussians_from_trained_model()
 
         self.renderer.setup(stage=stage, lightning_module=self)
         self.metric.setup(stage=stage, pl_module=self)

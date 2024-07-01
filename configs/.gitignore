@@ -32,3 +32,5 @@
 !random_background.yaml
 !mcmc.yaml
 !gsplat-mcmc.yaml
+!feature_3dgs/sam.yaml
+!feature_3dgs/sam-speedup.yaml

@@ -318,7 +318,7 @@ class GaussianModel(nn.Module):
         # for idx, attr_name in enumerate(rot_names):
         #     rots[:, idx] = np.asarray(plydata.elements[0][attr_name])
 
-        gaussians = GaussianParameterUtils.load_from_ply(path, sh_degrees=self.max_sh_degree)
+        gaussians = GaussianParameterUtils.load_from_ply(path, sh_degrees=-1)
         xyz = gaussians.xyz
         features_dc = gaussians.features_dc
         features_rest = gaussians.features_rest
@@ -339,7 +339,8 @@ class GaussianModel(nn.Module):
         self._rotation = nn.Parameter(torch.tensor(rots, dtype=torch.float, device=device).requires_grad_(True))
         self._features_extra = nn.Parameter(torch.tensor(features_extra, dtype=torch.float, device=device).requires_grad_(True))
 
-        self.active_sh_degree = self.max_sh_degree
+        self.max_sh_degree = gaussians.sh_degrees
+        self.active_sh_degree = gaussians.sh_degrees
 
     def replace_tensor_to_optimizer(self, tensor, name):
         optimizable_tensors = {}

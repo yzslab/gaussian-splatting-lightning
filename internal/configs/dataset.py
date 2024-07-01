@@ -107,6 +107,11 @@ class SegAnyColmapParams(ColmapParams):
 
 
 @dataclass
+class Feature3DGSColmapParams(ColmapParams):
+    feature_dir: str = "semantic/sam_features"
+
+
+@dataclass
 class DatasetParams:
     """
         Args:
@@ -128,6 +133,8 @@ class DatasetParams:
     phototourism: PhotoTourismParams
 
     segany_colmap: SegAnyColmapParams
+
+    feature_3dgs_colmap: Feature3DGSColmapParams
 
     image_scale_factor: float = 1.  # TODO
 

@@ -1,4 +1,4 @@
-#from gsplat import rasterization
+# from gsplat import rasterization
 from gsplat import project_gaussians
 from gsplat.rasterize import rasterize_gaussians
 from gsplat.sh import spherical_harmonics
@@ -272,6 +272,30 @@ class GSPlatRenderer(Renderer):
             block_width=block_size,
             **({} if extra_projection_kwargs is None else extra_projection_kwargs),
         )
+
+    @staticmethod
+    def rasterize_simplified(project_results, viewpoint_camera, colors, bg_color, opacities, anti_aliased: bool = True):
+        xys, depths, radii, conics, comp, num_tiles_hit, cov3d = project_results
+        img_height = int(viewpoint_camera.height.item())
+        img_width = int(viewpoint_camera.width.item())
+
+        if anti_aliased is True:
+            opacities = opacities * comp[:, None]
+
+        return rasterize_gaussians(  # type: ignore
+            xys,
+            depths,
+            radii,
+            conics,
+            num_tiles_hit,  # type: ignore
+            colors,
+            opacities,
+            img_height=img_height,
+            img_width=img_width,
+            block_width=DEFAULT_BLOCK_SIZE,
+            background=bg_color,
+            return_alpha=False,
+        ).permute(2, 0, 1)  # type: ignore
 
     @staticmethod
     def rasterize(

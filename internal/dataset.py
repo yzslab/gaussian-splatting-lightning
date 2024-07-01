@@ -24,6 +24,7 @@ from internal.dataparsers.nerfies_dataparser import NerfiesDataparser
 from internal.dataparsers.matrix_city_dataparser import MatrixCityDataParser
 from internal.dataparsers.phototourism_dataparser import PhotoTourismDataParser
 from internal.dataparsers.segany_colmap_dataparser import SegAnyColmapDataParser
+from internal.dataparsers.feature_3dgs_dataparser import Feature3DGSColmapDataParser
 from internal.utils.graphics_utils import store_ply, BasicPointCloud
 
 from tqdm import tqdm
@@ -250,7 +251,7 @@ class DataModule(LightningDataModule):
             self,
             path: str,
             params: DatasetParams,
-            type: Literal["colmap", "blender", "nsvf", "nerfies", "matrixcity", "phototourism", "segany_colmap"] = None,
+            type: Literal["colmap", "blender", "nsvf", "nerfies", "matrixcity", "phototourism", "segany_colmap", "feature_3dgs"] = None,
             distributed: bool = False,
             undistort_image: bool = False,
             val_on_train: bool = False,
@@ -308,6 +309,8 @@ class DataModule(LightningDataModule):
             dataparser = PhotoTourismDataParser(params=self.hparams["params"].phototourism, **dataparser_params)
         elif self.hparams["type"] == "segany_colmap":
             dataparser = SegAnyColmapDataParser(params=self.hparams["params"].segany_colmap, **dataparser_params)
+        elif self.hparams["type"] == "feature_3dgs":
+            dataparser = Feature3DGSColmapDataParser(params=self.hparams["params"].feature_3dgs_colmap, **dataparser_params)
         else:
             raise ValueError("unsupported dataset type {}".format(self.hparams["type"]))
 
