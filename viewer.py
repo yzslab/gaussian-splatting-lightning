@@ -43,6 +43,7 @@ class Viewer:
             no_edit_panel: bool = False,
             no_render_panel: bool = False,
             gsplat: bool = False,
+            dssplat: bool = False,
             seganygs: str = None,
             vanilla_seganygs: bool = False,
             vanilla_mip: bool = False,
@@ -65,6 +66,7 @@ class Viewer:
         self.default_camera_look_at = default_camera_look_at
 
         self.use_gsplat = gsplat
+        self.use_dssplat = dssplat
 
         load_from = self._search_load_file(model_paths[0])
 
@@ -424,6 +426,10 @@ class Viewer:
                 from internal.renderers.gsplat_renderer import GSPlatRenderer
                 print("Use GSPlat renderer for ply file")
                 renderer = GSPlatRenderer()
+            elif self.use_dssplat is True:
+                from internal.renderers.ds_splat_renderer import OpenRenderer
+                print("Use ds_splat renderer for ply file")
+                renderer = OpenRenderer()
         else:
             raise ValueError("unsupported file {}".format(load_from))
 
@@ -745,6 +751,8 @@ if __name__ == "__main__":
     parser.add_argument("--no_render_panel", action="store_true", default=False)
     parser.add_argument("--gsplat", action="store_true", default=False,
                         help="Use GSPlat renderer for ply file")
+    parser.add_argument("--dssplat", action="store_true", default=False,
+                        help="Use ds_splat renderer for ply file")
     parser.add_argument("--seganygs", type=str, default=None,
                         help="Path to a SegAnyGaussian model output directory or checkpoint file")
     parser.add_argument("--vanilla_seganygs", action="store_true", default=False)
