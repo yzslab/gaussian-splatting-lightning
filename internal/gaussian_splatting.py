@@ -283,7 +283,7 @@ class GaussianSplatting(LightningModule):
         super().on_train_start()
 
         if self.hparams["web_viewer"] is True and self.trainer.global_rank == 0:
-            if self.trainer.datamodule.hparams["type"] in ["blender", "nsvf", "matrixcity"]:
+            if self.trainer.datamodule.hparams["parser"].__class__.__name__.lower() in ["blender", "nsvf", "matrixcity"]:
                 up = torch.tensor([0., 0., 1.])
             else:
                 c2w = self.trainer.datamodule.dataparser_outputs.train_set.cameras.world_to_camera[:, :3, :3]
