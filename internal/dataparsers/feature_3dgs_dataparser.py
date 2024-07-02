@@ -1,13 +1,21 @@
 import os
 import torch
 
-from . import DataParserOutputs
-from .colmap_dataparser import ColmapDataParser
-from ..configs.dataset import Feature3DGSColmapParams
+from dataclasses import dataclass
+from . import DataParserOutputs, DataParser
+from .colmap_dataparser import Colmap, ColmapDataParser
+
+
+@dataclass
+class Feature3DGSColmap(Colmap):
+    feature_dir: str = "semantic/sam_features"
+
+    def instantiate(self, path: str, output_path: str, global_rank: int) -> DataParser:
+        return Feature3DGSColmapDataParser(path=path, output_path=output_path, global_rank=global_rank, params=self)
 
 
 class Feature3DGSColmapDataParser(ColmapDataParser):
-    def __init__(self, path: str, output_path: str, global_rank: int, params: Feature3DGSColmapParams) -> None:
+    def __init__(self, path: str, output_path: str, global_rank: int, params: Feature3DGSColmap) -> None:
         super().__init__(path, output_path, global_rank, params)
 
     def get_outputs(self) -> DataParserOutputs:

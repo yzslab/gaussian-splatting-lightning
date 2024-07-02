@@ -5,6 +5,7 @@ import numpy as np
 import torch
 
 from internal.cameras.cameras import Cameras
+from internal.configs.instantiate_config import InstantiatableConfig
 
 
 @dataclass
@@ -88,4 +89,10 @@ class DataParser:
         :return: [training set, validation set, point cloud]
         """
 
+        pass
+
+
+@dataclass
+class DataParserConfig(InstantiatableConfig):
+    def instantiate(self, path: str, output_path: str, global_rank: int) -> DataParser:
         pass

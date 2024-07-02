@@ -415,7 +415,14 @@ class Viewer:
         if load_from.endswith(".ckpt") is True:
             model, renderer, checkpoint = self._initialize_models_from_checkpoint(load_from)
             training_output_base_dir = os.path.dirname(os.path.dirname(load_from))
-            dataset_type = checkpoint["datamodule_hyper_parameters"]["type"]
+
+            # get dataset type
+            dataset_type = checkpoint["datamodule_hyper_parameters"].get("type", "")  # previous version
+            # new version
+            if dataset_type is None:
+                dataset_type = checkpoint["datamodule_hyper_parameters"].get("parser", "")
+            dataset_type = dataset_type.lower()
+
             self.sh_degree = model.max_sh_degree
         elif load_from.endswith(".ply") is True:
             model, renderer = self._initialize_models_from_point_cloud(load_from)

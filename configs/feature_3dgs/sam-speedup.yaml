@@ -7,4 +7,4 @@ model:
   metric: internal.metrics.feature_3dgs_metrics.Feature3DGSMetrics
   density: internal.density_controllers.static_density_controller.StaticDensityController
 data:
-  type: feature_3dgs
+  parser: Feature3DGSColmap

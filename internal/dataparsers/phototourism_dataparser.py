@@ -2,12 +2,19 @@ import os
 import torch
 import csv
 from typing import Tuple
-from internal.configs.dataset import PhotoTourismParams
-from internal.dataparsers.colmap_dataparser import ColmapDataParser
+from dataclasses import dataclass
+from internal.dataparsers import DataParser
+from internal.dataparsers.colmap_dataparser import Colmap, ColmapDataParser
+
+
+@dataclass
+class PhotoTourism(Colmap):
+    def instantiate(self, path: str, output_path: str, global_rank: int) -> DataParser:
+        return PhotoTourismDataParser(path, output_path, global_rank, self)
 
 
 class PhotoTourismDataParser(ColmapDataParser):
-    def __init__(self, path: str, output_path: str, global_rank: int, params: PhotoTourismParams) -> None:
+    def __init__(self, path: str, output_path: str, global_rank: int, params: PhotoTourism) -> None:
         super().__init__(path, output_path, global_rank, params)
 
         self.tsv_file_path = None

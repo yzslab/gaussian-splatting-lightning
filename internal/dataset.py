@@ -15,16 +15,7 @@ from lightning import LightningDataModule
 from lightning.pytorch.utilities.types import EVAL_DATALOADERS, TRAIN_DATALOADERS
 
 from internal.cameras.cameras import CameraType, Camera
-from internal.dataparsers import ImageSet
-from internal.configs.dataset import DatasetParams
-from internal.dataparsers.colmap_dataparser import ColmapDataParser
-from internal.dataparsers.blender_dataparser import BlenderDataParser
-from internal.dataparsers.nsvf_dataparser import NSVFDataParser
-from internal.dataparsers.nerfies_dataparser import NerfiesDataparser
-from internal.dataparsers.matrix_city_dataparser import MatrixCityDataParser
-from internal.dataparsers.phototourism_dataparser import PhotoTourismDataParser
-from internal.dataparsers.segany_colmap_dataparser import SegAnyColmapDataParser
-from internal.dataparsers.feature_3dgs_dataparser import Feature3DGSColmapDataParser
+from internal.dataparsers import DataParserConfig, ImageSet
 from internal.utils.graphics_utils import store_ply, BasicPointCloud
 
 from tqdm import tqdm
@@ -250,11 +241,18 @@ class DataModule(LightningDataModule):
     def __init__(
             self,
             path: str,
-            params: DatasetParams,
-            type: Literal["colmap", "blender", "nsvf", "nerfies", "matrixcity", "phototourism", "segany_colmap", "feature_3dgs"] = None,
+            parser: DataParserConfig = None,
             distributed: bool = False,
             undistort_image: bool = False,
             val_on_train: bool = False,
+            image_scale_factor: float = 1.,  # TODO
+            train_max_num_images_to_cache: int = -1,
+            val_max_num_images_to_cache: int = 0,
+            test_max_num_images_to_cache: int = 0,
+            num_workers: int = 8,
+            add_background_sphere: bool = False,
+            background_sphere_distance: float = 2.2,
+            background_sphere_points: int = 204_800,
     ) -> None:
         r"""Load dataset
 
@@ -265,7 +263,31 @@ class DataModule(LightningDataModule):
         """
 
         super().__init__()
+
+        assert image_scale_factor == 1., f"specifying 'image_scale_factor' has not been implemented yet"
+
+        if parser is None:
+            parser = self.detect_dataset_type(path)
+            print(f"Detected dataset type: {parser.__class__.__name__}")
+
         self.save_hyperparameters()
+
+    @staticmethod
+    def detect_dataset_type(path):
+        if os.path.isdir(os.path.join(path, "sparse")) is True:
+            from internal.dataparsers.colmap_dataparser import Colmap
+            return Colmap()
+        elif os.path.exists(os.path.join(path, "transforms_train.json")):
+            from internal.dataparsers.blender_dataparser import Blender
+            return Blender()
+        elif os.path.exists(os.path.join(path, "intrinsics.txt")) and os.path.exists(os.path.join(path, "bbox.txt")):
+            from internal.dataparsers.nsvf_dataparser import NSVF
+            return NSVF()
+        elif os.path.exists(os.path.join(path, "dataset.json")):
+            from internal.dataparsers.nerfies_dataparser import Nerfies
+            return Nerfies()
+        else:
+            raise ValueError("Can not detect dataset type, please specify via '--data.parser'")
 
     def setup(self, stage: str) -> None:
         super().setup(stage)
@@ -275,51 +297,14 @@ class DataModule(LightningDataModule):
         # store global rank, will be used as the seed of the CacheDataLoader
         self.global_rank = self.trainer.global_rank
 
-        # detect dataset type
-        if self.hparams["type"] is None:
-            if os.path.isdir(os.path.join(self.hparams["path"], "sparse")) is True:
-                self.hparams["type"] = "colmap"
-            elif os.path.exists(os.path.join(self.hparams["path"], "transforms_train.json")):
-                self.hparams["type"] = "blender"
-            elif os.path.exists(os.path.join(self.hparams["path"], "intrinsics.txt")) and os.path.exists(os.path.join(self.hparams["path"], "bbox.txt")):
-                self.hparams["type"] = "nsvf"
-            elif os.path.exists(os.path.join(self.hparams["path"], "dataset.json")):
-                self.hparams["type"] = "nerfies"
-            else:
-                raise ValueError("Can not detect dataset type automatically")
-
-        # build dataparser params
-        dataparser_params = {
-            "path": self.hparams["path"],
-            "output_path": output_path,
-            "global_rank": self.global_rank,
-        }
-
-        if self.hparams["type"] == "colmap":
-            dataparser = ColmapDataParser(params=self.hparams["params"].colmap, **dataparser_params)
-        elif self.hparams["type"] == "blender":
-            dataparser = BlenderDataParser(params=self.hparams["params"].blender, **dataparser_params)
-        elif self.hparams["type"] == "nsvf":
-            dataparser = NSVFDataParser(params=self.hparams["params"].nsvf, **dataparser_params)
-        elif self.hparams["type"] == "nerfies":
-            dataparser = NerfiesDataparser(params=self.hparams["params"].nerfies, **dataparser_params)
-        elif self.hparams["type"] == "matrixcity":
-            dataparser = MatrixCityDataParser(params=self.hparams["params"].matrix_city, **dataparser_params)
-        elif self.hparams["type"] == "phototourism":
-            dataparser = PhotoTourismDataParser(params=self.hparams["params"].phototourism, **dataparser_params)
-        elif self.hparams["type"] == "segany_colmap":
-            dataparser = SegAnyColmapDataParser(params=self.hparams["params"].segany_colmap, **dataparser_params)
-        elif self.hparams["type"] == "feature_3dgs":
-            dataparser = Feature3DGSColmapDataParser(params=self.hparams["params"].feature_3dgs_colmap, **dataparser_params)
-        else:
-            raise ValueError("unsupported dataset type {}".format(self.hparams["type"]))
+        dataparser = self.hparams["parser"].instantiate(path=self.hparams["path"], output_path=output_path, global_rank=self.global_rank)
 
         # load dataset
         self.dataparser_outputs = dataparser.get_outputs()
 
         self.prune_extent = self.dataparser_outputs.camera_extent
         # add background sphere: https://github.com/graphdeco-inria/gaussian-splatting/issues/300#issuecomment-1756073909
-        if self.hparams["params"].add_background_sphere is True:
+        if self.hparams["add_background_sphere"] is True:
             # find the scene center and size
             point_max_coordinate = np.max(self.dataparser_outputs.point_cloud.xyz, axis=0)
             point_min_coordinate = np.min(self.dataparser_outputs.point_cloud.xyz, axis=0)
@@ -327,7 +312,7 @@ class DataModule(LightningDataModule):
             scene_size = np.max(point_max_coordinate - point_min_coordinate)
             scene_radius = scene_size / 2.
             # build unit sphere points
-            n_points = self.hparams["params"].background_sphere_points
+            n_points = self.hparams["background_sphere_points"]
             samples = np.arange(n_points)
             y = 1 - (samples / float(n_points - 1)) * 2  # y goes from 1 to -1
             radius = np.sqrt(1 - y * y)  # radius at y
@@ -337,14 +322,14 @@ class DataModule(LightningDataModule):
             z = np.sin(theta) * radius
             unit_sphere_points = np.concatenate([x[:, None], y[:, None], z[:, None]], axis=1)
             # build background sphere
-            background_sphere_point_xyz = (unit_sphere_points * scene_radius * self.hparams["params"].background_sphere_distance) + scene_center
+            background_sphere_point_xyz = (unit_sphere_points * scene_radius * self.hparams["background_sphere_distance"]) + scene_center
             background_sphere_point_rgb = np.asarray(np.random.random(background_sphere_point_xyz.shape) * 255, dtype=np.uint8)
             # add background sphere to scene
             self.dataparser_outputs.point_cloud.xyz = np.concatenate([self.dataparser_outputs.point_cloud.xyz, background_sphere_point_xyz], axis=0)
             self.dataparser_outputs.point_cloud.rgb = np.concatenate([self.dataparser_outputs.point_cloud.rgb, background_sphere_point_rgb], axis=0)
             # increase prune extent
             # TODO: resize scene_extent without changing lr
-            self.prune_extent = scene_radius * self.hparams["params"].background_sphere_distance * 1.0001
+            self.prune_extent = scene_radius * self.hparams["background_sphere_distance"] * 1.0001
 
             print("added {} background sphere points, rescale prune extent from {} to {}".format(n_points, self.dataparser_outputs.camera_extent, self.prune_extent))
 
@@ -407,10 +392,10 @@ class DataModule(LightningDataModule):
     def train_dataloader(self) -> TRAIN_DATALOADERS:
         return CacheDataLoader(
             Dataset(self.dataparser_outputs.train_set, undistort_image=self.hparams["undistort_image"]),
-            max_cache_num=self.hparams["params"].train_max_num_images_to_cache,
+            max_cache_num=self.hparams["train_max_num_images_to_cache"],
             shuffle=True,
             seed=torch.initial_seed() + self.global_rank,  # seed with global rank
-            num_workers=self.hparams["params"].num_workers,
+            num_workers=self.hparams["num_workers"],
             distributed=self.hparams["distributed"],
             world_size=self.trainer.world_size,
             global_rank=self.trainer.global_rank,
@@ -423,9 +408,9 @@ class DataModule(LightningDataModule):
             image_set = self.dataparser_outputs.test_set
         return CacheDataLoader(
             Dataset(image_set, undistort_image=self.hparams["undistort_image"]),
-            max_cache_num=self.hparams["params"].test_max_num_images_to_cache,
+            max_cache_num=self.hparams["test_max_num_images_to_cache"],
             shuffle=False,
-            num_workers=self.hparams["params"].num_workers,
+            num_workers=self.hparams["num_workers"],
         )
 
     def val_dataloader(self) -> EVAL_DATALOADERS:
@@ -435,7 +420,7 @@ class DataModule(LightningDataModule):
             image_set = self.dataparser_outputs.val_set
         return CacheDataLoader(
             Dataset(image_set, undistort_image=self.hparams["undistort_image"]),
-            max_cache_num=self.hparams["params"].val_max_num_images_to_cache,
+            max_cache_num=self.hparams["val_max_num_images_to_cache"],
             shuffle=False,
-            num_workers=self.hparams["params"].num_workers,
+            num_workers=self.hparams["num_workers"],
         )

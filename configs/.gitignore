@@ -4,7 +4,7 @@
 !ddp_not_find_unused.yaml
 !blender.yaml
 !appearance.yaml
-!experiment.yaml
+!colmap_exp.yaml
 !larger_dataset.yaml
 !reorient.yaml
 !background_sphere.yaml

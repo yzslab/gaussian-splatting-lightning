@@ -1,23 +1,67 @@
-import os.path
+import os
 import math
 import json
-import time
-from typing import Tuple
+from dataclasses import dataclass
+from typing import Optional, Literal, Tuple
 
 import torch
 import numpy as np
 
-from plyfile import PlyData, PlyElement
-
 import internal.utils.colmap as colmap_utils
 from internal.cameras.cameras import Cameras
-from internal.dataparsers.dataparser import DataParser, ImageSet, PointCloud, DataParserOutputs
-from internal.configs.dataset import ColmapParams
-from internal.utils.graphics_utils import getNerfppNorm
+from internal.dataparsers.dataparser import DataParserConfig, DataParser, ImageSet, PointCloud, DataParserOutputs
+
+
+@dataclass
+class Colmap(DataParserConfig):
+    """
+        Args:
+            image_dir: the path to the directory that store images
+
+            mask_dir:
+                the path to the directory store mask files;
+                the mask file of the image `a/image_name.jpg` is `a/image_name.jpg.png`;
+                single channel, 0 is the masked pixel;
+
+            split_mode: reconstruction: train model use all images; experiment: withholding a test set for evaluation
+
+            eval_step: -1: use all images as training set; > 1: pick an image for every eval_step
+
+            reorient: whether reorient the scene
+
+            appearance_groups: filename without extension
+    """
+
+    image_dir: str = None
+
+    mask_dir: str = None
+
+    split_mode: Literal["reconstruction", "experiment"] = "reconstruction"
+
+    eval_image_select_mode: Literal["step", "ratio"] = "step"
+
+    eval_step: int = 8
+
+    eval_ratio: float = 0.01
+
+    scene_scale: float = 1.
+
+    reorient: bool = False  # TODO
+
+    appearance_groups: Optional[str] = None
+
+    image_list: Optional[str] = None
+
+    down_sample_factor: int = 1
+
+    down_sample_rounding_model: Literal["floor", "round", "ceil"] = "round"
+
+    def instantiate(self, path: str, output_path: str, global_rank: int) -> DataParser:
+        return ColmapDataParser(path, output_path, global_rank, self)
 
 
 class ColmapDataParser(DataParser):
-    def __init__(self, path: str, output_path: str, global_rank: int, params: ColmapParams) -> None:
+    def __init__(self, path: str, output_path: str, global_rank: int, params: Colmap) -> None:
         super().__init__()
         self.path = path
         self.output_path = output_path

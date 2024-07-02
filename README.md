@@ -97,7 +97,7 @@ python main.py fit \
     --data.path DATASET_PATH \
     -n EXPERIMENT_NAME
 ```
-It can detect some dataset type automatically. You can also specify type with option `--data.type`. Possible values are: `colmap`, `blender`, `nsvf`, `nerfies`, `matrixcity`, `phototourism`.
+It can detect some dataset type automatically. You can also specify type with option `--data.parser`. Possible values are: `Colmap`, `Blender`, `NSVF`, `Nerfies`, `MatrixCity`, `PhotoTourism`, `SegAnyColmap`, `Feature3DGSColmap`.
 
 <b>[NOTE]</b> By default, only checkpoint files will be produced on training end. If you need ply file in vanilla 3DGS's format (can be loaded by SIBR_viewer or some WebGL/GPU based viewer):
   * [Option 1]: Convert checkpoint file to ply: `python utils/ckpt2ply.py TRAINING_OUTPUT_PATH`, e.g.:
@@ -125,18 +125,26 @@ python main.py fit \
 #   * zero(black) represent the masked pixel (won't be used to supervise learning)
 #   * the filename of the mask file must be image filename + '.png', 
 #     e.g.: the mask of '001.jpg' is '001.jpg.png'
---data.params.colmap.mask_dir MASK_DIR_PATH
+... fit \
+  --data.parser Colmap \
+  --data.parser.mask_dir MASK_DIR_PATH \
+  ...
 ```
 * Use downsampled images (colmap dataset only)
 
 You can use `utils/image_downsample.py` to downsample your images, e.g. 4x downsample: `python utils/image_downsample.py PATH_TO_DIRECTORY_THAT_STORE_IMAGES --factor 4`
 ```bash
 # it will load images from `images_4` directory
---data.params.colmap.down_sample_factor 4
+... fit \
+  --data.parser Colmap \
+  --data.parser.down_sample_factor 4 \
+  ...
 ```
 * Load large dataset without OOM
 ```bash
---data.params.train_max_num_images_to_cache 1024
+... fit \
+  --data.train_max_num_images_to_cache 1024 \
+  ...
 ```
 ### 2.3. Use <a href="https://github.com/nerfstudio-project/gsplat">nerfstudio-project/gsplat</a>
 Make sure that command `which nvcc` can produce output, or gsplat will be disabled automatically.
@@ -325,9 +333,10 @@ The images in a group will share a common appearance embedding. The command abov
 python main.py fit \
     --config configs/appearance_embedding_renderer/view_dependent.yaml \
     --data.path PATH_TO_DATASET_DIR \
-    --data.params.colmap.appearance_groups appearance_image_dedicated  # value here should be the same as the one provided to `--name` above
+    --data.parser Colmap \
+    --data.parser.appearance_groups appearance_image_dedicated  # value here should be the same as the one provided to `--name` above
 ```
-If you are using PhotoTourism dataset, please replace `--data.params.colmap.` with `--data.params.phototourism.`, and specify the dataset type with `--data.type phototourism`.
+If you are using PhotoTourism dataset, please replace `--data.parser Colmap` with `--data.parser PhotoTourism`.
 
 ### 2.13. <a href="https://ubc-vision.github.io/3dgs-mcmc/">3DGS-MCMC</a>
 * Install `submodules/mcmc_relocation` first

@@ -1,13 +1,23 @@
 import os
 import torch
 
-from . import DataParserOutputs
-from .colmap_dataparser import ColmapDataParser
-from ..configs.dataset import SegAnyColmapParams
+from dataclasses import dataclass
+from . import DataParserOutputs, DataParser
+from .colmap_dataparser import Colmap, ColmapDataParser
+
+
+@dataclass
+class SegAnyColmap(Colmap):
+    semantic_mask_dir: str = "semantic/masks"
+
+    semantic_scale_dir: str = "semantic/scales"
+
+    def instantiate(self, path: str, output_path: str, global_rank: int) -> DataParser:
+        return SegAnyColmapDataParser(path, output_path, global_rank, self)
 
 
 class SegAnyColmapDataParser(ColmapDataParser):
-    def __init__(self, path: str, output_path: str, global_rank: int, params: SegAnyColmapParams) -> None:
+    def __init__(self, path: str, output_path: str, global_rank: int, params: SegAnyColmap) -> None:
         super().__init__(path, output_path, global_rank, params)
 
     def get_outputs(self) -> DataParserOutputs:

@@ -1,20 +1,29 @@
-import time
-
 import numpy as np
 import json
-import os.path
+import os
 
 import torch
-
-from .dataparser import ImageSet, PointCloud, DataParser, DataParserOutputs
-from internal.configs.dataset import BlenderParams
+from typing import Literal
+from dataclasses import dataclass
+from .dataparser import ImageSet, PointCloud, DataParserConfig, DataParser, DataParserOutputs
 from internal.cameras.cameras import Cameras
-from internal.utils.graphics_utils import fov2focal, getNerfppNorm
-from internal.utils.sh_utils import SH2RGB
+from internal.utils.graphics_utils import fov2focal
+
+
+@dataclass
+class Blender(DataParserConfig):
+    white_background: bool = False
+
+    random_point_color: bool = False
+
+    split_mode: Literal["reconstruction", "experiment"] = "experiment"
+
+    def instantiate(self, path: str, output_path: str, global_rank: int) -> DataParser:
+        return BlenderDataParser(path, output_path, global_rank, self)
 
 
 class BlenderDataParser(DataParser):
-    def __init__(self, path: str, output_path: str, global_rank: int, params: BlenderParams) -> None:
+    def __init__(self, path: str, output_path: str, global_rank: int, params: Blender) -> None:
         super().__init__()
         self.path = path
         self.output_path = output_path

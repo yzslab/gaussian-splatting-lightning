@@ -7,13 +7,34 @@ import torch
 from typing import Tuple
 from PIL import Image
 from tqdm import tqdm
-from internal.configs.dataset import MatrixCityParams
+from dataclasses import dataclass
 from internal.cameras.cameras import Cameras
-from .dataparser import ImageSet, PointCloud, DataParser, DataParserOutputs
+from .dataparser import ImageSet, PointCloud, DataParserConfig, DataParser, DataParserOutputs
+
+
+@dataclass
+class MatrixCity(DataParserConfig):
+    train: list[str] = None
+
+    test: list[str] = None
+
+    scale: float = 0.01
+
+    depth_scale: float = 0.01
+
+    max_depth: float = 65_000
+    """ Using to remove sky, multiply with scale and depth_scale automatically """
+
+    depth_read_step: int = 1
+
+    max_points: int = 3_840_000
+
+    def instantiate(self, path: str, output_path: str, global_rank: int) -> DataParser:
+        return MatrixCityDataParser(path=path, output_path=output_path, global_rank=global_rank, params=self)
 
 
 class MatrixCityDataParser(DataParser):
-    def __init__(self, path: str, output_path: str, global_rank: int, params: MatrixCityParams) -> None:
+    def __init__(self, path: str, output_path: str, global_rank: int, params: MatrixCity) -> None:
         super().__init__()
         self.path = path
         self.output_path = output_path
