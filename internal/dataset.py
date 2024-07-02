@@ -251,6 +251,7 @@ class DataModule(LightningDataModule):
             test_max_num_images_to_cache: int = 0,
             num_workers: int = 8,
             add_background_sphere: bool = False,
+            background_sphere_center: Literal["points", "cameras"] = "points",
             background_sphere_distance: float = 2.2,
             background_sphere_points: int = 204_800,
     ) -> None:
@@ -306,11 +307,19 @@ class DataModule(LightningDataModule):
         # add background sphere: https://github.com/graphdeco-inria/gaussian-splatting/issues/300#issuecomment-1756073909
         if self.hparams["add_background_sphere"] is True:
             # find the scene center and size
-            point_max_coordinate = np.max(self.dataparser_outputs.point_cloud.xyz, axis=0)
-            point_min_coordinate = np.min(self.dataparser_outputs.point_cloud.xyz, axis=0)
-            scene_center = (point_max_coordinate + point_min_coordinate) / 2
-            scene_size = np.max(point_max_coordinate - point_min_coordinate)
-            scene_radius = scene_size / 2.
+            if self.hparams["background_sphere_center"] == "points":
+                scene_center = self.dataparser_outputs.point_cloud.xyz.mean(axis=0)
+                scene_radius = np.percentile(np.linalg.norm(self.dataparser_outputs.point_cloud.xyz - scene_center, axis=-1), 99.9).item()
+            else:
+                scene_center = self.dataparser_outputs.train_set.cameras.camera_center.mean(dim=0)
+                scene_radius_from_cameras = torch.norm(self.dataparser_outputs.train_set.cameras.camera_center - scene_center, dim=-1).max().item()
+
+                scene_center = scene_center.numpy()
+                radius_from_points = np.percentile(np.linalg.norm(self.dataparser_outputs.point_cloud.xyz - scene_center, axis=-1), 99.9).item()
+
+                scene_radius = max(scene_radius_from_cameras, radius_from_points)
+                scene_radius = scene_radius
+
             # build unit sphere points
             n_points = self.hparams["background_sphere_points"]
             samples = np.arange(n_points)
@@ -331,7 +340,7 @@ class DataModule(LightningDataModule):
             # TODO: resize scene_extent without changing lr
             self.prune_extent = scene_radius * self.hparams["background_sphere_distance"] * 1.0001
 
-            print("added {} background sphere points, rescale prune extent from {} to {}".format(n_points, self.dataparser_outputs.camera_extent, self.prune_extent))
+            print("added {} background sphere points, scene_center={}, scene_radius={}, rescale prune extent from {} to {}".format(n_points, scene_center.tolist(), scene_radius, self.dataparser_outputs.camera_extent, self.prune_extent))
 
         # convert point cloud
         self.point_cloud = BasicPointCloud(

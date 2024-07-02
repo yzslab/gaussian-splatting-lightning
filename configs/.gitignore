@@ -8,6 +8,7 @@
 !larger_dataset.yaml
 !reorient.yaml
 !background_sphere.yaml
+!background_sphere-cameras_center-random_background.yaml
 !deformable_blender.yaml
 !deformable_6dof_blender.yaml
 !deformable_blender_rotate_xyz.yaml
