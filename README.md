@@ -376,6 +376,7 @@ This comes from <a href="https://feature-3dgs.github.io/">Feature 3DGS</a>. But 
       --data.path data/Truck \
       --data.parser.down_sample_factor 2 \
       --model.initialize_from outputs/Truck/gsplat \
+      --max_steps 10000 \
       -n Truck -v feature_3dgs
   ```
   `--model.initialize_from` is the path to your trained model.
