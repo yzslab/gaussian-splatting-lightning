@@ -33,14 +33,27 @@ renderer = GSplatContrastiveFeatureRenderer()
 
 # load dataset
 dataset_path = ckpt["datamodule_hyper_parameters"]["path"] if args.data_path is None else args.data_path
-dataparser_params = ckpt["datamodule_hyper_parameters"]["params"].colmap
-dataparser_params.split_mode = "reconstruction"
-dataparser_outputs = ColmapDataParser(
-    path=dataset_path,
-    output_path=os.getcwd(),
-    global_rank=0,
-    params=dataparser_params,
-).get_outputs()
+try:
+    # previous version
+    dataparser_params = ckpt["datamodule_hyper_parameters"]["params"].colmap
+    dataparser_params.split_mode = "reconstruction"
+    dataparser = ColmapDataParser(
+        path=dataset_path,
+        output_path=os.getcwd(),
+        global_rank=0,
+        params=dataparser_params,
+    )
+except:
+    # new version
+    dataparser_config = ckpt["datamodule_hyper_parameters"]["parser"]
+    setattr(dataparser_config, "split_mode", "reconstruction")  # for colmap
+    dataparser = dataparser_config.instantiate(
+        path=dataset_path,
+        output_path=os.getcwd(),
+        global_rank=0,
+    )
+
+dataparser_outputs = dataparser.get_outputs()
 
 del ckpt
 torch.cuda.empty_cache()
