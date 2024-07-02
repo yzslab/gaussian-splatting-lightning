@@ -374,10 +374,13 @@ This comes from <a href="https://feature-3dgs.github.io/">Feature 3DGS</a>. But 
   python main.py fit \
       --config configs/feature_3dgs/sam-speedup.yaml \
       --data.path data/Truck \
+      --data.parser.down_sample_factor 2 \
       --model.initialize_from outputs/Truck/gsplat \
       -n Truck -v feature_3dgs
   ```
-  `--model.initialize_from` is the path to your trained model
+  `--model.initialize_from` is the path to your trained model.
+  
+  Since rasterize high dimension features is slow, `--data.parser.down_sample_factor` is used here to smaller the rendered feature map to speedup distillation.
 * After distillation finishing, you can use viewer to visualize the feature map rendered from 3D Gaussians
   ```bash
   python viewer.py outputs/Truck/feature_3dgs
