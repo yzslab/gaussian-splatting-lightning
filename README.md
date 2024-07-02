@@ -35,6 +35,7 @@
   * Reconstruct a large scale scene with the partitioning strategy like <a href="https://vastgaussian.github.io/">VastGaussian</a> (see <a href="#211-reconstruct-a-large-scale-scene-with-the-partitioning-strategy-like-vastgaussian">2.11.</a> below)
   * <a href="#212-appearance-model">New Appearance Model (2.12.)</a>: improve the quality when images have various appearances
   * <a href="#213-3dgs-mcmc">3D Gaussian Splatting as Markov Chain Monte Carlo (2.13.)</a>
+  * <a href="#214-feature-distillation">Feature distillation</a> like <a href="https://feature-3dgs.github.io/">Feature 3DGS</a>
 ## 1. Installation
 ### 1.1. Clone repository
 
@@ -356,6 +357,31 @@ pip install submodules/mcmc_relocation
 `MAX_NUM_GAUSSIANS` is the maximum number of Gaussians that will be used.
   
 Refer to <a href="https://github.com/ubc-vision/3dgs-mcmc">ubc-vision/3dgs-mcmc</a>, <a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/internal/density_controllers/mcmc_density_controller.py">internal/density_controllers/mcmc_density_controller.py</a> and <a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/internal/metrics/mcmc_metrics.py">internal/metrics/mcmc_metrics.py</a> for more details.
+
+### 2.14. Feature distillation
+This comes from <a href="https://feature-3dgs.github.io/">Feature 3DGS</a>. But two stage optimization is adapted here, rather than jointly. Distillation only currently.
+
+* First, train a model using gsplat (see command above).
+* Then extract feature map from your dataset
+  ```bash
+  python utils/get_sam_embeddings.py data/Truck/images
+  ```
+  With this command, feature maps will be saved to `data/Truck/semantic/sam_features`, and preview to `data/Truck/semantic/sam_feature_preview`, respectively.
+  
+  Theoretically, any features is distillable. You need you implement your own feature map extractor.
+* Then start distillation
+  ```bash
+  python main.py fit \
+      --config configs/feature_3dgs/sam-speedup.yaml \
+      --data.path data/Truck \
+      --model.initialize_from outputs/Truck/gsplat \
+      -n Truck -v feature_3dgs
+  ```
+  `--model.initialize_from` is the path to your trained model
+* After distillation finishing, you can use viewer to visualize the feature map rendered from 3D Gaussians
+  ```bash
+  python viewer.py outputs/Truck/feature_3dgs
+  ```
 
 ## 3. Evaluation
 
