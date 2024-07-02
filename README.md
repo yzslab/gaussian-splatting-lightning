@@ -361,7 +361,7 @@ Refer to <a href="https://github.com/ubc-vision/3dgs-mcmc">ubc-vision/3dgs-mcmc<
 ### 2.14. Feature distillation
 This comes from <a href="https://feature-3dgs.github.io/">Feature 3DGS</a>. But two stage optimization is adapted here, rather than jointly. Distillation only currently.
 
-* First, train a model using gsplat (see command above).
+* First, train a model using gsplat (see command above)
 * Then extract feature map from your dataset
   ```bash
   python utils/get_sam_embeddings.py data/Truck/images
