@@ -1,9 +1,28 @@
 import os.path
 
 import torch
+import jsonargparse
 from jsonargparse import Namespace
+from jsonargparse._typehints import subclass_spec_as_namespace
 from typing import Optional, Union, List, Literal
 from lightning.pytorch.cli import LightningCLI, LightningArgumentParser
+
+
+def discard_init_args_on_class_path_change(parser_or_action, prev_val, value):
+    """
+    jsonargparse will reuse args presenting in user specified instance from the default one,
+    which means that parameter with same name in different class can not have different default value,
+    this function prevent reusing
+    """
+
+    if prev_val and "init_args" in prev_val and prev_val["class_path"] != value["class_path"]:
+        prev_val = subclass_spec_as_namespace(prev_val)
+        # pop all args
+        for key, val in list(prev_val.init_args.__dict__.items()):
+            prev_val.init_args.pop(key)
+
+
+jsonargparse._typehints.discard_init_args_on_class_path_change = discard_init_args_on_class_path_change
 
 
 class CLI(LightningCLI):
@@ -76,7 +95,7 @@ class CLI(LightningCLI):
                 ) or os.path.exists(
                     os.path.join(output_path, "checkpoints")
                 )) is False, ("checkpoint or point cloud output already exists in '{}', \n"
-                             "please specific a different experiment name (-n) or version (-v)").format(output_path)
+                              "please specific a different experiment name (-n) or version (-v)").format(output_path)
         else:
             # disable logger
             config.logger = "None"
