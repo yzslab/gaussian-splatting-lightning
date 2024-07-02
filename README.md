@@ -368,7 +368,7 @@ This comes from <a href="https://feature-3dgs.github.io/">Feature 3DGS</a>. But 
   ```
   With this command, feature maps will be saved to `data/Truck/semantic/sam_features`, and preview to `data/Truck/semantic/sam_feature_preview`, respectively.
   
-  Theoretically, any features is distillable. You need you implement your own feature map extractor.
+  Theoretically, any features is distillable. You need to implement your own feature map extractor.
 * Then start distillation
   ```bash
   python main.py fit \
