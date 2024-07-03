@@ -417,11 +417,13 @@ class Viewer:
             training_output_base_dir = os.path.dirname(os.path.dirname(load_from))
 
             # get dataset type
-            dataset_type = checkpoint["datamodule_hyper_parameters"].get("type", "")  # previous version
+            dataset_type = checkpoint["datamodule_hyper_parameters"].get("type", None)  # previous version
             # new version
             if dataset_type is None:
-                dataset_type = checkpoint["datamodule_hyper_parameters"].get("parser", "")
-            dataset_type = dataset_type.lower()
+                try:
+                    dataset_type = checkpoint["datamodule_hyper_parameters"].get("parser", None).__class__.__name__.lower()
+                except:
+                    dataset_type = ""
 
             self.sh_degree = model.max_sh_degree
         elif load_from.endswith(".ply") is True:
