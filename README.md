@@ -389,6 +389,8 @@ This comes from <a href="https://feature-3dgs.github.io/">Feature 3DGS</a>. But 
 
 ## 3. Evaluation
 
+Per-image metrics will be saved to `TRAINING_OUTPUT/metrics` as a `csv` file.
+
 ### Evaluate on validation set
 ```bash
 python main.py validate \
