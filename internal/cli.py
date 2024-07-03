@@ -47,6 +47,8 @@ class CLI(LightningCLI):
                             help="Whether save images rendered during validation/test to files")
         parser.add_argument("--val_train", action="store_true", default=False,
                             help="Whether use train set to do validation")
+        parser.add_argument("--cache_all_images", action="store_true", default=False,
+                            help="Speedup validation/test by caching all images. Images in train set is cached by default.")
 
         # parser.link_arguments("iterations", "trainer.max_steps")
         # parser.link_arguments("epochs", "trainer.max_epochs")
@@ -138,3 +140,9 @@ class CLI(LightningCLI):
 
         config.model.save_val_output = config.save_val
         config.data.val_on_train = config.val_train
+
+        # set number of cached images
+        if config.cache_all_images is True:
+            config.data.train_max_num_images_to_cache = -1
+            config.data.val_max_num_images_to_cache = -1
+            config.data.test_max_num_images_to_cache = -1
