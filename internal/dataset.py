@@ -249,7 +249,7 @@ class DataModule(LightningDataModule):
             train_max_num_images_to_cache: int = -1,
             val_max_num_images_to_cache: int = 0,
             test_max_num_images_to_cache: int = 0,
-            num_workers: int = 8,
+            num_workers: int = 2,
             add_background_sphere: bool = False,
             background_sphere_center: Literal["points", "cameras"] = "points",
             background_sphere_distance: float = 2.2,
