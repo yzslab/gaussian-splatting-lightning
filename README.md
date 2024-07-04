@@ -418,6 +418,8 @@ This comes from <a href="https://feature-3dgs.github.io/">Feature 3DGS</a>. But 
 
   <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/7fd7a636-129e-4568-a436-3a97b9f73a1a"></video>
 
+  LSeg feature is used in this video.
+
 </details>
 
 ## 3. Evaluation
