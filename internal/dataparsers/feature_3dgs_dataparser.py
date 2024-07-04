@@ -10,6 +10,10 @@ from .colmap_dataparser import Colmap, ColmapDataParser
 class Feature3DGSColmap(Colmap):
     feature_dir: str = "semantic/sam_features"
 
+    filename_suffix: str = ""
+
+    filename_include_image_ext: bool = True
+
     def instantiate(self, path: str, output_path: str, global_rank: int) -> DataParser:
         return Feature3DGSColmapDataParser(path=path, output_path=output_path, global_rank=global_rank, params=self)
 
@@ -24,7 +28,9 @@ class Feature3DGSColmapDataParser(ColmapDataParser):
         # val_set and test_set are same object
         for image_set in [dataparser_outputs.train_set, dataparser_outputs.val_set]:
             for idx, image_name in enumerate(image_set.image_names):
-                semantic_file_name = f"{image_name}.pt"
+                if self.params.filename_include_image_ext is False:
+                    image_name = image_name[:image_name.rfind(".")]
+                semantic_file_name = f"{image_name}{self.params.filename_suffix}.pt"
                 image_set.extra_data[idx] = os.path.join(self.path, self.params.feature_dir, semantic_file_name)
             image_set.extra_data_processor = Feature3DGSColmapDataParser.read_semantic_data
 
