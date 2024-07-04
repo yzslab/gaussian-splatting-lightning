@@ -158,6 +158,7 @@ class Feature3DGSRenderer(Renderer):
             if getattr(self, "pca_projected_color", None) is None:
                 from internal.utils.seganygs import SegAnyGSUtils
                 normalized_features = torch.nn.functional.normalize(self.features, dim=-1)
+                normalized_features[torch.isnan(normalized_features)] = 0.
                 self.pca_projected_color = SegAnyGSUtils.get_pca_projected_colors(
                     semantic_features=normalized_features,
                     pca_projection_matrix=SegAnyGSUtils.get_pca_projection_matrix(semantic_features=normalized_features),
@@ -170,9 +171,9 @@ class Feature3DGSRenderer(Renderer):
                 opacities=opacities,
                 anti_aliased=False,
             )
-            view_shape = (3, -1)
-            features_pca_3d = features_pca_3d - torch.min(features_pca_3d.view(view_shape), dim=1, keepdim=True).values.unsqueeze(-1)
-            features_pca_3d = features_pca_3d / (torch.max(features_pca_3d.view(view_shape), dim=1, keepdim=True).values.unsqueeze(-1) + 1e-9)
+            # view_shape = (3, -1)
+            # features_pca_3d = features_pca_3d - torch.min(features_pca_3d.view(view_shape), dim=1, keepdim=True).values.unsqueeze(-1)
+            # features_pca_3d = features_pca_3d / (torch.max(features_pca_3d.view(view_shape), dim=1, keepdim=True).values.unsqueeze(-1) + 1e-9)
             outputs["features_pca_3d"] = features_pca_3d
         if "edited" in render_types:
             edited_opacities = opacities
@@ -301,23 +302,27 @@ class ViewerOptions:
                 self.server.gui.add_markdown("No option for SAM")
 
     def _setup_lseg_options(self):
-        objects = ["car", "tree", "building", "sidewalk", "road"]
+        # objects = ["car", "tree", "building", "sidewalk", "road"]
         clip_editor = self._get_clip_editor()
-        text_feature = clip_editor.encode_text([obj.replace("_", " ") for obj in objects])
-        del clip_editor
-        torch.cuda.empty_cache()
+        # text_feature = clip_editor.encode_text([obj.replace("_", " ") for obj in objects])
+        # del clip_editor
+        # torch.cuda.empty_cache()
 
         with self.server.gui.add_folder("LSeg"):
-            object_dropdown = self.server.gui.add_dropdown(
-                label="Object",
-                options=objects,
+            # object_dropdown = self.server.gui.add_dropdown(
+            #     label="Object",
+            #     options=objects,
+            # )
+            object_text = self.server.gui.add_text(
+                label="Text",
+                initial_value="",
             )
             score_2d_threshold_slider = self.server.gui.add_slider(
                 label="Score 2D",
                 min=0.,
                 max=1.,
                 step=0.001,
-                initial_value=1. / len(objects),
+                initial_value=0.9,
                 visible=self.renderer.n_actual_feature_dims == 256,
             )
             score_3d_threshold_slider = self.server.gui.add_slider(
@@ -339,11 +344,17 @@ class ViewerOptions:
 
             @extract_button.on_click
             def _(event):
-                try:
-                    target_idx = objects.index(object_dropdown.value)
-                except ValueError:
-                    self.viewer.show_message("Object not supported")
+                # try:
+                #     target_idx = objects.index(object_dropdown.value)
+                # except ValueError:
+                #     self.viewer.show_message("Object not supported")
+                #     return
+
+                if object_text.value == "":
+                    self.viewer.show_message("Empty value")
                     return
+
+                text_feature = clip_editor.encode_text([object_text.value.replace("_", "")])
 
                 with torch.no_grad(), self.server.atomic():
                     if self.renderer.n_actual_feature_dims == 256:
@@ -378,7 +389,7 @@ class ViewerOptions:
                             feature_map_flatten,
                             text_feature,
                             score_2d_threshold_slider.value,
-                            positive_ids=[target_idx],
+                            positive_ids=[0],
                         )
 
                         mask_2d = (scores_2d >= 0.5).reshape(feature_map.shape[1:])
@@ -396,7 +407,7 @@ class ViewerOptions:
                             self.renderer.features,
                             text_feature,
                             score_3d_threshold_slider.value,
-                            positive_ids=[target_idx],
+                            positive_ids=[0],
                         )
 
                     mask = (scores_3d >= 0.5)
