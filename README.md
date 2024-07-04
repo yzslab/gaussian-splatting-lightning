@@ -406,9 +406,12 @@ This comes from <a href="https://feature-3dgs.github.io/">Feature 3DGS</a>. But 
   
   Since rasterizing high dimension features is slow, `--data.parser.down_sample_factor` is used here to smaller the rendered feature map to speedup distillation.
 * After distillation finishing, you can use viewer to visualize the feature map rendered from 3D Gaussians
+
   ```bash
   python viewer.py outputs/Truck/feature_3dgs
   ```
+  
+  CLIP is required if you are using LSeg feature: `pip install git+https://github.com/openai/CLIP.git`
 
 ## 3. Evaluation
 

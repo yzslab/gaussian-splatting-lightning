@@ -301,7 +301,7 @@ class ViewerOptions:
                 self.server.gui.add_markdown("No option for SAM")
 
     def _setup_lseg_options(self):
-        objects = ["car", "tree", "building", "sidewalk", "road", "other"]
+        objects = ["car", "tree", "building", "sidewalk", "road"]
         clip_editor = self._get_clip_editor()
         text_feature = clip_editor.encode_text([obj.replace("_", " ") for obj in objects])
         del clip_editor
@@ -317,7 +317,7 @@ class ViewerOptions:
                 min=0.,
                 max=1.,
                 step=0.001,
-                initial_value=0.17,
+                initial_value=1. / len(objects),
                 visible=self.renderer.n_actual_feature_dims == 256,
             )
             score_3d_threshold_slider = self.server.gui.add_slider(
