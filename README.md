@@ -89,6 +89,14 @@ pip install -r requirements.txt
   * gsplat (see command above)
   * `pip install hdbscan scikit-learn==1.3.2 git+https://github.com/facebookresearch/segment-anything.git`
   * <a href="https://github.com/facebookresearch/pytorch3d/blob/main/INSTALL.md">facebookresearch/pytorch3d</a>
+
+    For `torch==2.0.1` and cuda 11.8:
+    
+    ```bash
+    pip install fvcore iopath
+    pip install --no-index --no-cache-dir pytorch3d -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py39_cu118_pyt201/download.html
+    ```
+   
   * Download <a href="https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth">ViT-H SAM model</a>, place it to the root dir of this repo.: `wget -O sam_vit_h_4b8939.pth https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth`
 
 ## 2. Training
