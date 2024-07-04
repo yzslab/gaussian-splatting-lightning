@@ -47,6 +47,9 @@ class Feature3DGSRenderer(Renderer):
         # update this when feature updated
         self.pca_projected_color = None
 
+        self.edit_mask = None
+        self.edit_mask_2d = None
+
     def setup(self, stage: str, *args: Any, **kwargs: Any) -> Any:
         n_actual_feature_dims = self.n_feature_dims
 
@@ -125,6 +128,14 @@ class Feature3DGSRenderer(Renderer):
                     opacities=opacities,
                     anti_aliased=False,
                 )
+                if getattr(self, "edit_mask_2d", None) is not None:
+                    interpolated_mask = torch.nn.functional.interpolate(
+                        self.edit_mask_2d.unsqueeze(0).unsqueeze(0).float(),
+                        size=(outputs["render"].shape[1], outputs["render"].shape[2]),
+                        mode='bilinear',
+                        align_corners=True,
+                    ).squeeze(0)
+                    outputs["render"] = outputs["render"] * (interpolated_mask > 0.5)
         if "features" in render_types or "features_vanilla_pca_2d" in render_types:
             rendered_features_list = []
             feature_bg_color = torch.zeros((self.rasterize_batch,), dtype=torch.float, device=self.features.device)
@@ -138,7 +149,9 @@ class Feature3DGSRenderer(Renderer):
                     opacities=opacities,
                     anti_aliased=False,
                 ))
-            outputs["features"] = self.feature_decoder(torch.concat(rendered_features_list, dim=0))
+            raw_features = torch.concat(rendered_features_list, dim=0)
+            outputs["raw_features"] = raw_features
+            outputs["features"] = self.feature_decoder(raw_features)
         if "features_vanilla_pca_2d" in render_types:
             outputs["features_vanilla_pca_2d"] = self.feature_visualize(outputs["features"])
         if "features_pca_3d" in render_types:
@@ -161,6 +174,23 @@ class Feature3DGSRenderer(Renderer):
             features_pca_3d = features_pca_3d - torch.min(features_pca_3d.view(view_shape), dim=1, keepdim=True).values.unsqueeze(-1)
             features_pca_3d = features_pca_3d / (torch.max(features_pca_3d.view(view_shape), dim=1, keepdim=True).values.unsqueeze(-1) + 1e-9)
             outputs["features_pca_3d"] = features_pca_3d
+        if "edited" in render_types:
+            edited_opacities = opacities
+            if getattr(self, "edit_mask", None) is not None:
+                edited_opacities = edited_opacities * self.edit_mask.unsqueeze(-1)
+
+            viewdirs = pc.get_xyz.detach() - viewpoint_camera.camera_center  # (N, 3)
+            rgbs = spherical_harmonics(pc.active_sh_degree, viewdirs, pc.get_features)
+            rgbs = torch.clamp(rgbs + 0.5, min=0.0)  # type: ignore
+
+            outputs["edited"] = GSPlatRenderer.rasterize_simplified(
+                project_results,
+                viewpoint_camera=viewpoint_camera,
+                colors=rgbs,
+                bg_color=bg_color,
+                opacities=edited_opacities,
+                anti_aliased=False,
+            )
 
         return outputs
 
@@ -180,6 +210,7 @@ class Feature3DGSRenderer(Renderer):
             "features": "features",
             "features_vanilla_pca_2d": "features_vanilla_pca_2d",
             "features_pca_3d": "features_pca_3d",
+            "edited": "edited",
         }
 
     def is_type_feature_map(self, t: str) -> bool:
@@ -219,7 +250,7 @@ class Feature3DGSRenderer(Renderer):
 
 
 class ViewerOptions:
-    def __init__(self, renderer, viewer, server, tabs):
+    def __init__(self, renderer: Feature3DGSRenderer, viewer, server, tabs):
         from viser import ViserServer
 
         self.renderer = renderer
@@ -227,42 +258,157 @@ class ViewerOptions:
         self.server: ViserServer = server
         self.tabs = tabs
 
-        # self._setup()
+        self._setup()
 
     def _setup(self):
         with self.tabs.add_tab("Semantic"):
-            with self.server.gui.add_folder(
-                    label="Load Model",
-            ) as f:
-                type_dropdown = self.server.gui.add_dropdown(
-                    label="Type",
-                    options=["SAM"],
-                )
-                path_text = self.server.gui.add_text(
-                    label="Path",
-                    initial_value="sam_vit_h_4b8939.pth",
-                )
-                load_model_button = self.server.gui.add_button(
-                    label="Load",
-                )
+            # with self.server.gui.add_folder(
+            #         label="Load Model",
+            # ) as f:
+            #     type_dropdown = self.server.gui.add_dropdown(
+            #         label="Type",
+            #         options=["SAM"],
+            #     )
+            #     path_text = self.server.gui.add_text(
+            #         label="Path",
+            #         initial_value="sam_vit_h_4b8939.pth",
+            #     )
+            #     load_model_button = self.server.gui.add_button(
+            #         label="Load",
+            #     )
+            #
+            #     @load_model_button.on_click
+            #     def _(_):
+            #         load_model_button.disabled = True
+            #         with self.server.atomic():
+            #             try:
+            #                 self._load_sam_model(path_text.value)
+            #                 message = "Loaded successfully"
+            #                 model_loaded = True
+            #             except Exception as e:
+            #                 model_loaded = False
+            #                 message = repr(e)
+            #                 traceback.print_exc()
+            #         if model_loaded is True:
+            #             f.remove()
+            #         else:
+            #             load_model_button.disabled = False
+            #         self.viewer.show_message(message)
 
-                @load_model_button.on_click
-                def _(_):
-                    load_model_button.disabled = True
-                    with self.server.atomic():
-                        try:
-                            self._load_sam_model(path_text.value)
-                            message = "Loaded successfully"
-                            model_loaded = True
-                        except Exception as e:
-                            model_loaded = False
-                            message = repr(e)
-                            traceback.print_exc()
-                    if model_loaded is True:
-                        f.remove()
+            if self.renderer.n_feature_dims == 512:
+                self._setup_lseg_options()
+            else:
+                self.server.gui.add_markdown("No option for SAM")
+
+    def _setup_lseg_options(self):
+        objects = ["car", "tree", "building", "sidewalk", "road", "other"]
+        clip_editor = self._get_clip_editor()
+        text_feature = clip_editor.encode_text([obj.replace("_", " ") for obj in objects])
+        del clip_editor
+        torch.cuda.empty_cache()
+
+        with self.server.gui.add_folder("LSeg"):
+            object_dropdown = self.server.gui.add_dropdown(
+                label="Object",
+                options=objects,
+            )
+            score_2d_threshold_slider = self.server.gui.add_slider(
+                label="Score 2D",
+                min=0.,
+                max=1.,
+                step=0.001,
+                initial_value=0.17,
+                visible=self.renderer.n_actual_feature_dims == 256,
+            )
+            score_3d_threshold_slider = self.server.gui.add_slider(
+                label="Score 3D",
+                min=0.,
+                max=1.,
+                step=0.001,
+                initial_value=0.95 if self.renderer.n_actual_feature_dims == 256 else 0.2,
+            )
+
+            extract_button = self.server.gui.add_button(
+                label="Extract",
+            )
+            reset_button = self.server.gui.add_button(
+                label="Reset",
+            )
+
+            self.server.gui.add_markdown("<b>[NOTE]</b> Switch to `edited` mode in 'General' panel to visualize the 3D extraction result")
+
+            @extract_button.on_click
+            def _(event):
+                try:
+                    target_idx = objects.index(object_dropdown.value)
+                except ValueError:
+                    self.viewer.show_message("Object not supported")
+                    return
+
+                with torch.no_grad(), self.server.atomic():
+                    if self.renderer.n_actual_feature_dims == 256:
+                        """
+                        `n_actual_feature_dims == 256` means that LSeg with speedup mode enabled.
+                        Since the number of LSeg feature dimension is 512, it is impossible to calculate similarity in 3D directly.
+                        So render the feature maps first, i.e. the raw feature map (256 dims) and decoded feature map (512 dims).
+                        Then calculate similarity in decoded feature map, and get the mask representing pixels having suitable score.
+                        Then get features in raw feature map correspond to this mask.
+                        Then get the mean feature of these features.
+                        Finally use this mean feature to calculate similarity in 3D.
+                        
+                        Not performs well on finding object outside of current view.
+                        """
+                        from internal.viewer.client import ClientThread
+                        render_outputs = self.renderer.forward(
+                            viewpoint_camera=ClientThread.get_camera(
+                                event.client.camera,
+                                self.viewer.max_res_when_moving.value,
+                            ).to_device(self.viewer.device),
+                            pc=self.viewer.viewer_renderer.gaussian_model,
+                            bg_color=torch.zeros((self.renderer.n_actual_feature_dims,), dtype=torch.float, device=self.viewer.device),
+                            render_types=["features"],
+                        )
+
+                        feature_map = render_outputs["features"]
+                        feature_map_in_hwc = render_outputs["features"].permute(1, 2, 0)
+                        feature_map_flatten = feature_map_in_hwc.reshape((-1, self.renderer.n_feature_dims))
+                        raw_feature_map_in_hwc = render_outputs["raw_features"].permute(1, 2, 0)
+
+                        scores_2d = self.calculate_selection_score(
+                            feature_map_flatten,
+                            text_feature,
+                            score_2d_threshold_slider.value,
+                            positive_ids=[target_idx],
+                        )
+
+                        mask_2d = (scores_2d >= 0.5).reshape(feature_map.shape[1:])
+                        self.renderer.edit_mask_2d = mask_2d
+                        mean_masked_raw_features = raw_feature_map_in_hwc[mask_2d].reshape((-1, self.renderer.n_actual_feature_dims)).mean(dim=0)
+
+                        scores_3d = self.calculate_selection_score(
+                            self.renderer.features,
+                            mean_masked_raw_features.unsqueeze(0),
+                            score_3d_threshold_slider.value,
+                            positive_ids=[0],
+                        )
                     else:
-                        load_model_button.disabled = False
-                    self.viewer.show_message(message)
+                        scores_3d = self.calculate_selection_score(
+                            self.renderer.features,
+                            text_feature,
+                            score_3d_threshold_slider.value,
+                            positive_ids=[target_idx],
+                        )
+
+                    mask = (scores_3d >= 0.5)
+                    self.renderer.edit_mask = mask
+
+                self.viewer.rerender_for_all_client()
+
+            @reset_button.on_click
+            def _(_):
+                self.renderer.edit_mask = None
+                self.renderer.edit_mask_2d = None
+                self.viewer.rerender_for_all_client()
 
     @property
     def device(self):
@@ -273,3 +419,41 @@ class ViewerOptions:
         from segment_anything import SamPredictor, sam_model_registry
         self._sam = sam_model_registry[arch](checkpoint=path).to(self.device)
         self._predictor = SamPredictor(self._sam)
+
+    @staticmethod
+    def calculate_selection_score(features, query_features, score_threshold=None, positive_ids=[0]):
+        features /= features.norm(dim=-1, keepdim=True)
+        query_features /= query_features.norm(dim=-1, keepdim=True)
+        scores = features.half() @ query_features.T.half()  # (N_points, n_texts)
+        if scores.shape[-1] == 1:
+            scores = ((scores[:, 0] + 1.) / 2.)  # (N_points,)
+            scores = (scores >= score_threshold).float()
+        else:
+            scores = torch.nn.functional.softmax(scores, dim=-1)  # (N_points, n_texts)
+            if score_threshold is not None:
+                scores = scores[:, positive_ids].sum(-1)  # (N_points, )
+                scores = (scores >= score_threshold).float()
+            else:
+                scores[:, positive_ids[0]] = scores[:, positive_ids].sum(-1)  # (N_points, )
+                scores = torch.isin(torch.argmax(scores, dim=-1), torch.tensor(positive_ids).cuda()).float()
+        return scores
+
+    def _get_clip_editor(self):
+        import clip
+
+        class CLIPEditor(object):
+            def __init__(self, device):
+                super(CLIPEditor, self).__init__()
+                self.device = device
+                self.model, _preprocess = clip.load("ViT-B/32", device=self.device)
+                self.model = self.model.float()
+
+            def encode_text(self, text_list):
+                with torch.no_grad():
+                    texts = clip.tokenize(text_list).to(self.device)
+                    text_features = self.model.encode_text(texts)
+                    text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+                return text_features
+
+        clip_editor = CLIPEditor(self.viewer.device)
+        return clip_editor
