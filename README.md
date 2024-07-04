@@ -367,6 +367,9 @@ pip install submodules/mcmc_relocation
 Refer to <a href="https://github.com/ubc-vision/3dgs-mcmc">ubc-vision/3dgs-mcmc</a>, <a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/internal/density_controllers/mcmc_density_controller.py">internal/density_controllers/mcmc_density_controller.py</a> and <a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/internal/metrics/mcmc_metrics.py">internal/metrics/mcmc_metrics.py</a> for more details.
 
 ### 2.14. Feature distillation
+<details>
+<summary> Click me </summary>
+ 
 This comes from <a href="https://feature-3dgs.github.io/">Feature 3DGS</a>. But two stage optimization is adapted here, rather than jointly.
 
 * First, train a model using gsplat (see command above)
@@ -412,6 +415,10 @@ This comes from <a href="https://feature-3dgs.github.io/">Feature 3DGS</a>. But 
   ```
   
   CLIP is required if you are using LSeg feature: `pip install git+https://github.com/openai/CLIP.git`
+
+  <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/7fd7a636-129e-4568-a436-3a97b9f73a1a"></video>
+
+</details>
 
 ## 3. Evaluation
 
