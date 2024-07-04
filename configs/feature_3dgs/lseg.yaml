@@ -12,5 +12,5 @@ data:
     class_path: Feature3DGSColmap
     init_args:
       feature_dir: "rgb_feature_langseg"
-      filename_suffix: "_fmap_CxHxW.pt"
+      filename_suffix: "_fmap_CxHxW"
       filename_include_image_ext: false
