@@ -19,10 +19,6 @@ print(scenes)
 
 
 def start(command: str, scene: str, extra_args: list = None):
-    down_sample_rounding_model = "ceil"
-    if scene == "garden":
-        down_sample_rounding_model = "round"
-
     arg_list = [
         "python",
         "main.py",
@@ -31,7 +27,7 @@ def start(command: str, scene: str, extra_args: list = None):
         "--data.parser", "Colmap",
         "--data.parser.down_sample_factor", "4",
         "--data.parser.split_mode", "experiment",
-        "--data.parser.down_sample_rounding_model", down_sample_rounding_model,
+        "--data.parser.down_sample_rounding_model", "round_half_up",
         "--cache_all_images",
         "--logger", "wandb",
         "--output", os.path.join("outputs", args.project),
@@ -43,7 +39,7 @@ def start(command: str, scene: str, extra_args: list = None):
     if extra_args is not None:
         arg_list += extra_args
 
-    subprocess.call(arg_list)
+    return subprocess.call(arg_list)
 
 
 with tqdm(scenes) as t:

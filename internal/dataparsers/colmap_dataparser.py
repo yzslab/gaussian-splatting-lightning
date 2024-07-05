@@ -54,7 +54,7 @@ class Colmap(DataParserConfig):
 
     down_sample_factor: int = 1
 
-    down_sample_rounding_model: Literal["floor", "round", "ceil"] = "round"
+    down_sample_rounding_model: Literal["floor", "round", "round_half_up", "ceil"] = "round"
 
     def instantiate(self, path: str, output_path: str, global_rank: int) -> DataParser:
         return ColmapDataParser(path, output_path, global_rank, self)
@@ -67,6 +67,9 @@ class ColmapDataParser(DataParser):
         self.output_path = output_path
         self.global_rank = global_rank
         self.params = params
+
+    def _round_half_up(self, i: torch.Tensor):
+        return torch.floor(i + 0.5)
 
     def detect_sparse_model_dir(self) -> str:
         if os.path.isdir(os.path.join(self.path, "sparse", "0")):
@@ -344,7 +347,10 @@ class ColmapDataParser(DataParser):
 
         # recalculate intrinsics if down sample enabled
         if self.params.down_sample_factor != 1:
-            rounding_func = getattr(torch, self.params.down_sample_rounding_model)
+            if self.params.down_sample_rounding_model == "round_half_up":
+                rounding_func = self._round_half_up
+            else:
+                rounding_func = getattr(torch, self.params.down_sample_rounding_model)
             down_sampled_width = rounding_func(width.to(torch.float) / self.params.down_sample_factor)
             down_sampled_height = rounding_func(height.to(torch.float) / self.params.down_sample_factor)
             width_scale_factor = down_sampled_width / width
