@@ -19,6 +19,10 @@ print(scenes)
 
 
 def start(command: str, scene: str, extra_args: list = None):
+    down_sample_rounding_model = "ceil"
+    if scene == "garden":
+        down_sample_rounding_model = "round"
+
     arg_list = [
         "python",
         "main.py",
@@ -27,7 +31,7 @@ def start(command: str, scene: str, extra_args: list = None):
         "--data.parser", "Colmap",
         "--data.parser.down_sample_factor", "4",
         "--data.parser.split_mode", "experiment",
-        "--data.parser.down_sample_rounding_model", "ceil",
+        "--data.parser.down_sample_rounding_model", down_sample_rounding_model,
         "--cache_all_images",
         "--logger", "wandb",
         "--output", os.path.join("outputs", args.project),
