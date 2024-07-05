@@ -159,7 +159,7 @@ class GSPlatRenderer(Renderer):
             "render": rgb,
             "depth": depth_im,
             "viewspace_points": xys,
-            "viewspace_points_grad_scale": 0.5 * max(img_height, img_width),
+            "viewspace_points_grad_scale": 0.5 * torch.tensor([[img_width, img_height]]).to(xys),
             "visibility_filter": radii > 0,
             "radii": radii,
         }
@@ -237,8 +237,8 @@ class GSPlatRenderer(Renderer):
         return {
             "render": rgb.permute(2, 0, 1),
             "viewspace_points": xys,
-            # "viewspace_points_grad_scale": 0.5 * torch.tensor([[img_height, img_width]]).to(xys),
-            "viewspace_points_grad_scale": 0.5 * max(img_height, img_width),
+            "viewspace_points_grad_scale": 0.5 * torch.tensor([[img_width, img_height]]).to(xys),
+            # "viewspace_points_grad_scale": 0.5 * max(img_height, img_width),
             "visibility_filter": radii > 0,
             "radii": radii,
         }
@@ -340,8 +340,8 @@ class GSPlatRenderer(Renderer):
         return {
             "render": rgb.permute(2, 0, 1),
             "viewspace_points": xys,
-            # "viewspace_points_grad_scale": 0.5 * torch.tensor([[img_height, img_width]]).to(xys),
-            "viewspace_points_grad_scale": 0.5 * max(img_height, img_width),
+            "viewspace_points_grad_scale": 0.5 * torch.tensor([[img_width, img_height]]).to(xys),
+            # "viewspace_points_grad_scale": 0.5 * max(img_height, img_width),
             "visibility_filter": radii > 0,
             "radii": radii,
         }
