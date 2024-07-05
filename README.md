@@ -35,7 +35,7 @@
   * Reconstruct a large scale scene with the partitioning strategy like <a href="https://vastgaussian.github.io/">VastGaussian</a> (see <a href="#211-reconstruct-a-large-scale-scene-with-the-partitioning-strategy-like-vastgaussian">2.11.</a> below)
   * <a href="#212-appearance-model">New Appearance Model (2.12.)</a>: improve the quality when images have various appearances
   * <a href="#213-3dgs-mcmc">3D Gaussian Splatting as Markov Chain Monte Carlo (2.13.)</a>
-  * <a href="#214-feature-distillation">Feature distillation (2.14.)</a> like <a href="https://feature-3dgs.github.io/">Feature 3DGS</a>
+  * <a href="#214-feature-distillation">Feature distillation (2.14.)</a>
 ## 1. Installation
 ### 1.1. Clone repository
 
