@@ -443,7 +443,7 @@ The idea of the visibility map is a bit like <a href="https://rover-xingyu.githu
 
 Please refer to <a href="https://rover-xingyu.github.io/Ha-NeRF/">Ha-NeRF</a>, `internal/renderers/gsplat_appearance_embedding_visibility_map_renderer.py` and `internal/metrics/visibility_map_metrics.py` for more details.
 
-<b>[NOTE]</b> Though it shows the capability to distinguish the pixels of transient objects, but may not be able to remove some artifats/floaters belong to transients. And may also treat under-reconstructed regions as transients.
+<b>[NOTE]</b> Though it shows the capability to distinguish the pixels of transient objects, may not be able to remove some artifats/floaters belong to transients. And may also treat under-reconstructed regions as transients.
   
 #### Usage
 
