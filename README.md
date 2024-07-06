@@ -438,13 +438,13 @@ Please refer to <a href="https://rover-xingyu.github.io/Ha-NeRF/">Ha-NeRF</a>, `
   
 #### Usage
 
-* <a href="https://github.com/NVlabs/tiny-cuda-nn">tiny-cuda-nn</a> is required:
+* <a href="https://github.com/NVlabs/tiny-cuda-nn">tiny-cuda-nn</a> is required
 ```bash
 pip install git+https://github.com/NVlabs/tiny-cuda-nn/#subdirectory=bindings/torch
 ```
 * Preparing dataset
 
-Download PhotoTourism dataset from <a href="https://www.cs.ubc.ca/~kmyi/imw2020/data.html">here</a> and split file from the "Additional links" <a href="https://nerf-w.github.io/">here</a>. The split file should be place at the same path as the `dense` directory of the PhotoTourism dataset, e.g.:
+Download PhotoTourism dataset from <a href="https://www.cs.ubc.ca/~kmyi/imw2020/data.html">here</a> and split file from the "Additional links" <a href="https://nerf-w.github.io/">here</a>. The split file should be placed at the same path as the `dense` directory of the PhotoTourism dataset, e.g.:
 ```bash
 ├──brandenburg_gate
   ├── dense  # colmap database
