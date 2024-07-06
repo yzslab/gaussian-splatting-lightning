@@ -1,7 +1,10 @@
 # Prepare MatrixCity dataset
 Download dataset: <a href="https://city-super.github.io/matrixcity/">MatrixCity</a>
 
-## Structure
+## Example Structure
+
+The key is that `rgb` and `depth` directories need to be placed in the same directory as `transforms.json`.
+
 ```bash
 ├── small_city/aerial
     ├── block_1
@@ -26,15 +29,34 @@ Download dataset: <a href="https://city-super.github.io/matrixcity/">MatrixCity<
 
 Please note that the `transforms.json` and `transforms_origin.json` are not the files in `pose` directories. They are located in the sub-directories of the directory where RGB tarball files placed. For example, <a href="https://huggingface.co/datasets/BoDai/MatrixCity/tree/main/small_city/aerial/train/block_1">here are the `json` files for `small_city/aerial/block_1`</a>.
 
-## Command example
+## Usage example
+<b>[NOTE]</b> It takes some time to generate a point cloud the first time it runs
 
-```bash 
-python main.py fit \
-    --data.path data/MatrixCity/small_city/aerial \
-    --data.parser MatrixCity \
-    --data.parser.train '["block_1/transforms.json", "block_2/transforms.json"]' \
-    --data.parser.test '["block_1_test/transforms.json", "block_2_test/transforms.json"]' \
-    ...
-```
+* Via command
+    ```bash 
+    python main.py fit \
+        --data.path data/MatrixCity/small_city/aerial \
+        --data.parser MatrixCity \
+        --data.parser.train '["block_1/transforms.json", "block_2/transforms.json"]' \
+        --data.parser.test '["block_1_test/transforms.json", "block_2_test/transforms.json"]' \
+        ...
+    ```
 
-The `--data.parser.train` and `--data.parser.test` specify the json files of the blocks you want to use.
+    The `--data.parser.train` and `--data.parser.test` specify the json files of the blocks you want to use.
+* Via config file
+  ```bash
+  python main.py fit \
+      --config configs/gsplat-matrixcity-aerial.yaml \
+      --data.path data/MatrixCity/small_city/aerial \
+      ...
+  ```
+  See <a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/configs/gsplat-matrixcity-aerial.yaml">`configs/gsplat-matrixcity-aerial.yaml`</a> for more details.
+* Mixing aerial and street views is also possible
+  ```bash
+  python main.py fit \
+      --config configs/gsplat-matrixcity-aerial_street-example.yaml \
+      --data.path data/MatrixCity/small_city \
+      ...
+  ```
+  
+  Please note that the value of `--data.path` is different from above. Take a look <a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/configs/gsplat-matrixcity-aerial_street-example.yaml">`configs/gsplat-matrixcity-aerial_street-example.yaml`</a> for more details.
