@@ -429,7 +429,7 @@ This comes from <a href="https://feature-3dgs.github.io/">Feature 3DGS</a>. But 
 ### 2.15. In the wild
 #### Introduction
 
-Based on the Appearance Model (2.12.) above, this model can produce a visibility map for every train view indicating whether a pixel belongs to transient objects or not.
+Based on the Appearance Model (2.12.) above, this model can produce a visibility map for every training view indicating whether a pixel belongs to transient objects or not.
 
 The idea of the visibility map is a bit like <a href="https://rover-xingyu.github.io/Ha-NeRF/">Ha-NeRF</a>, but rather than uses positional encoding for pixel coordinates, 2D dense grid encoding is used here in order to accelerate training.
 
