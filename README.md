@@ -469,7 +469,7 @@ Download PhotoTourism dataset from <a href="https://www.cs.ubc.ca/~kmyi/imw2020/
 * Start training
 
 ```bash
-pythin main.py fit \
+python main.py fit \
     --config configs/appearance_embedding_visibility_map_renderer/view_independent-2x_ds.yaml \
     --data.path data/brandenburg_gate \
     -n brandenburg_gate
