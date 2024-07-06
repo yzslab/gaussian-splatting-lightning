@@ -295,7 +295,7 @@ class Viewer:
                 return transform
 
         # skip reorient if dataset type is blender
-        if dataset_type in ["blender", "nsvf"] and mode == "auto":
+        if dataset_type in ["blender", "nsvf", "matrixcity"] and mode == "auto":
             print("skip reorient for {} dataset".format(dataset_type))
             return transform
 
