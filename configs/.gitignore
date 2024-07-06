@@ -37,5 +37,5 @@
 !feature_3dgs/sam-speedup.yaml
 !feature_3dgs/lseg.yaml
 !feature_3dgs/lseg-speedup.yaml
-!appearance_embedding_visibility_map_renderer/view_independent.yaml
-!appearance_embedding_visibility_map_renderer/view_independent-exp.yaml
+!appearance_embedding_visibility_map_renderer/view_independent-2x_ds.yaml
+!appearance_embedding_visibility_map_renderer/view_independent-2x_ds-exp.yaml

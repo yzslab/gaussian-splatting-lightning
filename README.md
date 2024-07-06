@@ -464,14 +464,18 @@ Download PhotoTourism dataset from <a href="https://www.cs.ubc.ca/~kmyi/imw2020/
   ├── brandenburg.tsv  # split file
 ```
 
+[Optional] 2x downsize the images: `python utils/image_downsample.py data/brandenburg_gate/dense/images --factor 2`
+
 * Start training
 
 ```bash
 pythin main.py fit \
-    --config configs/appearance_embedding_visibility_map_renderer/view_independent.yaml \
+    --config configs/appearance_embedding_visibility_map_renderer/view_independent-2x_ds.yaml \
     --data.path data/brandenburg_gate \
     -n brandenburg_gate
 ```
+
+If you have not downsized images, remember to add a `--data.parser.down_sample_factor 1` to the command above.
 
 * Validation on training set
 
