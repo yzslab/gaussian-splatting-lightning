@@ -41,6 +41,10 @@ class Camera:
 
         return self
 
+    @property
+    def device(self):
+        return self.R.device
+
 
 @dataclass
 class Cameras:

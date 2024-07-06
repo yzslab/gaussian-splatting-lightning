@@ -226,6 +226,22 @@ class GaussianSplatting(LightningModule):
             step=self.trainer.global_step,
         )
 
+    def transfer_batch_to_device(self, batch: Any, device: torch.device, dataloader_idx: int) -> Any:
+        if batch[0].device != self.device:
+            return super().transfer_batch_to_device(batch, device, dataloader_idx)
+
+        camera, image_info, extra_data = batch
+        image_name, gt_image, masked_pixels = image_info
+
+        if extra_data is not None:
+            extra_data = super().transfer_batch_to_device(extra_data, device, dataloader_idx)
+        if gt_image is not None:
+            gt_image = gt_image.to(device)
+        if masked_pixels is not None:
+            masked_pixels = masked_pixels.to(device)
+
+        return camera, (image_name, gt_image, masked_pixels), extra_data
+
     def forward(self, camera):
         if self.training is True:
             return self.renderer.training_forward(
