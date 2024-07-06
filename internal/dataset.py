@@ -26,11 +26,21 @@ class Dataset(torch.utils.data.Dataset):
             self,
             image_set: ImageSet,
             undistort_image: bool = True,
+            camera_device: torch.device = None,
+            image_device: torch.device = None
     ) -> None:
         super().__init__()
         self.image_set = image_set
         self.undistort_image = undistort_image
-        self.image_cameras: list[Camera] = [i for i in image_set.cameras]  # store undistorted camera
+
+        if camera_device is None:
+            camera_device = torch.device("cpu")
+        if image_device is None:
+            image_device = torch.device("cpu")
+        self.camera_device = camera_device
+        self.image_device = image_device
+
+        self.image_cameras: list[Camera] = [i.to_device(camera_device) for i in image_set.cameras]  # store undistorted camera
 
     def __len__(self):
         return len(self.image_set)
@@ -103,9 +113,9 @@ class Dataset(torch.utils.data.Dataset):
             assert mask.shape[:2] == image.shape[:2], \
                 "the shape of mask {} doesn't match to the image {}".format(mask.shape[:2], image.shape[:2])
             mask = (mask == 0).unsqueeze(-1).expand(*image.shape)  # True is the masked pixels
-            mask = mask.permute(2, 0, 1)  # [channel, height, width]
+            mask = mask.permute(2, 0, 1).to(self.image_device)  # [channel, height, width]
 
-        image = image.permute(2, 0, 1)  # [channel, height, width]
+        image = image.permute(2, 0, 1).to(self.image_device)  # [channel, height, width]
 
         return self.image_set.image_names[index], image, mask
 
@@ -254,6 +264,8 @@ class DataModule(LightningDataModule):
             background_sphere_center: Literal["points", "cameras"] = "points",
             background_sphere_distance: float = 2.2,
             background_sphere_points: int = 204_800,
+            camera_on_cpu: bool = False,
+            image_on_cpu: bool = True,
     ) -> None:
         r"""Load dataset
 
@@ -272,6 +284,15 @@ class DataModule(LightningDataModule):
             print(f"Detected dataset type: {parser.__class__.__name__}")
 
         self.save_hyperparameters()
+
+        self.camera_device = torch.device("cpu")
+        self.image_device = torch.device("cpu")
+
+    def set_device(self, device):
+        if self.hparams["camera_on_cpu"] is False:
+            self.camera_device = device
+        if self.hparams["image_on_cpu"] is False:
+            self.image_device = device
 
     @staticmethod
     def detect_dataset_type(path):
@@ -400,7 +421,12 @@ class DataModule(LightningDataModule):
 
     def train_dataloader(self) -> TRAIN_DATALOADERS:
         return CacheDataLoader(
-            Dataset(self.dataparser_outputs.train_set, undistort_image=self.hparams["undistort_image"]),
+            Dataset(
+                self.dataparser_outputs.train_set,
+                undistort_image=self.hparams["undistort_image"],
+                camera_device=self.camera_device,
+                image_device=self.image_device,
+            ),
             max_cache_num=self.hparams["train_max_num_images_to_cache"],
             shuffle=True,
             seed=torch.initial_seed() + self.global_rank,  # seed with global rank
@@ -416,7 +442,12 @@ class DataModule(LightningDataModule):
         else:
             image_set = self.dataparser_outputs.test_set
         return CacheDataLoader(
-            Dataset(image_set, undistort_image=self.hparams["undistort_image"]),
+            Dataset(
+                image_set,
+                undistort_image=self.hparams["undistort_image"],
+                camera_device=self.camera_device,
+                image_device=torch.device("cpu"),
+            ),
             max_cache_num=self.hparams["test_max_num_images_to_cache"],
             shuffle=False,
             num_workers=self.hparams["num_workers"],
@@ -428,7 +459,12 @@ class DataModule(LightningDataModule):
         else:
             image_set = self.dataparser_outputs.val_set
         return CacheDataLoader(
-            Dataset(image_set, undistort_image=self.hparams["undistort_image"]),
+            Dataset(
+                image_set,
+                undistort_image=self.hparams["undistort_image"],
+                camera_device=self.camera_device,
+                image_device=torch.device("cpu"),
+            ),
             max_cache_num=self.hparams["val_max_num_images_to_cache"],
             shuffle=False,
             num_workers=self.hparams["num_workers"],

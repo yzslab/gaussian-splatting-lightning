@@ -2,7 +2,9 @@
 !.gitignore
 !ddp.yaml
 !ddp_not_find_unused.yaml
+!image_on_gpu.yaml
 !blender.yaml
+!blender_gsplat.yaml
 !appearance.yaml
 !colmap_exp.yaml
 !larger_dataset.yaml

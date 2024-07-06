@@ -2,7 +2,7 @@ import os.path
 import queue
 import threading
 import traceback
-from typing import Tuple, List, Dict, Union, Any, Callable
+from typing import Tuple, List, Dict, Union, Any, Callable, Optional
 from typing_extensions import Self
 
 import torch.optim
@@ -648,6 +648,35 @@ class GaussianSplatting(LightningModule):
             ), xyz.cpu().numpy(), ((rgb + 0.5).clamp(min=0., max=1.) * 255).to(torch.int).cpu().numpy())
         print("Checkpoint saved to {}".format(checkpoint_path))
 
+    def set_datamodule_device(self, device):
+        if self.trainer is None:
+            return
+        datamodule = getattr(self.trainer, "datamodule", None)
+        if datamodule is None:
+            return
+        datamodule.set_device(device)
+
+    def _on_device_updated(self):
+        self.metric.on_parameter_move(device=self.device)
+        self.set_datamodule_device(self.device)
+
     def to(self, *args: Any, **kwargs: Any) -> Self:
-        self.metric.on_parameter_move(*args, **kwargs)
-        return super().to(*args, **kwargs)
+        super().to(*args, **kwargs)
+
+        self._on_device_updated()
+
+        return self
+
+    def cuda(self, device: Optional[Union[torch.device, int]] = None) -> Self:
+        super().cuda(device)
+
+        self._on_device_updated()
+
+        return self
+
+    def cpu(self) -> Self:
+        super().cpu()
+
+        self._on_device_updated()
+
+        return self
