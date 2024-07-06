@@ -427,6 +427,14 @@ This comes from <a href="https://feature-3dgs.github.io/">Feature 3DGS</a>. But 
 </details>
 
 ### 2.15. In the wild
+
+| | | | |
+| --- | --- | --- | --- |
+| ![image](https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/0f3c7bc8-5219-4e0f-bd9f-97e22b06d5f2) | ![image](https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/215a3467-b29b-486c-8275-eaa5c41f3db5) | ![image](https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/84c35b5a-460e-4977-bfc1-3b95e8768291) | ![image](https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/0ab3415c-da7e-4445-9e0e-a3a419e07f64) |
+
+
+
+
 #### Introduction
 
 Based on the Appearance Model (2.12.) above, this model can produce a visibility map for every training view indicating whether a pixel belongs to transient objects or not.
@@ -435,6 +443,7 @@ The idea of the visibility map is a bit like <a href="https://rover-xingyu.githu
 
 Please refer to <a href="https://rover-xingyu.github.io/Ha-NeRF/">Ha-NeRF</a>, `internal/renderers/gsplat_appearance_embedding_visibility_map_renderer.py` and `internal/metrics/visibility_map_metrics.py` for more details.
 
+<b>[NOTE]</b> Though it shows the capability to distinguish the pixels of transient objects, but may not be able to remove some artifats/floaters belong to transients. And may also treat under-reconstructed regions as transients.
   
 #### Usage
 
