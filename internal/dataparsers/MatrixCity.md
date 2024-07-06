@@ -1,4 +1,7 @@
-* Structure
+# Prepare MatrixCity dataset
+Download dataset: <a href="https://city-super.github.io/matrixcity/">MatrixCity</a>
+
+## Structure
 ```bash
 ├── small_city/aerial
     ├── block_1
@@ -21,51 +24,9 @@
     ...  # same as `small_city/aerial` above
 ```
 
-Example contents of `transforms.json` and `transforms_origin.json`:
-```json
-{
-    "camera_angle_x": 0.7853981852531433,
-    "frames": [
-        {
-            "frame_index": 1,
-            "rot_mat": [
-                [
-                    -4.3711387287537207e-10,
-                    0.0070710680447518826,
-                    -0.007071067579090595,
-                    -1000.0
-                ],
-                [
-                    -0.009999999776482582,
-                    -5.844237316310341e-10,
-                    3.374863583038845e-11,
-                    -38.0
-                ],
-                [
-                    -3.89386078936127e-10,
-                    0.007071067579090595,
-                    0.0070710680447518826,
-                    150.0
-                ],
-                [
-                    0.0,
-                    0.0,
-                    0.0,
-                    1.0
-                ]
-            ],
-            "euler": [
-                0.7853981256484985,
-                3.893860878179112e-08,
-                -1.5707963705062866
-            ]
-        },
-        // other frames
-   ]
-}
-```
+Please note that the `transforms.json` and `transforms_origin.json` are not the files in `pose` directories. They are located in the sub-directories of the directory where RGB tarball files placed. For example, <a href="https://huggingface.co/datasets/BoDai/MatrixCity/tree/main/small_city/aerial/train/block_1">here are the `json` files for `small_city/aerial/block_1`</a>.
 
-* DataParser params example
+## Command example
 
 ```bash 
 python main.py fit \
