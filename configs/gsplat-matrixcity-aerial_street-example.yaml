@@ -1,0 +1,23 @@
+max_steps: 60_000
+data:
+  train_max_num_images_to_cache: 4096  # avoid OOM
+  parser:
+    class_path: MatrixCity
+    init_args:
+      train:
+        - aerial/block_1/transforms_origin.json
+        - street/small_city_road_down/transforms_0-29.json
+        - street/small_city_road_down/transforms_0-59.json
+      test:
+        - aerial/block_1_test/transforms_origin.json
+        - street/small_city_road_down_test/transforms_0-2.json
+      depth_read_step: 4
+model:
+  gaussian:
+    optimization:
+      spatial_lr_scale: 3  # avoid large xyz learning rate
+    sh_degree: 0  # avoid CUDA OOM
+  density:
+    densify_grad_threshold: 0.0006  # avoid CUDA OOM
+    densify_until_iter: 30_000
+  renderer: internal.renderers.gsplat_renderer.GSPlatRenderer
