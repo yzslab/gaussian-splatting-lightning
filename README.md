@@ -36,6 +36,7 @@
   * <a href="#212-appearance-model">New Appearance Model (2.12.)</a>: improve the quality when images have various appearances
   * <a href="#213-3dgs-mcmc">3D Gaussian Splatting as Markov Chain Monte Carlo (2.13.)</a>
   * <a href="#214-feature-distillation">Feature distillation (2.14.)</a>
+  * <a href="#215-in-the-wild">In the wild (2.15.)</a>
 ## 1. Installation
 ### 1.1. Clone repository
 
@@ -424,6 +425,55 @@ This comes from <a href="https://feature-3dgs.github.io/">Feature 3DGS</a>. But 
   LSeg feature is used in this video.
 
 </details>
+
+### 2.15. In the wild
+#### Introduction
+
+Based on the Appearance Model (2.12.) above, this model can produce a visibility map for every train view indicating whether a pixel belongs to transient objects or not.
+
+The idea of the visibility map is a bit like <a href="https://rover-xingyu.github.io/Ha-NeRF/">Ha-NeRF</a>, but rather than uses positional encoding for pixel coordinates, 2D dense grid encoding is used here in order to accelerate training.
+
+Please refer to <a href="https://rover-xingyu.github.io/Ha-NeRF/">Ha-NeRF</a>, `internal/renderers/gsplat_appearance_embedding_visibility_map_renderer.py` and `internal/metrics/visibility_map_metrics.py` for more details.
+
+  
+#### Usage
+
+* <a href="https://github.com/NVlabs/tiny-cuda-nn">tiny-cuda-nn</a> is required:
+```bash
+pip install git+https://github.com/NVlabs/tiny-cuda-nn/#subdirectory=bindings/torch
+```
+* Preparing dataset
+
+Download PhotoTourism dataset from <a href="https://www.cs.ubc.ca/~kmyi/imw2020/data.html">here</a> and split file from the "Additional links" <a href="https://nerf-w.github.io/">here</a>. The split file should be place at the same path as the `dense` directory of the PhotoTourism dataset, e.g.:
+```bash
+├──brandenburg_gate
+  ├── dense  # colmap database
+      ├── images
+          ├── ...
+      ├── sparse
+      ...
+  ├── brandenburg.tsv  # split file
+```
+
+* Start training
+
+```bash
+pythin main.py fit \
+    --config configs/appearance_embedding_visibility_map_renderer/view_independent.yaml \
+    --data.path data/brandenburg_gate \
+    -n brandenburg_gate
+```
+
+* Validation on training set
+
+```bash
+python main.py validate \
+   --save_val \
+   --val_train \
+   --config outputs/brandenburg_gate/lightning_logs/version_0/config.yaml  # you may need to change this path
+```
+
+Then you can find the rendered masks and images in `outputs/brandenburg_gate/val`.
 
 ## 3. Evaluation
 

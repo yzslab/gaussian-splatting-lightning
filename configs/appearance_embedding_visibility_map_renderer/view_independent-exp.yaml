@@ -1,0 +1,21 @@
+model:
+  gaussian:
+    optimization:
+      feature_extra_lr_init: 2e-3
+    sh_degree: 0
+    extra_feature_dims: 64
+  renderer:
+    class_path: internal.renderers.gsplat_appearance_embedding_visibility_map_renderer.GSplatAppearanceEmbeddingVisibilityMapRenderer
+    init_args:
+      model:
+        is_view_dependent: false
+  metric:
+    class_path: internal.metrics.visibility_map_metrics.VisibilityMapMetrics
+data:
+  val_max_num_images_to_cache: -1
+  test_max_num_images_to_cache: -1
+  parser:
+    class_path: PhotoTourism
+    init_args:
+      down_sample_factor: 2
+      split_mode: "experiment"

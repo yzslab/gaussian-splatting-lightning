@@ -17,3 +17,4 @@
 !seganygs_renderer.py
 !gsplat_appearance_embedding_renderer.py
 !feature_3dgs_renderer.py
+!gsplat_appearance_embedding_visibility_map_renderer.py

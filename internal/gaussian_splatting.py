@@ -546,7 +546,10 @@ class GaussianSplatting(LightningModule):
             try:
                 image_list = []
                 if item["extra_image"] is not None:
-                    image_list.append(item["extra_image"])
+                    extra_image = item["extra_image"]
+                    if extra_image.shape[0] == 1:
+                        extra_image = extra_image.repeat(3, 1, 1)
+                    image_list.append(extra_image)
                 image_list += [item["output_image"], item["gt_image"]]
                 image = torch.concat(image_list, dim=-1)
 

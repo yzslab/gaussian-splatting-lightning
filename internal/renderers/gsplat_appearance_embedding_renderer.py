@@ -73,8 +73,7 @@ class Model(nn.Module):
 
 class GSplatAppearanceEmbeddingRenderer(Renderer):
     """
-    rgb_factors = f(point_features, appearance_embedding, view_direction)
-    rgb = based_rgb * rgb_factors
+    rgb = f(point_features, appearance_embedding, view_direction)
     """
 
     def __init__(
