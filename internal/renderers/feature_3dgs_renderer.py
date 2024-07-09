@@ -299,27 +299,27 @@ class ViewerOptions:
                 self.server.gui.add_markdown("No option for SAM")
 
     def _setup_lseg_options(self):
-        # objects = ["car", "tree", "building", "sidewalk", "road"]
+        objects = ["car", "tree", "building", "sidewalk", "road"]
         clip_editor = self._get_clip_editor()
-        # text_feature = clip_editor.encode_text([obj.replace("_", " ") for obj in objects])
-        # del clip_editor
-        # torch.cuda.empty_cache()
+        text_feature = clip_editor.encode_text([obj.replace("_", " ") for obj in objects])
+        del clip_editor
+        torch.cuda.empty_cache()
 
         with self.server.gui.add_folder("LSeg"):
-            # object_dropdown = self.server.gui.add_dropdown(
-            #     label="Object",
-            #     options=objects,
-            # )
-            object_text = self.server.gui.add_text(
-                label="Text",
-                initial_value="",
+            object_dropdown = self.server.gui.add_dropdown(
+                label="Object",
+                options=objects,
             )
+            # object_text = self.server.gui.add_text(
+            #     label="Text",
+            #     initial_value="",
+            # )
             score_2d_threshold_slider = self.server.gui.add_slider(
                 label="Score 2D",
                 min=0.,
                 max=1.,
                 step=0.001,
-                initial_value=0.9,
+                initial_value=1. / len(objects),
                 visible=self.renderer.n_actual_feature_dims == 256,
             )
             score_3d_threshold_slider = self.server.gui.add_slider(
@@ -341,17 +341,17 @@ class ViewerOptions:
 
             @extract_button.on_click
             def _(event):
-                # try:
-                #     target_idx = objects.index(object_dropdown.value)
-                # except ValueError:
-                #     self.viewer.show_message("Object not supported")
-                #     return
-
-                if object_text.value == "":
-                    self.viewer.show_message("Empty value")
+                try:
+                    target_idx = objects.index(object_dropdown.value)
+                except ValueError:
+                    self.viewer.show_message("Object not supported")
                     return
 
-                text_feature = clip_editor.encode_text([object_text.value.replace("_", "")])
+                # if object_text.value == "":
+                #     self.viewer.show_message("Empty value")
+                #     return
+                #
+                # text_feature = clip_editor.encode_text([object_text.value.replace("_", "")])
 
                 with torch.no_grad(), self.server.atomic():
                     if self.renderer.n_actual_feature_dims == 256:
@@ -386,7 +386,7 @@ class ViewerOptions:
                             feature_map_flatten,
                             text_feature,
                             score_2d_threshold_slider.value,
-                            positive_ids=[0],
+                            positive_ids=[target_idx],
                         )
 
                         mask_2d = (scores_2d >= 0.5).reshape(feature_map.shape[1:])
@@ -404,7 +404,7 @@ class ViewerOptions:
                             self.renderer.features,
                             text_feature,
                             score_3d_threshold_slider.value,
-                            positive_ids=[0],
+                            positive_ids=[target_idx],
                         )
 
                     mask = (scores_3d >= 0.5)
