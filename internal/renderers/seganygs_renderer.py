@@ -6,7 +6,7 @@ import re
 import torch
 from gsplat.rasterize import rasterize_gaussians
 from gsplat.sh import spherical_harmonics
-from .renderer import Renderer
+from .renderer import RendererOutputTypes, RendererOutputInfo, Renderer
 from .gsplat_renderer import GSPlatRenderer, DEFAULT_ANTI_ALIASED_STATUS, DEFAULT_BLOCK_SIZE
 from .gsplat_contrastive_feature_renderer import GSplatContrastiveFeatureRenderer
 from ..cameras import Camera
@@ -224,8 +224,12 @@ class SegAnyGSRenderer(Renderer):
         with tabs.add_tab("Semantic"):
             self.viewer_options = ViewerOptions(self, viewer, server, initial_scale=self.initial_scale)
 
-    def get_available_output_types(self) -> Dict:
-        return self.available_output_types
+    def get_available_outputs(self) -> Dict:
+        available_outputs = {}
+        for i in self.available_output_types:
+            available_outputs[i] = RendererOutputInfo(self.available_output_types[i], type=RendererOutputTypes.GRAY if self.is_type_depth_map(i) else RendererOutputTypes.RGB)
+
+        return available_outputs
 
     def is_type_depth_map(self, t: str) -> bool:
         return t == "depth" or t == "segment3d_similarities"
@@ -391,7 +395,7 @@ class ViewerOptions:
     def _setup_output_type_dropdown(self):
         render_type_dropdown = self.server.gui.add_dropdown(
             label="Render Type",
-            options=list(self.renderer.get_available_output_types().keys()),
+            options=list(self.renderer.available_output_types.keys()),
         )
 
         @render_type_dropdown.on_update
@@ -825,13 +829,13 @@ class ViewerOptions:
             raise RuntimeError("Invalid name")
 
     def _switch_renderer_output_type(self, type):
-        output_type_key = self.renderer.available_output_types.get(type, None)
-        if output_type_key is None:
+        output_type_info = self.renderer.get_available_outputs().get(type, None)
+        if output_type_info is None:
             return
 
         viewer = self.viewer
         viewer.viewer_renderer.output_type_dropdown.value = type
-        viewer.viewer_renderer._set_output_type(type, output_type_key)
+        viewer.viewer_renderer._set_output_type(type, output_type_info)
 
         for i in self._on_render_output_type_switched_callbacks:
             i(type)

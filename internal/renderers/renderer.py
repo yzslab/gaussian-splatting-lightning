@@ -1,8 +1,42 @@
+from dataclasses import dataclass
 import lightning
 import torch
 from typing import Any, Union, List, Tuple, Optional, Dict, Callable
 from internal.cameras.cameras import Camera
 from internal.models.gaussian_model import GaussianModel
+
+
+class RendererOutputTypes:
+    RGB: int = 1
+    GRAY: int = 2
+    NORMAL_MAP: int = 3
+    FEATURE_MAP: int = 4
+    OTHER: int = 65535  # must provide a visualizer
+
+
+RendererOutputVisualizer = Callable[[torch.Tensor, Dict, "RendererOutputInfo"], torch.Tensor]
+
+
+@dataclass
+class RendererOutputInfo:
+    key: str
+    """The key used to retrieve value from the dictionary returned by `forward()`"""
+
+    type: int = RendererOutputTypes.RGB
+    """One defined in `RendererOutputTypes` above"""
+
+    visualizer: RendererOutputVisualizer = None
+    """
+    The first parameter is the value retrieved from the dict returned by `forward()`. 
+    The second parameter is the dict returned by `forward()`. 
+    The Third one is a `RendererOutput` instance.
+    """
+
+    def __post_init__(self):
+        if self.type == RendererOutputTypes.OTHER and self.visualizer is None:
+            raise ValueError("Visualizer must be provided when `type` is `OTHER`")
+
+        # TODO: set visualizer automatically if it is None
 
 
 class Renderer(torch.nn.Module):
@@ -71,16 +105,7 @@ class Renderer(torch.nn.Module):
     def setup_web_viewer_tabs(self, viewer, server, tabs):
         pass
 
-    def get_available_output_types(self) -> Dict:
+    def get_available_outputs(self) -> Dict[str, RendererOutputInfo]:
         return {
-            "rgb": "render",
+            "rgb": RendererOutputInfo("render")
         }
-
-    def is_type_depth_map(self, t: str) -> bool:
-        return False
-
-    def is_type_normal_map(self, t: str) -> bool:
-        return False
-
-    def is_type_feature_map(self, t: str) -> bool:
-        return False

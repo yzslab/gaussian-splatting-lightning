@@ -7,7 +7,7 @@ from typing import Dict, Tuple, Union, Callable, Optional, List
 import lightning
 import torch
 import math
-from .renderer import Renderer
+from .renderer import RendererOutputTypes, RendererOutputInfo, Renderer
 from ..cameras import Camera
 from ..models.gaussian_model import GaussianModel
 
@@ -190,19 +190,13 @@ class Vanilla2DGSRenderer(Renderer):
         output[1:-1, 1:-1, :] = normal_map
         return output
 
-    def get_available_output_types(self) -> Dict:
+    def get_available_outputs(self) -> Dict:
         return {
-            "rgb": "render",
-            'render_alpha': "rend_alpha",
-            'render_normal': "rend_normal",
-            'view_normal': "view_normal",
-            'render_dist': "rend_dist",
-            'surf_depth': "surf_depth",
-            'surf_normal': "surf_normal",
+            "rgb": RendererOutputInfo("render"),
+            'render_alpha': RendererOutputInfo("rend_alpha", type=RendererOutputTypes.GRAY),
+            'render_normal': RendererOutputInfo("rend_normal", type=RendererOutputTypes.NORMAL_MAP),
+            'view_normal': RendererOutputInfo("view_normal", type=RendererOutputTypes.NORMAL_MAP),
+            'render_dist': RendererOutputInfo("rend_dist", type=RendererOutputTypes.GRAY),
+            'surf_depth': RendererOutputInfo("surf_depth", type=RendererOutputTypes.GRAY),
+            'surf_normal': RendererOutputInfo("surf_normal", type=RendererOutputTypes.NORMAL_MAP),
         }
-
-    def is_type_depth_map(self, t: str) -> bool:
-        return t == "surf_depth"
-
-    def is_type_normal_map(self, t: str) -> bool:
-        return t == "render_normal" or t == "surf_normal" or t == "view_normal"

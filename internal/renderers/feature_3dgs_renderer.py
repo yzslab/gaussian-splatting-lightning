@@ -3,7 +3,7 @@ from typing import Literal, Any, Tuple, Optional, Union, List, Dict
 
 import lightning
 import torch
-from .renderer import Renderer
+from .renderer import RendererOutputTypes, RendererOutputInfo, Renderer
 from .gsplat_renderer import GSPlatRenderer
 from gsplat.sh import spherical_harmonics
 import sklearn
@@ -205,17 +205,14 @@ class Feature3DGSRenderer(Renderer):
             **kwargs,
         )
 
-    def get_available_output_types(self) -> Dict:
+    def get_available_outputs(self) -> Dict:
         return {
-            "rgb": "render",
-            "features": "features",
-            "features_vanilla_pca_2d": "features_vanilla_pca_2d",
-            "features_pca_3d": "features_pca_3d",
-            "edited": "edited",
+            "rgb": RendererOutputInfo(key="render"),
+            "features": RendererOutputInfo(key="features", type=RendererOutputTypes.FEATURE_MAP),
+            "features_vanilla_pca_2d": RendererOutputInfo(key="features_vanilla_pca_2d"),
+            "features_pca_3d": RendererOutputInfo(key="features_pca_3d"),
+            "edited": RendererOutputInfo(key="edited"),
         }
-
-    def is_type_feature_map(self, t: str) -> bool:
-        return t == "features"
 
     def setup_web_viewer_tabs(self, viewer, server, tabs):
         self.viewer_options = ViewerOptions(self, viewer, server, tabs)

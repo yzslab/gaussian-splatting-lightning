@@ -215,11 +215,8 @@ class VanillaRenderer(Renderer):
             "radii": radii,
         }
 
-    def get_available_output_types(self) -> Dict:
+    def get_available_outputs(self) -> Dict:
         return {
-            "rgb": "render",
-            "depth": "depth",
+            "rgb": RendererOutputInfo("render"),
+            "depth": RendererOutputInfo("depth", RendererOutputTypes.GRAY),
         }
-
-    def is_type_depth_map(self, t: str) -> bool:
-        return t == "depth"
