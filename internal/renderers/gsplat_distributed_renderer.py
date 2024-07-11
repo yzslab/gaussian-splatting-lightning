@@ -137,8 +137,8 @@ class GSplatDistributedRendererImpl(Renderer):
 
         ## create local int tensor
         int_tensor = torch.tensor([
-            viewpoint_camera.height.int(),
             viewpoint_camera.width.int(),
+            viewpoint_camera.height.int(),
             n_gaussians,
         ], dtype=torch.int, device=device)
         ## perform int tensor gathering
