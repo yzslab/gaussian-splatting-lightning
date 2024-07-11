@@ -1,10 +1,10 @@
-from typing import Optional, List, Union, Any
+from typing import Optional, List, Union, Any, Dict
 
 import torch
 import torch.distributed
 import lightning.pytorch as pl
 from lightning.fabric.plugins import ClusterEnvironment, CheckpointIO
-from lightning.fabric.utilities.types import ReduceOp
+from lightning.fabric.utilities.types import ReduceOp, _PATH
 from lightning.pytorch.plugins import PrecisionPlugin
 from lightning.pytorch.strategies.parallel import ParallelStrategy
 from lightning.pytorch.strategies.strategy import TBroadcast
@@ -120,3 +120,6 @@ class MPStrategy(ParallelStrategy):
             obj = [None]  # type: ignore[list-item]
         torch.distributed.broadcast_object_list(obj, src, group=_group.WORLD)
         return obj[0]
+
+    def save_checkpoint(self, checkpoint: Dict[str, Any], filepath: _PATH, storage_options: Optional[Any] = None) -> None:
+        self.checkpoint_io.save_checkpoint(checkpoint, filepath, storage_options=storage_options)
