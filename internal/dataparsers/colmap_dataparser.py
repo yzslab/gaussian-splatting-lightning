@@ -347,10 +347,10 @@ class ColmapDataParser(DataParser):
 
         # recalculate intrinsics if down sample enabled
         if self.params.down_sample_factor != 1:
-            if self.params.down_sample_rounding_model == "round_half_up":
+            if self.params.down_sample_rounding_mode == "round_half_up":
                 rounding_func = self._round_half_up
             else:
-                rounding_func = getattr(torch, self.params.down_sample_rounding_model)
+                rounding_func = getattr(torch, self.params.down_sample_rounding_mode)
             down_sampled_width = rounding_func(width.to(torch.float) / self.params.down_sample_factor)
             down_sampled_height = rounding_func(height.to(torch.float) / self.params.down_sample_factor)
             width_scale_factor = down_sampled_width / width
