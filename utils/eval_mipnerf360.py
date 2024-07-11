@@ -27,7 +27,7 @@ def start(command: str, scene: str, extra_args: list = None):
         "--data.parser", "Colmap",
         "--data.parser.down_sample_factor", "4",
         "--data.parser.split_mode", "experiment",
-        "--data.parser.down_sample_rounding_model", "round_half_up",
+        "--data.parser.down_sample_rounding_mode", "round_half_up",
         "--cache_all_images",
         "--logger", "wandb",
         "--output", os.path.join("outputs", args.project),
