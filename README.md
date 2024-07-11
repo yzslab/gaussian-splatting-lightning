@@ -156,7 +156,7 @@ Rounding mode is specified by `--data.parser.down_sample_rounding_mode`. Availab
 * Load large dataset without OOM
 ```bash
 ... fit \
-  --data.train_max_num_images_to_cache 1024 \
+  --data.params.train_max_num_images_to_cache 0 \
   ...
 ```
 ### 2.3. Use <a href="https://github.com/nerfstudio-project/gsplat">nerfstudio-project/gsplat</a>
