@@ -14,12 +14,13 @@ from lightning.pytorch import LightningDataModule, LightningModule
 from lightning.pytorch.utilities.types import OptimizerLRScheduler, LRSchedulerPLType, STEP_OUTPUT
 import lightning.pytorch.loggers
 
+import internal.mp_strategy
 from internal.viewer.training_viewer import TrainingViewer
 from internal.configs.model import ModelParams
 from internal.configs.light_gaussian import LightGaussian
 
 from internal.models.gaussian_model import GaussianModel
-from internal.renderers import Renderer, VanillaRenderer
+from internal.renderers import Renderer, VanillaRenderer, RendererConfig
 from internal.metrics.metric import Metric
 from internal.metrics.vanilla_metrics import VanillaMetrics
 from internal.density_controllers.density_controller import DensityController
@@ -42,7 +43,7 @@ class GaussianSplatting(LightningModule):
             save_val_output: bool = False,
             save_val_metrics: bool = None,
             max_save_val_output: int = -1,
-            renderer: Renderer = lazy_instance(VanillaRenderer),
+            renderer: Union[Renderer, RendererConfig] = lazy_instance(VanillaRenderer),
             metric: Metric = lazy_instance(VanillaMetrics),
             density: DensityController = lazy_instance(VanillaDensityController),
             save_ply: bool = False,
@@ -59,6 +60,9 @@ class GaussianSplatting(LightningModule):
         self.optimization_hparams = self.hparams["gaussian"].optimization
         self.light_gaussian_hparams = light_gaussian
 
+        # instantiate renderer
+        if isinstance(renderer, RendererConfig):
+            renderer = renderer.instantiate()
         self.renderer = renderer
 
         # instantiate density controller
@@ -628,7 +632,8 @@ class GaussianSplatting(LightningModule):
         return optimizers, schedulers
 
     def save_gaussians(self):
-        if self.trainer.global_rank != 0:
+        is_mp_strategy = isinstance(self.trainer.strategy, internal.mp_strategy.MPStrategy)
+        if self.trainer.global_rank != 0 and is_mp_strategy is False:
             return
 
         if self.hparams["save_ply"] is True:
@@ -647,10 +652,14 @@ class GaussianSplatting(LightningModule):
             print("Gaussians saved to {}".format(output_path))
 
         # save checkpoint
+        checkpoint_name_suffix = ""
+        if is_mp_strategy is True:
+            checkpoint_name_suffix = f"-rank={self.global_rank}"
+
         checkpoint_path = os.path.join(
             self.hparams["output_path"],
             "checkpoints",
-            "epoch={}-step={}.ckpt".format(self.trainer.current_epoch, self.trainer.global_step),
+            "epoch={}-step={}{}.ckpt".format(self.trainer.current_epoch, self.trainer.global_step, checkpoint_name_suffix),
         )
         os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
         self.trainer.save_checkpoint(checkpoint_path)
@@ -660,7 +669,7 @@ class GaussianSplatting(LightningModule):
             store_ply(os.path.join(
                 self.hparams["output_path"],
                 "checkpoints",
-                "epoch={}-step={}-xyz_rgb.ply".format(self.trainer.current_epoch, self.trainer.global_step),
+                "epoch={}-step={}{}-xyz_rgb.ply".format(self.trainer.current_epoch, self.trainer.global_step, checkpoint_name_suffix),
             ), xyz.cpu().numpy(), ((rgb + 0.5).clamp(min=0., max=1.) * 255).to(torch.int).cpu().numpy())
         print("Checkpoint saved to {}".format(checkpoint_path))
 

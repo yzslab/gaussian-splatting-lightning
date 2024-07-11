@@ -1,7 +1,9 @@
 import os
 import glob
 import torch
+
 from internal.models.gaussian_model_simplified import GaussianModelSimplified
+from internal.renderers import RendererConfig
 from internal.renderers.vanilla_renderer import VanillaRenderer
 
 
@@ -59,6 +61,9 @@ class GaussianModelLoader:
             if i.startswith("renderer."):
                 renderer_state_dict[i[len("renderer."):]] = checkpoint["state_dict"][i]
         # load state dict of renderer
+        if isinstance(renderer, RendererConfig):
+            renderer = renderer.instantiate()
+            renderer.setup(stage="validate")
         renderer.load_state_dict(renderer_state_dict)
         renderer = renderer.to(device)
 
@@ -68,7 +73,7 @@ class GaussianModelLoader:
     def initialize_simplified_model_from_point_cloud(point_cloud_path: str, sh_degree, device):
         model = GaussianModelSimplified.construct_from_ply(ply_path=point_cloud_path, sh_degree=sh_degree, device=device)
         renderer = VanillaRenderer()
-        renderer.setup(stage="val")
+        renderer.setup(stage="validate")
         renderer = renderer.to(device)
 
         return model, renderer

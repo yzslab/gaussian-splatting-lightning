@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import lightning
 import torch
 from typing import Any, Union, List, Tuple, Optional, Dict, Callable
+from internal.configs.instantiate_config import InstantiatableConfig
 from internal.cameras.cameras import Camera
 from internal.models.gaussian_model import GaussianModel
 
@@ -109,3 +110,9 @@ class Renderer(torch.nn.Module):
         return {
             "rgb": RendererOutputInfo("render")
         }
+
+
+@dataclass
+class RendererConfig(InstantiatableConfig):
+    def instantiate(self, *args, **kwargs) -> Renderer:
+        raise NotImplementedError()

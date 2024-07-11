@@ -43,3 +43,4 @@
 !appearance_embedding_visibility_map_renderer/view_independent-2x_ds-exp.yaml
 !gsplat-matrixcity-aerial.yaml
 !gsplat-matrixcity-aerial_street-example.yaml
+!distributed.yaml
