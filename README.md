@@ -151,7 +151,7 @@ You can use `utils/image_downsample.py` to downsample your images, e.g. 4x downs
   ...
 ```
 
-Rounding mode is specified by `--data.parser.down_sample_rounding_model`. Available values are `floor`, `round`, `round_half_up`, `ceil`. Default is `round`.
+Rounding mode is specified by `--data.parser.down_sample_rounding_mode`. Available values are `floor`, `round`, `round_half_up`, `ceil`. Default is `round`.
 
 * Load large dataset without OOM
 ```bash

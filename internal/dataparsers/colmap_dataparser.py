@@ -54,7 +54,7 @@ class Colmap(DataParserConfig):
 
     down_sample_factor: int = 1
 
-    down_sample_rounding_model: Literal["floor", "round", "round_half_up", "ceil"] = "round"
+    down_sample_rounding_mode: Literal["floor", "round", "round_half_up", "ceil"] = "round"
 
     def instantiate(self, path: str, output_path: str, global_rank: int) -> DataParser:
         return ColmapDataParser(path, output_path, global_rank, self)
