@@ -500,7 +500,10 @@ In the implementation here, Gaussians are stored, projected and their colors are
 
 This strategy works with densification enabled.
 
-<b>[NOTE]</b> Not well validated yet, still under development.
+<b>[NOTE]</b>
+* Not well validated yet, still under development
+* Training only currently
+* Can not combine with other algorithms directly, e.g. with appearance model
 
 #### Metrics of MipNeRF360 dataset
 One batch per GPU, 30K iterations, no other hyperparameters changed.
