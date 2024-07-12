@@ -37,6 +37,7 @@
   * <a href="#213-3dgs-mcmc">3D Gaussian Splatting as Markov Chain Monte Carlo (2.13.)</a>
   * <a href="#214-feature-distillation">Feature distillation (2.14.)</a>
   * <a href="#215-in-the-wild">In the wild (2.15.)</a>
+  * <a href="#216-new-multiple-gpu-training-strategy">New Multiple GPU training strategy (2.16.)</a>
 ## 1. Installation
 ### 1.1. Clone repository
 
