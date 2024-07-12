@@ -19,7 +19,7 @@ for i in os.listdir(checkpoint_dir):
     if i.endswith(".ckpt") is False:
         continue
     try:
-        step = int(i[i.find("step=") + 5:i.rfind("-rank=")])
+        step = int(i[i.index("step=") + 5:i.rindex("-rank=")])
         if step > max_iteration:
             max_iteration = step
             checkpoint_files = []
