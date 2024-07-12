@@ -35,7 +35,16 @@ class GSplatDistributedRenderer(RendererConfig):
 
     anti_aliased: bool = DEFAULT_ANTI_ALIASED_STATUS
 
-    rebalance_interval: int = -1
+    # Since the density controllers are replaceable, below parameters should be updated manually when the parameters of density controller changed
+
+    redistribute_interval: int = 1000
+    """This value should be the result of `n` times the densify interval, where `n` is an integer"""
+
+    redistribute_until: int = 15_000
+    """Should be the same as the densify until iteration"""
+
+    redistribute_threshold: float = 1.1
+    """Redistribute if min*threshold < max"""
 
     def instantiate(self, *args, **kwargs) -> Renderer:
         return GSplatDistributedRendererImpl(self)
@@ -43,13 +52,15 @@ class GSplatDistributedRenderer(RendererConfig):
 
 class GSplatDistributedRendererImpl(Renderer):
     # TODO: the metrics of Lego scene are a little bit lower than non-distributed version, and the number of Gaussians is only about half.
+    # Real world scenes have improvements
 
     def __init__(self, config: GSplatDistributedRenderer) -> None:
         super().__init__()
 
+        self.config = config
+
         self.block_size = config.block_size
         self.anti_aliased = config.anti_aliased
-        self.rebalance_interval = config.rebalance_interval
 
         self.world_size = 1
         self.global_rank = 0
@@ -90,7 +101,7 @@ class GSplatDistributedRendererImpl(Renderer):
         return None, None
 
     @staticmethod
-    def replace_tensors_to_optimizer(tensors_dict, gaussian_model, inds=None):
+    def replace_tensors_to_optimizer(tensors_dict, gaussian_model):
         # # get current parameters
         # tensors_dict = {}
         # for attr_name, param_group_name in gaussian_model.param_names:
@@ -102,12 +113,9 @@ class GSplatDistributedRendererImpl(Renderer):
             tensor = tensors_dict[group["name"]]
             stored_state = gaussian_model.optimizer.state.get(group['params'][0], None)
             if stored_state is not None:
-                if inds is not None:
-                    stored_state["exp_avg"][inds] = 0
-                    stored_state["exp_avg_sq"][inds] = 0
-                else:
-                    stored_state["exp_avg"] = torch.zeros_like(tensor)
-                    stored_state["exp_avg_sq"] = torch.zeros_like(tensor)
+                # simply re-initialize to zeros should not be a problem currently, since this only perform before training starting
+                stored_state["exp_avg"] = torch.zeros_like(tensor)
+                stored_state["exp_avg_sq"] = torch.zeros_like(tensor)
 
                 # replace with new tensor and state
                 del gaussian_model.optimizer.state[group['params'][0]]
@@ -123,6 +131,8 @@ class GSplatDistributedRendererImpl(Renderer):
             setattr(gaussian_model, attr_name, optimizable_tensors[param_group_name])
 
     def gather_member_data(self, viewpoint_camera: Camera, n_gaussians: int, device) -> List[MemberData]:
+        # TODO: replace `all_gather` with `all_gather_object`
+
         # gather data from group members
         ## create local float tensor
         float_tensor = torch.tensor([
@@ -339,9 +349,92 @@ class GSplatDistributedRendererImpl(Renderer):
             "xys_grad_scale_required": True,
         }
 
-    def training_forward(self, step: int, module: lightning.LightningModule, viewpoint_camera: Camera, pc: GaussianModel, bg_color: torch.Tensor, scaling_modifier=1.0, render_types: list = None, **kwargs):
-        # TODO: rebalance gaussians distribution, and need to be performed after densification or pruning
-        return super().training_forward(step, module, viewpoint_camera, pc, bg_color, scaling_modifier, render_types, **kwargs)
+    def after_training_step(self, step: int, module):
+        if self.config.redistribute_interval < 0:
+            return
+        if step >= self.config.redistribute_until:
+            return
+        if step % self.config.redistribute_interval != 0:
+            return
+        self.redistribute(module)
+
+    def redistribute(self, module):
+        with torch.no_grad():
+            # gather number of Gaussians
+            member_n_gaussians = [0 for _ in range(self.world_size)]
+            torch.distributed.all_gather_object(member_n_gaussians, module.gaussian_model.get_xyz.shape[0])
+            if self.global_rank == 0:
+                print(f"[rank={self.global_rank}] member_n_gaussians={member_n_gaussians}")
+
+            if min(member_n_gaussians) * self.config.redistribute_threshold >= max(member_n_gaussians):
+                print(f"[rank={self.global_rank}] skip redistribution: under threshold")
+                return
+
+            print(f"[rank={self.global_rank}] begin redistribution")
+            self.random_redistribute(module)
+
+    def random_redistribute(self, module):
+        destination = torch.randint(0, self.world_size, (module.gaussian_model.get_xyz.shape[0],), device=module.device)
+        count_by_destination = list(torch.bincount(destination, minlength=self.world_size).chunk(self.world_size))
+
+        print(f"[rank={self.global_rank}] destination_count={[i.item() for i in count_by_destination]}")
+
+        # number of gaussians to receive all-to-all
+        number_of_gaussians_to_receive = list(torch.zeros((self.world_size,), dtype=count_by_destination[0].dtype, device=module.device).chunk(self.world_size))
+        torch.distributed.nn.functional.all_to_all(number_of_gaussians_to_receive, count_by_destination)
+
+        self.optimizer_all2all(destination, number_of_gaussians_to_receive, module.gaussian_model)
+
+        new_number_of_gaussians = module.gaussian_model.get_xyz.shape[0]
+        print(f"[rank={self.global_rank}] redistributed: n_gaussians={new_number_of_gaussians}")
+
+        # Simply re-initialize tensors below to zeros. This will not be a problem if `redistribute_interval` is n times densify interval
+        # TODO: add a hook to notify density controller when density changed outside density controller
+        # TODO: let density controller maintain below states
+        module.gaussian_model.max_radii2D = torch.zeros((new_number_of_gaussians), device=module.device)
+        module.gaussian_model.xyz_gradient_accum = torch.zeros((new_number_of_gaussians, 1), device=module.device)
+        module.gaussian_model.denom = torch.zeros((new_number_of_gaussians, 1), device=module.device)
+
+    def all2all_gaussian_state(self, local_tensor, destination, number_of_gaussians_to_receive):
+        output_tensor_list = []
+        input_tensor_list = []
+
+        for i in range(self.world_size):
+            output_tensor_list.append(torch.empty(
+                [number_of_gaussians_to_receive[i]] + list(local_tensor.shape[1:]),
+                dtype=local_tensor.dtype,
+                device=local_tensor.device,
+            ))
+            input_tensor_list.append(local_tensor[destination == i])
+
+        torch.distributed.nn.functional.all_to_all(output_tensor_list, input_tensor_list)
+
+        return torch.concat(output_tensor_list, dim=0).contiguous()
+
+    def optimizer_all2all(self, destination, number_of_gaussians_to_receive, gaussian_model):
+        def invoke_all2all(local_tensor):
+            return self.all2all_gaussian_state(local_tensor, destination=destination, number_of_gaussians_to_receive=number_of_gaussians_to_receive)
+
+        optimizable_tensors = {}
+        for group in gaussian_model.optimizer.param_groups:
+            assert len(group["params"]) == 1
+            stored_state = gaussian_model.optimizer.state.get(group['params'][0], None)
+            if stored_state is not None:
+                stored_state["exp_avg"] = invoke_all2all(stored_state["exp_avg"])
+                stored_state["exp_avg_sq"] = invoke_all2all(stored_state["exp_avg_sq"])
+
+                # replace with new tensor and state
+                del gaussian_model.optimizer.state[group['params'][0]]
+                group["params"][0] = torch.nn.Parameter(invoke_all2all(group["params"][0]).requires_grad_(True))
+                gaussian_model.optimizer.state[group['params'][0]] = stored_state
+            else:
+                group["params"][0] = torch.nn.Parameter(invoke_all2all(group["params"][0]).requires_grad_(True))
+
+            optimizable_tensors[group["name"]] = group["params"][0]
+
+        # update
+        for attr_name, param_group_name in gaussian_model.param_names:
+            setattr(gaussian_model, attr_name, optimizable_tensors[param_group_name])
 
     def get_available_outputs(self) -> Dict:
         return {
