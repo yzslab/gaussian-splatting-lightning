@@ -456,6 +456,7 @@ class Viewer:
     def start(self, block: bool = True, server_config_fun=None, tab_config_fun=None, enable_renderer_options: bool = True):
         # create viser server
         server = viser.ViserServer(host=self.host, port=self.port)
+        server.scene.set_up_direction(self.up_direction)
         self._server = server
         server.gui.configure_theme(
             control_layout="collapsible",
