@@ -17,8 +17,12 @@ class ViewerRenderer:
         self.renderer = renderer
         self.background_color = background_color
 
-        # updated later
-        self.output_info: Tuple[str, renderers.RendererOutputInfo, renderers.RendererOutputVisualizer] = None
+        # TODO: initial value should get from renderer
+        self.output_info: Tuple[str, renderers.RendererOutputInfo, renderers.RendererOutputVisualizer] = (
+            "rgb",
+            renderers.RendererOutputInfo("render"),
+            self.no_processing,
+        )
 
     def set_output_info(
             self,

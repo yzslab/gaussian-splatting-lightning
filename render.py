@@ -226,6 +226,7 @@ if __name__ == "__main__":
         renderer_override = Vanilla2DGSRenderer()
 
     # instantiate renderer
+    # TODO: set output type
     renderer = initializer_viewer_renderer(
         args.model_paths,
         enable_transform=camera_path["enable_transform"],
