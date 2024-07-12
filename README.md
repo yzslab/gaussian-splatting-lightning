@@ -4,9 +4,9 @@
 * <a href="#4-web-viewer">Web Viewer</a>
 * <a href="https://github.com/yzslab/gaussian-splatting-lightning/releases">Changelog</a>
 ## Known issues
-* Multi-GPU training can only be enabled after densification
+* ~~Multi-GPU training can only be enabled after densification~~ (Try <a href="#216-new-multiple-gpu-training-strategy">2.16. New Multiple GPU training strategy</a>)
 ## Features
-* Multi-GPU/Node training (only after densification)
+* Multi-GPU/Node training
 * Switch between diff-gaussian-rasterization and <a href="https://github.com/nerfstudio-project/gsplat">nerfstudio-project/gsplat</a>
 * Multiple dataset types support
   * <a href="https://drive.google.com/drive/folders/1JDdLGDruGNXWnM1eqY1FNL9PlStjaKWi">Blender (nerf_synthetic)</a>
@@ -167,8 +167,10 @@ python main.py fit \
     ...
 ```
 
-### 2.4. Multi-GPU training
-<b>[NOTE]</b> Multi-GPU training can only be enabled after densification. You can start a single GPU training at the beginning, and save a checkpoint after densification finishing. Then resume from this checkpoint and enable multi-GPU training.
+### 2.4. Multi-GPU training (DDP)
+<b>[NOTE]</b> Try <a href="#216-new-multiple-gpu-training-strategy">New Multiple GPU training strategy</a>, which can be enabled during densification.
+
+<b>[NOTE]</b> Multi-GPU training with DDP strategy can only be enabled after densification. You can start a single GPU training at the beginning, and save a checkpoint after densification finishing. Then resume from this checkpoint and enable multi-GPU training.
 
 You will get improved PSNR and SSIM with more GPUs:
 ![image](https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/06e91e71-5068-46ce-b169-524a069609bf)
@@ -487,6 +489,31 @@ python main.py validate \
 ```
 
 Then you can find the rendered masks and images in `outputs/brandenburg_gate/val`.
+
+### 2.16. New Multiple GPU training strategy
+
+#### Introduction
+This is a bit like a simplified version of <a href="https://daohanlu.github.io/scaling-up-3dgs/">Scaling Up 3DGS</a>. 
+
+In the implementation here, Gaussians are stored, projected and their colors are calculated in a distributed manner, and each GPU rasterizes a whole image for a different camera. No Pixel-wise Distribution currently.
+
+This strategy works with densification enabled.
+
+#### Usage
+* Training
+```bash
+python main.py fit \
+    --config configs/distributed.yaml \
+    ...
+```
+* Merge checkpoints
+```bash
+python utils/merge_distributed_ckpts.py outputs/TRAINED_MODEL_DIR
+```
+* Start viewer
+```bash
+python viewer.py outputs/TRAINED_MODEL_DIR/checkpoints/MERGED_CHECKPOINT_FILE
+```
 
 ## 3. Evaluation
 
