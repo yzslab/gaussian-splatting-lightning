@@ -499,6 +499,9 @@ In the implementation here, Gaussians are stored, projected and their colors are
 
 This strategy works with densification enabled.
 
+<b>[NOTE]</b> Not well validated yet, still under development.
+
+
 #### Usage
 * Training
 ```bash
