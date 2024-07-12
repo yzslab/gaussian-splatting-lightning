@@ -171,6 +171,8 @@ class GSplatDistributedRendererImpl(Renderer):
             member_data_list: List[MemberData],
             device,
     ) -> Tuple[List, torch.Tensor, torch.Tensor]:
+        # TODO: transfer visible Gaussians only
+
         output_float_tensor_list = []
         input_float_tensor_list = []
         output_int_tensor_list = []
