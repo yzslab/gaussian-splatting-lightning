@@ -8,7 +8,7 @@ import torch
 import numpy as np
 
 import internal.utils.colmap as colmap_utils
-from internal.cameras.cameras import Cameras
+from internal.cameras.cameras import CameraType, Cameras
 from internal.dataparsers.dataparser import DataParserConfig, DataParser, ImageSet, PointCloud, DataParserOutputs
 
 
@@ -261,6 +261,7 @@ class ColmapDataParser(DataParser):
         height_list = []
         appearance_id_list = image_appearance_id
         normalized_appearance_id_list = image_normalized_appearance_id
+        distortion_params_list = []
         camera_type_list = []
         image_name_list = []
         image_path_list = []
@@ -278,6 +279,10 @@ class ColmapDataParser(DataParser):
             R = extrinsics.qvec2rotmat()
             T = np.array(extrinsics.tvec)
 
+            distortion_params = torch.zeros((4,), dtype=torch.float64)
+            camera_type = CameraType.PERSPECTIVE
+
+            # https://github.com/colmap/colmap/blob/main/src/colmap/sensor/models.h
             if intrinsics.model == "SIMPLE_PINHOLE":
                 focal_length_x = intrinsics.params[0]
                 focal_length_y = focal_length_x
@@ -292,8 +297,33 @@ class ColmapDataParser(DataParser):
                 cy = intrinsics.params[3]
                 # fov_y = focal2fov(focal_length_y, height)
                 # fov_x = focal2fov(focal_length_x, width)
+            elif intrinsics.model == "RADIAL":
+                focal_length_x = intrinsics.params[0]
+                focal_length_y = focal_length_x
+                cx = intrinsics.params[1]
+                cy = intrinsics.params[2]
+                distortion_params = torch.tensor(intrinsics.params[3:5], dtype=torch.float64)  # [k1, k2]
+            elif intrinsics.model == "OPENCV":
+                focal_length_x = intrinsics.params[0]
+                focal_length_y = intrinsics.params[1]
+                cx = intrinsics.params[2]
+                cy = intrinsics.params[3]
+                distortion_params = torch.tensor(intrinsics.params[4:8], dtype=torch.float64)  # [k1, k2, p1, p2]
+            elif intrinsics.model == "FULL_OPENCV":
+                focal_length_x = intrinsics.params[0]
+                focal_length_y = intrinsics.params[1]
+                cx = intrinsics.params[2]
+                cy = intrinsics.params[3]
+                distortion_params = torch.tensor(intrinsics.params[4:12], dtype=torch.float64)  # [k1, k2, p1, p2, k3, k4, k5, k6]
+            elif intrinsics.model == "OPENCV_FISHEYE":
+                camera_type = CameraType.FISHEYE
+                focal_length_x = intrinsics.params[0]
+                focal_length_y = intrinsics.params[1]
+                cx = intrinsics.params[2]
+                cy = intrinsics.params[3]
+                distortion_params = torch.tensor(intrinsics.params[4:8], dtype=torch.float64)  # [k1, k2, k3, k4]
             else:
-                assert False, "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
+                assert False, "Unsupported camera type: please use command 'colmap image_undistorter ...' to undistort your images"
 
             # whether mask exists
             mask_path = None
@@ -313,9 +343,10 @@ class ColmapDataParser(DataParser):
             # fov_y_list.append(fov_y)
             cx_list.append(cx)
             cy_list.append(cy)
+            distortion_params_list.append(distortion_params)
             width_list.append(width)
             height_list.append(height)
-            camera_type_list.append(0)
+            camera_type_list.append(camera_type)
             image_name_list.append(extrinsics.name)
             image_path_list.append(os.path.join(image_dir, extrinsics.name))
             mask_path_list.append(mask_path)
@@ -339,11 +370,11 @@ class ColmapDataParser(DataParser):
         # fov_y = torch.tensor(fov_y_list, dtype=torch.float32)
         cx = torch.tensor(cx_list, dtype=torch.float32)
         cy = torch.tensor(cy_list, dtype=torch.float32)
-        width = torch.tensor(width_list, dtype=torch.int16)
-        height = torch.tensor(height_list, dtype=torch.int16)
+        width = torch.tensor(width_list, dtype=torch.int)
+        height = torch.tensor(height_list, dtype=torch.int)
         appearance_id = torch.tensor(appearance_id_list, dtype=torch.int)
         normalized_appearance_id = torch.tensor(normalized_appearance_id_list, dtype=torch.float32)
-        camera_type = torch.tensor(camera_type_list, dtype=torch.int8)
+        camera_type = torch.tensor(camera_type_list, dtype=torch.uint8)
 
         # recalculate intrinsics if down sample enabled
         if self.params.down_sample_factor != 1:
@@ -360,8 +391,8 @@ class ColmapDataParser(DataParser):
             cx *= width_scale_factor
             cy *= height_scale_factor
 
-            width = down_sampled_width.to(torch.int16)
-            height = down_sampled_height.to(torch.int16)
+            width = down_sampled_width.to(torch.int)
+            height = down_sampled_height.to(torch.int)
 
             print("down sample enabled")
 
@@ -431,7 +462,7 @@ class ColmapDataParser(DataParser):
                 height=height[indices],
                 appearance_id=appearance_id[indices],
                 normalized_appearance_id=normalized_appearance_id[indices],
-                distortion_params=None,
+                distortion_params=[distortion_params_list[i] for i in index_list],
                 camera_type=camera_type[indices],
             )
             image_set.append(ImageSet(

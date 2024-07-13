@@ -17,6 +17,7 @@ from lightning.pytorch.utilities.types import EVAL_DATALOADERS, TRAIN_DATALOADER
 from internal.cameras.cameras import CameraType, Camera
 from internal.dataparsers import DataParserConfig, ImageSet
 from internal.utils.graphics_utils import store_ply, BasicPointCloud
+from internal.utils.camera_utils import perspective_undistort, fisheye_undistort
 
 from tqdm import tqdm
 
@@ -54,31 +55,28 @@ class Dataset(torch.utils.data.Dataset):
         numpy_image = np.array(pil_image, dtype="uint8")
 
         # undistort image
+        camera = self.image_set.cameras[index]  # get original camera
+        distortion = camera.distortion_params
+        is_distorted_image = distortion is not None and torch.any(distortion != 0.).item()
+
         if self.undistort_image is True:
-            # TODO: validate this undistortion implementation
-            camera = self.image_set.cameras[index]  # get original camera
-            distortion = camera.distortion_params
-            if distortion is not None and torch.any(distortion != 0.):
-                # TODO: support fisheye camera model
-                assert camera.camera_type == CameraType.PERSPECTIVE
-                # build intrinsics matrix
-                intrinsics_matrix = np.eye(3)
-                intrinsics_matrix[0, 0] = float(camera.fx)  # fx
-                intrinsics_matrix[1, 1] = float(camera.fy)  # fy
-                intrinsics_matrix[0, 2] = float(camera.cx)  # cx
-                intrinsics_matrix[1, 2] = float(camera.cy)  # cy
-                # calculate new intrinsics matrix, without black border
-                image_shape = (int(camera.width), int(camera.height))
-                distortion = distortion.numpy()
-                new_intrinsics_matrix, _ = cv2.getOptimalNewCameraMatrix(
-                    intrinsics_matrix,
-                    distortion,
-                    image_shape,
-                    0,
-                    image_shape,
+            if is_distorted_image is True:
+                if camera.camera_type == CameraType.PERSPECTIVE:
+                    undistorter = perspective_undistort
+                elif camera.camera_type == CameraType.FISHEYE:
+                    undistorter = fisheye_undistort
+                else:
+                    raise ValueError(f"Unsupported camera_type '{camera.camera_type}' of image '{self.image_set.image_names[index]}'")
+
+                new_intrinsics_matrix, undistorted_image = undistorter(
+                    numpy_image,
+                    fx=camera.fx.item(),
+                    fy=camera.fy.item(),
+                    cx=camera.cx.item(),
+                    cy=camera.cy.item(),
+                    dist=camera.distortion_params.numpy(),
                 )
-                # undistort image
-                undistorted_image = cv2.undistort(numpy_image, intrinsics_matrix, distortion, None, new_intrinsics_matrix)
+
                 # update variables
                 numpy_image = undistorted_image
                 # update image camera
@@ -94,6 +92,10 @@ class Dataset(torch.utils.data.Dataset):
                     image_save_path = os.path.join(os.environ["PREVIEW_UNDISTORTED_IMAGE"], self.image_set.image_names[index])
                     os.makedirs(os.path.dirname(image_save_path), exist_ok=True)
                     undistorted_pil_image.save(image_save_path, quality=100)
+
+                # TODO: undistort mask and depth map
+        elif is_distorted_image is True:
+            raise ValueError(f"Image '{self.image_set.image_names[index]}' is distorted but undistortion is disabled. Add a '--data.undistort_image true' then try again.")
 
         image = torch.from_numpy(numpy_image.astype(np.float64) / 255.0)
         # remove alpha channel
@@ -114,6 +116,8 @@ class Dataset(torch.utils.data.Dataset):
                 "the shape of mask {} doesn't match to the image {}".format(mask.shape[:2], image.shape[:2])
             mask = (mask == 0).unsqueeze(-1).expand(*image.shape)  # True is the masked pixels
             mask = mask.permute(2, 0, 1).to(self.image_device)  # [channel, height, width]
+
+        # TODO: load depth map
 
         image = image.permute(2, 0, 1).to(self.image_device)  # [channel, height, width]
 
@@ -180,7 +184,6 @@ class CacheDataLoader(torch.utils.data.DataLoader):
             print("#{} dataloader seed to {}".format(os.getpid(), seed))
 
     def _cache_data(self, indices: list):
-        # TODO: speedup image loading
         cached = []
         if self.num_workers > 0:
             with ThreadPoolExecutor(max_workers=self.num_workers) as e:
