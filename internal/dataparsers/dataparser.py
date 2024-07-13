@@ -53,9 +53,9 @@ class ImageSet:
 
 @dataclass
 class PointCloud:
-    xyz: np.ndarray
+    xyz: np.ndarray  # float
 
-    rgb: np.ndarray
+    rgb: np.ndarray  # uint8, in [0, 255]
 
 
 @dataclass
@@ -70,7 +70,7 @@ class DataParserOutputs:
 
     # ply_path: str
 
-    appearance_group_ids: Optional[dict]
+    appearance_group_ids: Optional[dict] = None
 
     camera_extent: Optional[float] = None
 
