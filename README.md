@@ -508,9 +508,14 @@ This strategy works with densification enabled.
 #### Metrics of MipNeRF360 dataset
 One batch per GPU, 30K iterations, no other hyperparameters changed.
 
-| 1 GPU | 2 GPUs |
-| -- | -- |
-| ![image](https://github.com/user-attachments/assets/43d3cba1-b400-43a7-86ae-f8777af24e87) | ![image](https://github.com/user-attachments/assets/04e62972-a31f-477b-93c0-0d93a084e154) |
+* PSNR
+  ![image](https://github.com/user-attachments/assets/1a7fa6ad-89cf-4a63-9c09-7d74a9e30103)
+
+* SSIM
+  ![image](https://github.com/user-attachments/assets/f4c91a7c-745f-480f-bc06-27692ab09494)
+
+* LPIPS
+  ![image](https://github.com/user-attachments/assets/ff1f98c5-c70e-4897-be25-2a74223c421f)
 
 #### Usage
 * Training
