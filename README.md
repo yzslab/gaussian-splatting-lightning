@@ -506,6 +506,8 @@ This strategy works with densification enabled.
 * Can not combine with other algorithms directly, e.g. with appearance model
 
 #### Metrics of MipNeRF360 dataset
+<details>
+ <summary>Click me</summary>
 One batch per GPU, 30K iterations, no other hyperparameters changed.
 
 * PSNR
@@ -516,6 +518,7 @@ One batch per GPU, 30K iterations, no other hyperparameters changed.
 
 * LPIPS
   ![image](https://github.com/user-attachments/assets/ff1f98c5-c70e-4897-be25-2a74223c421f)
+</details>
 
 #### Usage
 * Training
