@@ -505,9 +505,8 @@ This strategy works with densification enabled.
 * Training only currently
 * Can not combine with other algorithms directly, e.g. with appearance model
 
-#### Metrics of MipNeRF360 dataset
 <details>
- <summary>Click me</summary>
+ <summary>Metrics of MipNeRF360 dataset</summary>
 One batch per GPU, 30K iterations, no other hyperparameters changed.
 
 * PSNR
