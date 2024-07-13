@@ -73,7 +73,7 @@ class BlenderDataParser(DataParser):
         # TODO: allow different fy
         fy = torch.clone(fx)
 
-        width = torch.tensor([width], dtype=torch.float32).expand(R.shape[0])
+        width = torch.tensor([width], dtype=torch.int).expand(R.shape[0])
         # TODO: allow different height
         height = torch.clone(width)
 
@@ -86,14 +86,14 @@ class BlenderDataParser(DataParser):
                 T=T,
                 fx=fx,
                 fy=fy,
-                cx=width / 2,
-                cy=height / 2,
+                cx=width.float() / 2,
+                cy=height.float() / 2,
                 width=width,
                 height=height,
-                appearance_id=torch.zeros_like(width),
-                normalized_appearance_id=torch.zeros_like(width),
+                appearance_id=torch.zeros_like(width, dtype=torch.int),
+                normalized_appearance_id=torch.zeros_like(width, dtype=torch.float),
                 distortion_params=None,
-                camera_type=torch.zeros_like(width),
+                camera_type=torch.zeros_like(width, dtype=torch.int),
                 time=torch.tensor(time_list, dtype=torch.float),
             ),
         )
