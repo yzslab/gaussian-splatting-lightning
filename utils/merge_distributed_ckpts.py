@@ -36,6 +36,7 @@ param_list_key_by_name = {}
 extra_param_list_key_by_name = {}
 optimizer_state_exp_avg_list_key_by_index = {}
 optimizer_state_exp_avg_sq_list_key_by_index = {}
+number_of_gaussians = []
 for i in tqdm(checkpoint_files, desc="Loading checkpoints"):
     ckpt = torch.load(os.path.join(checkpoint_dir, i), map_location="cpu")
     for i in ckpt["state_dict"]:
@@ -53,6 +54,8 @@ for i in tqdm(checkpoint_files, desc="Loading checkpoints"):
         optimizer_state_exp_avg_list_key_by_index.setdefault(i, []).append(ckpt["optimizer_states"][0]["state"][i]["exp_avg"])
         optimizer_state_exp_avg_sq_list_key_by_index.setdefault(i, []).append(ckpt["optimizer_states"][0]["state"][i]["exp_avg_sq"])
 
+    number_of_gaussians.append(ckpt["state_dict"]["gaussian_model._xyz"].shape[0])
+
 print("Merging Gaussians...")
 for i in param_list_key_by_name:
     ckpt["state_dict"][i] = torch.concat(param_list_key_by_name[i], dim=0)
@@ -66,6 +69,8 @@ for i in optimizer_state_exp_avg_list_key_by_index.keys():
 import internal.renderers.gsplat_renderer
 
 ckpt["hyper_parameters"]["renderer"] = internal.renderers.gsplat_renderer.GSPlatRenderer()
+
+print("number_of_gaussians=sum({})={}".format(number_of_gaussians, sum(number_of_gaussians)))
 
 output_path = os.path.join(checkpoint_dir, checkpoint_files[0][:checkpoint_files[0].rfind("-")] + ".ckpt")
 print("Saving...")
