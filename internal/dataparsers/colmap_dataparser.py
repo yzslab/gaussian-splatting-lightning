@@ -56,6 +56,10 @@ class Colmap(DataParserConfig):
 
     down_sample_rounding_mode: Literal["floor", "round", "round_half_up", "ceil"] = "round"
 
+    points_from: Literal["sfm", "random"] = "sfm"
+
+    n_random_points: int = 100_000
+
     def instantiate(self, path: str, output_path: str, global_rank: int) -> DataParser:
         return ColmapDataParser(path, output_path, global_rank, self)
 
@@ -241,11 +245,16 @@ class ColmapDataParser(DataParser):
         #         # waiting ply
         #         print("#{} waiting for {}".format(os.getpid(), ply_path))
         #         time.sleep(1)
-        print("loading colmap 3D points")
-        xyz, rgb, _ = ColmapDataParser.read_points3D_binary(
-            os.path.join(sparse_model_dir, "points3D.bin"),
-            selected_image_ids=selected_image_ids,
-        )
+        if self.params.points_from == "sfm":
+            print("loading colmap 3D points")
+            xyz, rgb, _ = ColmapDataParser.read_points3D_binary(
+                os.path.join(sparse_model_dir, "points3D.bin"),
+                selected_image_ids=selected_image_ids,
+            )
+        else:
+            # random points generated later
+            xyz = np.ones((1, 3))
+            rgb = np.ones((1, 3))
 
         loaded_mask_count = 0
         # initialize lists
@@ -440,6 +449,13 @@ class ColmapDataParser(DataParser):
                 mask_paths=[mask_path_list[i] for i in index_list],
                 cameras=cameras
             ))
+
+        if self.params.points_from == "random":
+            print("generate {} random points".format(self.params.n_random_points))
+            scene_center = torch.mean(image_set[0].cameras.camera_center, dim=0)
+            scene_radius = (image_set[0].cameras.camera_center - scene_center).norm(dim=-1).max()
+            xyz = (np.random.random((self.params.n_random_points, 3)) * 2. - 1.) * 3 * scene_radius.numpy() + scene_center.numpy()
+            rgb = (np.random.random((self.params.n_random_points, 3)) * 255).astype(np.uint8)
 
         # print information
         print("[colmap dataparser] train set images: {}, val set images: {}, loaded mask: {}".format(
