@@ -92,6 +92,10 @@ class Viewer:
         if vanilla_gs4d is True:
             self.simplified_model = False
 
+        def turn_off_edit_and_video_render_panel():
+            self.show_edit_panel = False
+            self.show_render_panel = False
+
         # TODO: load multiple models more elegantly
         # load and create models
         model, renderer, training_output_base_dir, dataset_type, self.checkpoint = self._load_model_from_file(load_from)
@@ -111,8 +115,7 @@ class Viewer:
                 get_load_iteration(),
                 device=self.device,
             )
-            self.show_edit_panel = False
-            self.show_render_panel = False
+            turn_off_edit_and_video_render_panel()
         elif vanilla_gs4d is True:
             from internal.renderers.vanilla_gs4d_renderer import VanillaGS4DRenderer
             renderer = VanillaGS4DRenderer(
@@ -120,16 +123,17 @@ class Viewer:
                 get_load_iteration(),
                 device=self.device,
             )
-            self.show_edit_panel = False
-            self.show_render_panel = False
+            turn_off_edit_and_video_render_panel()
         elif vanilla_gs2d is True:
             from internal.renderers.vanilla_2dgs_renderer import Vanilla2DGSRenderer
             renderer = Vanilla2DGSRenderer()
             self.extra_video_render_args.append("--vanilla_gs2d")
         elif vanilla_seganygs is True:
             renderer = self._load_vanilla_seganygs(load_from)
+            turn_off_edit_and_video_render_panel()
         elif vanilla_mip is True:
             renderer = self._load_vanilla_mip(load_from)
+            turn_off_edit_and_video_render_panel()
 
         # reorient the scene
         cameras_json_path = cameras_json
@@ -187,6 +191,7 @@ class Viewer:
         if seganygs is not None:
             print("loading SegAnyGaussian...")
             renderer = self._load_seganygs(seganygs)
+            turn_off_edit_and_video_render_panel()
 
         # create renderer
         self.viewer_renderer = ViewerRenderer(
