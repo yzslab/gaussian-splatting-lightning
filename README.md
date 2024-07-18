@@ -502,7 +502,7 @@ This strategy works with densification enabled.
 
 <b>[NOTE]</b>
 * Not well validated yet, still under development
-* Training only currently
+* Multiple GPUs training only currently
 * Can not combine with other algorithms directly, e.g. with appearance model
 
 <details>
@@ -526,11 +526,16 @@ python main.py fit \
     --config configs/distributed.yaml \
     ...
 ```
+By default, all processes will hold a (redundant) replica of the dataset in memory, which may cause CPU OOM. You can avoid this by adding the option `--data.distributed true`, so that each process loads a different subset of the dataset.
+
 * Merge checkpoints
+
 ```bash
 python utils/merge_distributed_ckpts.py outputs/TRAINED_MODEL_DIR
 ```
+
 * Start viewer
+
 ```bash
 python viewer.py outputs/TRAINED_MODEL_DIR/checkpoints/MERGED_CHECKPOINT_FILE
 ```
