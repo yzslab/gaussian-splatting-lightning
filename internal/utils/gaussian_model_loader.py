@@ -48,7 +48,7 @@ class GaussianModelLoader:
 
     @staticmethod
     def initialize_simplified_model_from_checkpoint(checkpoint_path: str, device):
-        checkpoint = torch.load(checkpoint_path)
+        checkpoint = torch.load(checkpoint_path, map_location="cpu")
         hparams = checkpoint["hyper_parameters"]
         sh_degree = hparams["gaussian"].sh_degree
 
@@ -59,13 +59,13 @@ class GaussianModelLoader:
         renderer_state_dict = {}
         for i in checkpoint["state_dict"]:
             if i.startswith("renderer."):
-                renderer_state_dict[i[len("renderer."):]] = checkpoint["state_dict"][i]
+                renderer_state_dict[i[len("renderer."):]] = checkpoint["state_dict"][i].to(device)
         # load state dict of renderer
         if isinstance(renderer, RendererConfig):
             renderer = renderer.instantiate()
             renderer.setup(stage="validate")
-        renderer.load_state_dict(renderer_state_dict)
         renderer = renderer.to(device)
+        renderer.load_state_dict(renderer_state_dict)
 
         return model, renderer, checkpoint
 
