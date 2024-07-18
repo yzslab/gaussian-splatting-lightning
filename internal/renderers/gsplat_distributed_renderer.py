@@ -1,8 +1,10 @@
+import traceback
 from dataclasses import dataclass
 from gsplat import project_gaussians
 from gsplat.rasterize import rasterize_gaussians
 from gsplat.sh import spherical_harmonics
 from .renderer import *
+from lightning.pytorch.profilers import PassThroughProfiler
 import torch.distributed.nn.functional
 
 DEFAULT_BLOCK_SIZE: int = 16
@@ -65,6 +67,9 @@ class GSplatDistributedRendererImpl(Renderer):
         self.world_size = 1
         self.global_rank = 0
 
+        self.profile_prefix = "[Renderer]GSplatDistributedRenderer."
+        self.profiler = PassThroughProfiler()
+
     def training_setup(self, module: lightning.LightningModule) -> Tuple[
         Optional[Union[
             List[torch.optim.Optimizer],
@@ -95,6 +100,12 @@ class GSplatDistributedRendererImpl(Renderer):
         module.gaussian_model.xyz_gradient_accum = module.gaussian_model.xyz_gradient_accum[l:r]
         module.gaussian_model.denom = module.gaussian_model.denom[l:r]
         module.gaussian_model.max_radii2D = module.gaussian_model.max_radii2D[l:r]
+
+        try:
+            self.profiler = module.trainer.profiler
+        except:
+            traceback.print_exc()
+            pass
 
         print(f"rank={self.global_rank}, l={l}, r={r}")
 
@@ -131,8 +142,6 @@ class GSplatDistributedRendererImpl(Renderer):
             setattr(gaussian_model, attr_name, optimizable_tensors[param_group_name])
 
     def gather_member_data(self, viewpoint_camera: Camera, n_gaussians: int, device) -> List[MemberData]:
-        # TODO: replace `all_gather` with `all_gather_object`
-
         # gather data from group members
         ## create local float tensor
         float_tensor = torch.tensor([
@@ -288,58 +297,63 @@ class GSplatDistributedRendererImpl(Renderer):
         return results
 
     def forward(self, viewpoint_camera: Camera, pc: GaussianModel, bg_color: torch.Tensor, scaling_modifier=1.0, render_types: list = None, **kwargs):
-        # gather camera and number of gaussian from group members
-        # assert all members have different camera (this is the default behavior for training set)
-        member_data_list = self.gather_member_data(viewpoint_camera, pc.get_xyz.shape[0], bg_color.device)
+        with self.profiler.profile(f"{self.profile_prefix}forward"):
+            with self.profiler.profile(f"{self.profile_prefix}gather_member_data"):
+                # gather camera and number of gaussian from group members
+                # assert all members have different camera (this is the default behavior for training set)
+                member_data_list = self.gather_member_data(viewpoint_camera, pc.get_xyz.shape[0], bg_color.device)
 
-        # perform the projection and SH for each member's camera
-        projection_results_list = []
-        rgb_list = []
-        for member_data in member_data_list:
-            # store projection results to list
-            projection_results_list.append(self.project(member_data, pc, scaling_modifier))
+            with self.profiler.profile(f"{self.profile_prefix}project"):
+                # perform the projection and SH for each member's camera
+                projection_results_list = []
+                rgb_list = []
+                for member_data in member_data_list:
+                    # store projection results to list
+                    projection_results_list.append(self.project(member_data, pc, scaling_modifier))
 
-            # store SH results to list
-            viewdirs = pc.get_xyz.detach() - member_data.camera_center  # (N, 3)
-            rgbs = spherical_harmonics(pc.active_sh_degree, viewdirs, pc.get_features)
-            rgbs = torch.clamp(rgbs + 0.5, min=0.0)  # type: ignore
-            rgb_list.append(rgbs)
+                    # store SH results to list
+                    viewdirs = pc.get_xyz.detach() - member_data.camera_center  # (N, 3)
+                    rgbs = spherical_harmonics(pc.active_sh_degree, viewdirs, pc.get_features)
+                    rgbs = torch.clamp(rgbs + 0.5, min=0.0)  # type: ignore
+                    rgb_list.append(rgbs)
 
-        # perform All-to-All operation
-        projection_results, opacities, rgbs = self.rasterizer_required_data_all2all(
-            projection_result_list=projection_results_list,
-            rgb_list=rgb_list,
-            opacities=pc.get_opacity,
-            member_data_list=member_data_list,
-            device=bg_color.device,
-        )
+            with self.profiler.profile(f"{self.profile_prefix}rasterizer_required_data_all2all"):
+                # perform All-to-All operation
+                projection_results, opacities, rgbs = self.rasterizer_required_data_all2all(
+                    projection_result_list=projection_results_list,
+                    rgb_list=rgb_list,
+                    opacities=pc.get_opacity,
+                    member_data_list=member_data_list,
+                    device=bg_color.device,
+                )
 
-        # rasterization below is the same as non-distributed renderer
+            # rasterization below is the same as non-distributed renderer
 
-        xys, depths, radii, conics, comp, num_tiles_hit = projection_results
+            xys, depths, radii, conics, comp, num_tiles_hit = projection_results
 
-        if self.anti_aliased is True:
-            opacities = opacities * comp[:, None]
+            if self.anti_aliased is True:
+                opacities = opacities * comp[:, None]
 
-        local_camera_data = member_data_list[self.global_rank]
-        img_height = local_camera_data.height
-        img_width = local_camera_data.width
+            local_camera_data = member_data_list[self.global_rank]
+            img_height = local_camera_data.height
+            img_width = local_camera_data.width
 
-        rgb = rasterize_gaussians(  # type: ignore
-            xys,
-            depths,
-            radii,
-            conics,
-            num_tiles_hit,  # type: ignore
-            rgbs,
-            opacities,
-            img_height=img_height,
-            img_width=img_width,
-            block_width=self.block_size,
-            background=bg_color,
-            return_alpha=False,
-        )  # type: ignore
-        rgb = rgb.permute(2, 0, 1)
+            with self.profiler.profile(f"{self.profile_prefix}rasterize"):
+                rgb = rasterize_gaussians(  # type: ignore
+                    xys,
+                    depths,
+                    radii,
+                    conics,
+                    num_tiles_hit,  # type: ignore
+                    rgbs,
+                    opacities,
+                    img_height=img_height,
+                    img_width=img_width,
+                    block_width=self.block_size,
+                    background=bg_color,
+                    return_alpha=False,
+                )  # type: ignore
+                rgb = rgb.permute(2, 0, 1)
 
         # a little difference below, since the densification needs projection results from all cameras
         return {
