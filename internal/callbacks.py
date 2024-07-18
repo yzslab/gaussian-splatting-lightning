@@ -68,7 +68,7 @@ class ProgressBar(TQDMProgressBar):
         super().on_train_start(trainer, pl_module)
         self.max_epochs = trainer.max_epochs
         if self.max_epochs < 0:
-            self.max_epochs = math.ceil(trainer.max_steps / len(trainer.datamodule.dataparser_outputs.train_set))
+            self.max_epochs = math.ceil(trainer.max_steps / self.total_train_batches)
 
         self.epoch_progress_bar = Tqdm(
             desc=self.train_description,
