@@ -1,7 +1,7 @@
 trainer:
   check_val_every_n_epoch: 10
 model:
-  renderer: internal.renderers.gsplat_renderer.GSPlatRenderer
+  renderer: internal.renderers.gsplat_v1_renderer.GSplatV1Renderer
 data:
   val_max_num_images_to_cache: -1
   test_max_num_images_to_cache: -1

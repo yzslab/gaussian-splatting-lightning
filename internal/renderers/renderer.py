@@ -86,6 +86,9 @@ class Renderer(torch.nn.Module):
         return
 
     def setup(self, stage: str, *args: Any, **kwargs: Any) -> Any:
+        """
+        This method must work without LightningModule
+        """
         pass
 
     def training_setup(self, module: lightning.LightningModule) -> Tuple[
@@ -110,6 +113,39 @@ class Renderer(torch.nn.Module):
         return {
             "rgb": RendererOutputInfo("render")
         }
+
+
+class BatchRenderer(Renderer):
+    def batch_forward(
+            self,
+            cameras: List[Camera],
+            pc: GaussianModel,
+            bg_color: torch.Tensor,
+            scaling_modifier=1.0,
+            render_types: list = None,
+            **kwargs,
+    ):
+        raise NotImplementedError()
+
+    def batch_training_forward(
+            self,
+            step: int,
+            module: lightning.LightningModule,
+            cameras: List[Camera],
+            pc: GaussianModel,
+            bg_color: torch.Tensor,
+            scaling_modifier=1.0,
+            render_types: list = None,
+            **kwargs,
+    ):
+        return self.batch_forward(
+            cameras=cameras,
+            pc=pc,
+            bg_color=bg_color,
+            scaling_modifier=scaling_modifier,
+            render_types=render_types,
+            **kwargs,
+        )
 
 
 @dataclass

@@ -6,7 +6,10 @@ data:
     init_args:
       split_mode: "experiment"
 model:
-  renderer: internal.renderers.gsplat_renderer.GSPlatRenderer
+  renderer:
+    class_path: internal.renderers.gsplat_v1_renderer.GSplatV1Renderer
+    init_args:
+      absgrad: true
   density:
     densify_grad_threshold: 0.0006
     absgrad: true

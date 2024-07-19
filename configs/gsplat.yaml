@@ -1,2 +1,2 @@
 model:
-  renderer: internal.renderers.gsplat_renderer.GSPlatRenderer
+  renderer: internal.renderers.gsplat_v1_renderer.GSplatV1Renderer
