@@ -522,7 +522,7 @@ class Viewer:
                     "Scaling Modifier",
                     min=0.,
                     max=1.,
-                    step=0.1,
+                    step=0.01,
                     initial_value=1.,
                 )
                 self.scaling_modifier.on_update(self._handle_option_updated)
