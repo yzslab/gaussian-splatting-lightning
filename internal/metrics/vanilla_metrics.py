@@ -86,7 +86,8 @@ class VanillaMetricsImpl(MetricImpl):
         return metrics, prog_bar
 
     def on_parameter_move(self, *args, **kwargs):
-        self.no_state_dict_models["lpips"] = self.no_state_dict_models["lpips"].to(*args, **kwargs)
+        if "lpips" in self.no_state_dict_models:
+            self.no_state_dict_models["lpips"] = self.no_state_dict_models["lpips"].to(*args, **kwargs)
 
     @staticmethod
     def _l1_loss(predict: torch.Tensor, gt: torch.Tensor):
