@@ -503,7 +503,7 @@ This strategy works with densification enabled.
 <b>[NOTE]</b>
 * Not well validated yet, still under development
 * Multiple GPUs training only currently
-* Can not combine with other algorithms directly, e.g. with appearance model
+* In order to combine with derived algorithms containing neural networks, you need to manually wrap your networks with DDP, e.g.: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/internal/renderers/gsplat_distributed_appearance_embedding_renderer.py">internal/renderers/gsplat_distributed_appearance_embedding_renderer.py</a>
 
 <details>
  <summary>Metrics of MipNeRF360 dataset</summary>
