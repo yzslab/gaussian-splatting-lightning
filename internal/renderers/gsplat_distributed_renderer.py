@@ -27,6 +27,10 @@ class MemberData:
 
     w2c: torch.Tensor
 
+    appearance_id: torch.Tensor
+
+    normalized_appearance_id: torch.Tensor
+
     # gaussians
     n_gaussians: int
 
@@ -149,6 +153,7 @@ class GSplatDistributedRendererImpl(Renderer):
             viewpoint_camera.fy,
             viewpoint_camera.cx,
             viewpoint_camera.cy,
+            viewpoint_camera.normalized_appearance_id,
         ], dtype=torch.float, device=device)
         float_tensor = torch.concat([float_tensor, viewpoint_camera.camera_center, viewpoint_camera.world_to_camera.reshape((-1))], dim=-1)
         ## perform float tensor gathering
@@ -159,6 +164,7 @@ class GSplatDistributedRendererImpl(Renderer):
             viewpoint_camera.width.int(),
             viewpoint_camera.height.int(),
             n_gaussians,
+            viewpoint_camera.appearance_id,
         ], dtype=torch.int, device=device)
         ## perform int tensor gathering
         gathered_int_tensors = torch.distributed.nn.functional.all_gather(int_tensor)
@@ -175,8 +181,10 @@ class GSplatDistributedRendererImpl(Renderer):
                 fy=float_tensor[1].item(),
                 cx=float_tensor[2].item(),
                 cy=float_tensor[3].item(),
-                camera_center=float_tensor[4:7],
-                w2c=float_tensor[7:].reshape((4, 4)),
+                camera_center=float_tensor[5:8],
+                w2c=float_tensor[8:].reshape((4, 4)),
+                appearance_id=int_tensor[3],
+                normalized_appearance_id=float_tensor[4],
                 n_gaussians=int_tensor[2].item(),
             ))
 
@@ -309,13 +317,10 @@ class GSplatDistributedRendererImpl(Renderer):
                 rgb_list = []
                 for member_data in member_data_list:
                     # store projection results to list
-                    projection_results_list.append(self.project(member_data, pc, scaling_modifier))
+                    project_results = self.project(member_data, pc, scaling_modifier)
+                    projection_results_list.append(project_results)
 
-                    # store SH results to list
-                    viewdirs = pc.get_xyz.detach() - member_data.camera_center  # (N, 3)
-                    rgbs = spherical_harmonics(pc.active_sh_degree, viewdirs, pc.get_features)
-                    rgbs = torch.clamp(rgbs + 0.5, min=0.0)  # type: ignore
-                    rgb_list.append(rgbs)
+                    rgb_list.append(self.get_rgbs(pc, member_data, project_results))
 
             with self.profiler.profile(f"{self.profile_prefix}rasterizer_required_data_all2all"):
                 # perform All-to-All operation
@@ -362,6 +367,13 @@ class GSplatDistributedRendererImpl(Renderer):
             "projection_results_list": projection_results_list,
             "xys_grad_scale_required": True,
         }
+
+    def get_rgbs(self, pc, member_data: MemberData, project_results) -> torch.Tensor:
+        # store SH results to list
+        viewdirs = pc.get_xyz.detach() - member_data.camera_center  # (N, 3)
+        rgbs = spherical_harmonics(pc.active_sh_degree, viewdirs, pc.get_features)
+        rgbs = torch.clamp(rgbs + 0.5, min=0.0)  # type: ignore
+        return rgbs
 
     def after_training_step(self, step: int, module):
         if self.config.redistribute_interval < 0:

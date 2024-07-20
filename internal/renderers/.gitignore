@@ -19,3 +19,4 @@
 !feature_3dgs_renderer.py
 !gsplat_appearance_embedding_visibility_map_renderer.py
 !gsplat_distributed_renderer.py
+!gsplat_distributed_appearance_embedding_renderer.py

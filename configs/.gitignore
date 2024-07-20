@@ -32,6 +32,8 @@
 !segany_splatting.yaml
 !appearance_embedding_renderer/view_dependent.yaml
 !appearance_embedding_renderer/view_independent.yaml
+!appearance_embedding_renderer/view_dependent-distributed.yaml
+!appearance_embedding_renderer/view_independent-distributed.yaml
 !random_background.yaml
 !mcmc.yaml
 !gsplat-mcmc.yaml
