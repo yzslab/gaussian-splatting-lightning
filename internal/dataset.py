@@ -364,11 +364,7 @@ class DataModule(LightningDataModule):
             print("added {} background sphere points, scene_center={}, scene_radius={}, rescale prune extent from {} to {}".format(n_points, scene_center.tolist(), scene_radius, self.dataparser_outputs.camera_extent, self.prune_extent))
 
         # convert point cloud
-        self.point_cloud = BasicPointCloud(
-            points=self.dataparser_outputs.point_cloud.xyz,
-            colors=self.dataparser_outputs.point_cloud.rgb / 255.,
-            normals=np.zeros_like(self.dataparser_outputs.point_cloud.xyz),
-        )
+        self.point_cloud = self.dataparser_outputs.point_cloud
 
         # write some files that SIBR_viewer required
         if self.global_rank == 0 and stage == "fit":

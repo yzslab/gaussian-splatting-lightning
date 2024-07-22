@@ -78,6 +78,11 @@ class GaussianModelLoader:
 
         return model, renderer
 
+    @staticmethod
+    def initialize_model_from_point_cloud(point_cloud_path: str, sh_degree, device):
+        from internal.models.vanilla_gaussian_model import VanillaGaussian, VanillaGaussianModel
+
+
     @classmethod
     def search_and_load(cls, model_path: str, sh_degree, device):
         load_from = cls.search_load_file(model_path)

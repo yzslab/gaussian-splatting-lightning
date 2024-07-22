@@ -16,10 +16,9 @@ import lightning.pytorch.loggers
 
 import internal.mp_strategy
 from internal.viewer.training_viewer import TrainingViewer
-from internal.configs.model import ModelParams
 from internal.configs.light_gaussian import LightGaussian
 
-from internal.models.gaussian_model import GaussianModel
+from internal.models.vanilla_gaussian_model import VanillaGaussian, VanillaGaussianModel
 from internal.renderers import Renderer, VanillaRenderer, RendererConfig
 from internal.metrics.metric import Metric
 from internal.metrics.vanilla_metrics import VanillaMetrics
@@ -34,9 +33,9 @@ from internal.utils.graphics_utils import store_ply
 class GaussianSplatting(LightningModule):
     def __init__(
             self,
-            gaussian: ModelParams,
-            light_gaussian: LightGaussian,
+            light_gaussian: LightGaussian,  # TODO: may be should implement as a hook
             save_iterations: List[int],
+            gaussian: VanillaGaussian = lazy_instance(VanillaGaussian),
             background_color: Tuple[float, float, float] = (0., 0., 0.),
             random_background: bool = False,
             output_path: str = None,
@@ -55,9 +54,8 @@ class GaussianSplatting(LightningModule):
         self.save_hyperparameters()
 
         # setup models
-        self.gaussian_model = GaussianModel(sh_degree=gaussian.sh_degree, extra_feature_dims=gaussian.extra_feature_dims)
+        self.gaussian_model = gaussian.instantiate()
 
-        self.optimization_hparams = self.hparams["gaussian"].optimization
         self.light_gaussian_hparams = light_gaussian
 
         # instantiate renderer
@@ -91,7 +89,7 @@ class GaussianSplatting(LightningModule):
         self.val_metrics: List[Tuple[str, Dict]] = []
 
         # hooks
-        self.on_train_batch_end_hooks: List[Callable[[Dict, Any, GaussianModel, int, Self], None]] = []
+        self.on_train_batch_end_hooks: List[Callable[[Dict, Any, VanillaGaussianModel, int, Self], None]] = []
 
     def log_metrics(
             self,
@@ -123,37 +121,60 @@ class GaussianSplatting(LightningModule):
 
         from internal.utils.gaussian_model_loader import GaussianModelLoader
         load_from = GaussianModelLoader.search_load_file(self.hparams["initialize_from"])
+
+        # TODO: may be should adapt sh_degree of ply or checkpoint to current value?
         if load_from.endswith(".ply") is True:
-            self.gaussian_model.load_ply(load_from, self.device)
+            from internal.utils.gaussian_utils import Gaussian as GaussianUtils
+            gaussians = GaussianUtils.load_from_ply(load_from).to_parameter_structure()
+            self.gaussian_model.setup_from_tensors({
+                "means": gaussians.xyz,
+                "opacities": gaussians.opacities,
+                "features_dc": gaussians.features_dc,
+                "features_rest": gaussians.features_rest,
+                "scales": gaussians.scales,
+                "rotations": gaussians.rotations,
+            })
         else:
             # load from ckpt
-            ckpt = torch.load(load_from, map_location=self.device)
-            # update model hyper params
-            self.gaussian_model.extra_feature_dims = ckpt["hyper_parameters"]["gaussian"].extra_feature_dims
-            self.gaussian_model.max_sh_degree = ckpt["hyper_parameters"]["gaussian"].sh_degree
-            self.gaussian_model.active_sh_degree = self.gaussian_model.max_sh_degree
-            # initialize params
-            self.gaussian_model.initialize_by_gaussian_number(ckpt["state_dict"]["gaussian_model._xyz"].shape[0])
-            # load state_dict
-            state_dict = {}
-            for i in ckpt["state_dict"]:
-                if i.startswith("gaussian_model."):
-                    state_dict[i[i.find(".") + 1:]] = ckpt["state_dict"][i]
-            self.gaussian_model.load_state_dict(state_dict)
+            ckpt = torch.load(load_from, map_location="cpu")
+            if isinstance(ckpt["hyper_parameters"]["gaussian"], VanillaGaussian):
+                # initialize params
+                # load state_dict
+                target_prefix = "gaussian_model.gaussians."
+                target_prefix_length = len(target_prefix)
+                state_dict = {}
+                for i in ckpt["state_dict"]:
+                    if i.startswith(target_prefix):
+                        state_dict[i[target_prefix_length:]] = ckpt["state_dict"][i]
+            else:
+                state_dict = {}
+                name_map = {
+                    "_xyz": "means",
+                    "_features_dc": "shs_dc",
+                    "_features_rest": "shs_rest",
+                    "_scaling": "scales",
+                    "_rotation": "rotations",
+                    "_opacity": "opacities",
+                    "_features_extra": "appearances",
+                }
+                for i in ckpt["state_dict"]:
+                    if i.startswith("gaussian_model."):
+                        old_name = i[i.find(".") + 1:]
+                        new_name = name_map[old_name]
+                        state_dict[new_name] = state_dict[old_name]
 
-        # update hyper params
-        self.hparams["gaussian"].extra_feature_dims = self.gaussian_model.extra_feature_dims
-        self.hparams["gaussian"].sh_degree = self.gaussian_model.max_sh_degree
+            unused_properties, unmet_properties = self.gaussian_model.setup_from_tensors(state_dict)
+            if len(unused_properties) > 0:
+                print("[WARNING] unused_properties={}".format(unused_properties))
+            if len(unmet_properties) > 0:
+                print("[WARNING] unmet_properties={}".format(unmet_properties))
 
-        print(f"initialize from {load_from}: sh_degree={self.gaussian_model.max_sh_degree}, extra_feature_dims={self.gaussian_model.extra_feature_dims}")
+        print(f"initialize from {load_from}: sh_degree={self.gaussian_model.max_sh_degree}")
 
     def setup(self, stage: str):
         if stage == "fit":
             if self.hparams["initialize_from"] is None:
-                self.gaussian_model.create_from_pcd(
-                    self.trainer.datamodule.point_cloud,
-                    deivce=self.device,
-                )
+                self.gaussian_model.setup_from_pcd(xyz=self.trainer.datamodule.point_cloud.xyz, rgb=self.trainer.datamodule.point_cloud.rgb / 255.)
             else:
                 self._initialize_gaussians_from_trained_model()
         else:
@@ -173,24 +194,24 @@ class GaussianSplatting(LightningModule):
 
     def on_load_checkpoint(self, checkpoint) -> None:
         # reinitialize parameters based on the gaussian number in the checkpoint
-        self.gaussian_model.initialize_by_gaussian_number(checkpoint["state_dict"]["gaussian_model._xyz"].shape[0])
+        self.gaussian_model.setup_from_number(checkpoint["state_dict"]["gaussian_model._xyz"].shape[0])
         # restore some extra parameters
-        if "gaussian_model_extra_state_dict" in checkpoint:
-            for i in checkpoint["gaussian_model_extra_state_dict"]:
-                setattr(self.gaussian_model, i, checkpoint["gaussian_model_extra_state_dict"][i])
-            # for previous version
-            if "active_sh_degree" not in checkpoint["gaussian_model_extra_state_dict"]:
-                self.gaussian_model.active_sh_degree = self.gaussian_model.max_sh_degree
+        # if "gaussian_model_extra_state_dict" in checkpoint:
+        #     for i in checkpoint["gaussian_model_extra_state_dict"]:
+        #         setattr(self.gaussian_model, i, checkpoint["gaussian_model_extra_state_dict"][i])
+        #     # for previous version
+        #     if "active_sh_degree" not in checkpoint["gaussian_model_extra_state_dict"]:
+        #         self.gaussian_model.active_sh_degree = self.gaussian_model.max_sh_degree
 
-        if "gaussian_model._features_extra" not in checkpoint["state_dict"]:
-            # create an empty `_features_extra`
-            checkpoint["state_dict"]["gaussian_model._features_extra"] = torch.zeros_like(self.gaussian_model._features_extra)
-            # create an optimizer param group
-            new_param_groups = checkpoint["optimizer_states"][0]["param_groups"][0].copy()
-            new_param_groups["name"] = "f_extra"
-            new_param_groups["lr"] = 0.
-            new_param_groups["params"] = [len(checkpoint["optimizer_states"][0]["param_groups"])]
-            checkpoint["optimizer_states"][0]["param_groups"].append(new_param_groups)
+        # if "gaussian_model._features_extra" not in checkpoint["state_dict"]:
+        #     # create an empty `_features_extra`
+        #     checkpoint["state_dict"]["gaussian_model._features_extra"] = torch.zeros_like(self.gaussian_model._features_extra)
+        #     # create an optimizer param group
+        #     new_param_groups = checkpoint["optimizer_states"][0]["param_groups"][0].copy()
+        #     new_param_groups["name"] = "f_extra"
+        #     new_param_groups["lr"] = 0.
+        #     new_param_groups["params"] = [len(checkpoint["optimizer_states"][0]["param_groups"])]
+        #     checkpoint["optimizer_states"][0]["param_groups"].append(new_param_groups)
 
         # get epoch and global_step, which used in the output path of the validation and test images
         self.restored_epoch = checkpoint["epoch"]
@@ -205,13 +226,13 @@ class GaussianSplatting(LightningModule):
 
     def on_save_checkpoint(self, checkpoint) -> None:
         # store some extra parameters
-        checkpoint["gaussian_model_extra_state_dict"] = {
-            "max_radii2D": self.gaussian_model.max_radii2D,
-            "xyz_gradient_accum": self.gaussian_model.xyz_gradient_accum,
-            "denom": self.gaussian_model.denom,
-            "spatial_lr_scale": self.gaussian_model.spatial_lr_scale,
-            "active_sh_degree": self.gaussian_model.active_sh_degree,
-        }
+        # checkpoint["gaussian_model_extra_state_dict"] = {
+        #     "max_radii2D": self.gaussian_model.max_radii2D,
+        #     "xyz_gradient_accum": self.gaussian_model.xyz_gradient_accum,
+        #     "denom": self.gaussian_model.denom,
+        #     "spatial_lr_scale": self.gaussian_model.spatial_lr_scale,
+        #     "active_sh_degree": self.gaussian_model.active_sh_degree,
+        # }
         super().on_save_checkpoint(checkpoint)
 
     def tensorboard_log_image(self, tag: str, image_tensor):
@@ -350,10 +371,6 @@ class GaussianSplatting(LightningModule):
         # call renderer hook
         self.renderer.before_training_step(global_step, self)
 
-        # Every 1000 its we increase the levels of SH up to a maximum degree
-        if global_step % 1000 == 0:
-            self.gaussian_model.oneupSHdegree()
-
         # forward
         outputs = self(camera)
         # metrics
@@ -376,18 +393,32 @@ class GaussianSplatting(LightningModule):
                 step=self.trainer.global_step,
             )
 
+        # invoke `before_backward` interface of density controller
+        self.density_controller.before_backward(
+            outputs=outputs,
+            batch=batch,
+            gaussian_model=self.gaussian_model,
+            optimizers=self.gaussian_optimizers,
+            global_step=global_step,
+            pl_module=self,
+        )
         # backward
         self.manual_backward(metrics["loss"])
-
-        # invoke densify controller before gradient descend
-        self.density_controller(outputs, batch, self.gaussian_model, global_step, self)
+        # invoke `after_backward` interface of density controller
+        self.density_controller.after_backward(
+            outputs=outputs,
+            batch=batch,
+            gaussian_model=self.gaussian_model,
+            optimizers=self.gaussian_optimizers,
+            global_step=global_step,
+            pl_module=self,
+        )
 
         # optimize
         for optimizer in optimizers:
             optimizer.step()
 
         # schedule lr
-        self.gaussian_model.update_learning_rate(global_step)
         for scheduler in schedulers:
             scheduler.step()
 
@@ -437,9 +468,11 @@ class GaussianSplatting(LightningModule):
         # is the same as the local variable `global_step` in training_step
         global_step = self.trainer.global_step
 
-        self.light_gaussian_prune(global_step)
+        self.gaussian_model.on_train_batch_end(global_step, self)
 
         self.renderer.after_training_step(self.trainer.global_step, self)
+
+        self.light_gaussian_prune(global_step)
 
         for i in self.on_train_batch_end_hooks:
             i(outputs, batch, self.gaussian_model, global_step, self)
@@ -601,13 +634,8 @@ class GaussianSplatting(LightningModule):
         return self.validation_step(batch, batch_idx, name="test")
 
     def configure_optimizers(self):
-        # gaussian_model.training_setup() must be called here, where parameters have been moved to GPUs
-        self.gaussian_model.training_setup(self.hparams["gaussian"].optimization, self.trainer.datamodule.dataparser_outputs.camera_extent)
-
         # initialize lists that store optimizers and schedulers
-        optimizers = [
-            self.gaussian_model.optimizer,
-        ]
+        optimizers = []
         schedulers = []
 
         def add_optimizers_and_schedulers(new_optimizers, new_schedulers):
@@ -625,11 +653,21 @@ class GaussianSplatting(LightningModule):
                 else:
                     schedulers.append(new_schedulers)
 
+        # gaussian model optimizer and scheduler setup
+        gaussian_optimizers, gaussian_schedulers = self.gaussian_model.training_setup(self)
+        self.gaussian_optimizers = gaussian_optimizers
+        if isinstance(self.gaussian_optimizers, list) is False:
+            self.gaussian_optimizers = [self.gaussian_optimizers]
+        add_optimizers_and_schedulers(gaussian_optimizers, gaussian_schedulers)
+
         # renderer optimizer and scheduler setup
         renderer_optimizer, renderer_scheduler = self.renderer.training_setup(self)
         add_optimizers_and_schedulers(renderer_optimizer, renderer_scheduler)
 
         return optimizers, schedulers
+
+    def density_updated_by_renderer(self):
+        self.density_controller.after_density_changed(self.gaussian_model, self.gaussian_optimizers, self)
 
     def save_gaussians(self):
         is_mp_strategy = isinstance(self.trainer.strategy, internal.mp_strategy.MPStrategy)
