@@ -82,8 +82,13 @@ class VanillaGaussianModel(
             self.get_shs_rest = self._get_shs_rest_from_dict
         self._names = tuple(names)
 
+        self.is_pre_activated = False
+
         # TODO: is it suitable to place `active_sh_degree` in gaussian model?
         self.register_buffer("_active_sh_degree", torch.tensor(0, dtype=torch.uint8), persistent=True)
+
+    def before_setup_set_properties_from_pcd(self, xyz: torch.Tensor, rgb: torch.Tensor, property_dict: Dict[str, torch.Tensor], *args, **kwargs):
+        pass
 
     def setup_from_pcd(self, xyz: Union[torch.Tensor, np.ndarray], rgb: Union[torch.Tensor, np.ndarray], *args, **kwargs):
         from internal.utils.sh_utils import RGB2SH
@@ -129,16 +134,21 @@ class VanillaGaussianModel(
         rotations = nn.Parameter(rots.requires_grad_(True))
         opacities = nn.Parameter(opacities.requires_grad_(True))
 
-        self.set_properties({
+        property_dict = {
             "means": means,
             "shs_dc": shs_dc,
             "shs_rest": shs_rest,
             "scales": scales,
             "rotations": rotations,
             "opacities": opacities,
-        })
+        }
+        self.before_setup_set_properties_from_pcd(xyz, rgb, property_dict, *args, **kwargs)
+        self.set_properties(property_dict)
 
         self.active_sh_degree = 0
+
+    def before_setup_set_properties_from_number(self, n: int, property_dict: Dict[str, torch.Tensor], *args, **kwargs):
+        pass
 
     def setup_from_number(self, n: int, *args, **kwargs):
         means = torch.zeros((n, 3))
@@ -159,14 +169,16 @@ class VanillaGaussianModel(
         rotations = nn.Parameter(rotations.requires_grad_(True))
         opacities = nn.Parameter(opacities.requires_grad_(True))
 
-        self.set_properties({
+        property_dict = {
             "means": means,
             "shs_dc": shs_dc,
             "shs_rest": shs_rest,
             "scales": scales,
             "rotations": rotations,
             "opacities": opacities,
-        })
+        }
+        self.before_setup_set_properties_from_number(n, property_dict, *args, **kwargs)
+        self.set_properties(property_dict)
 
         self.active_sh_degree = 0
 
@@ -347,6 +359,39 @@ class VanillaGaussianModel(
     @shs_rest.setter
     def shs_rest(self, v):
         self.set_property(self._shs_rest_name, v)
+
+    @staticmethod
+    def _return_as_is(v):
+        return v
+
+    def _get_shs_from_dict(self) -> torch.Tensor:
+        return self.gaussians["shs"]
+
+    def pre_activate_all_properties(self):
+        self.is_pre_activated = True
+
+        self.scales = self.get_scales()
+        self.rotations = self.get_rotations()
+        self.opacities = self.get_opacities()
+
+        # concat `shs_dc` and `shs_rest` and store it to dict, then remove `shs_dc` and `shs_rest`
+        names = list(self._names)
+        self.gaussians["shs"] = self.get_shs()
+        names.append("shs")
+        del self.gaussians["shs_dc"]
+        names.remove("shs_dc")
+        if "shs_rest" in self.gaussians:
+            del self.gaussians["shs_rest"]
+            names.remove("shs_rest")
+        self.get_shs = self._get_shs_from_dict
+        self._names = tuple(names)
+
+        self.scale_activation = self._return_as_is
+        self.scale_inverse_activation = self._return_as_is
+        self.rotation_activation = self._return_as_is
+        self.rotation_inverse_activation = self._return_as_is
+        self.opacity_activation = self._return_as_is
+        self.opacity_inverse_activation = self._return_as_is
 
     # below getters are declared for the compatibility purpose
 
