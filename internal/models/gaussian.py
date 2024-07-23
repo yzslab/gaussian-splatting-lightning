@@ -44,12 +44,13 @@ class GaussianModel(nn.Module, ABC):
         for name in self.property_names:
             self.gaussians[name] = properties[name]
 
-    def update_properties(self, properties: Dict[str, torch.Tensor]):
+    def update_properties(self, properties: Dict[str, torch.Tensor], strict: bool = True):
         """
         Replace part of the properties by those provided in `properties`
         """
         for name in properties:
-            assert name in self.gaussians
+            if name not in self.gaussians and strict is True:
+                raise RuntimeError("`{}` is not a property".format(name))
             self.gaussians[name] = properties[name]
 
     @property
