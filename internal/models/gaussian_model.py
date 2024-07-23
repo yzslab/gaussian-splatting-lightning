@@ -11,7 +11,7 @@ from simple_knn._C import distCUDA2
 from internal.utils.general_utils import inverse_sigmoid, get_expon_lr_func, build_rotation, strip_symmetric, \
     build_scaling_rotation
 from internal.utils.graphics_utils import BasicPointCloud
-from internal.utils.gaussian_utils import Gaussian as GaussianParameterUtils
+from internal.utils.gaussian_utils import GaussianPlyUtils as GaussianParameterUtils
 
 
 class GaussianModel(nn.Module):
