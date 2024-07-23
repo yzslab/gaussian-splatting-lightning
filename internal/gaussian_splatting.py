@@ -18,7 +18,8 @@ import internal.mp_strategy
 from internal.viewer.training_viewer import TrainingViewer
 from internal.configs.light_gaussian import LightGaussian
 
-from internal.models.vanilla_gaussian_model import VanillaGaussian, VanillaGaussianModel
+from internal.models.gaussian import Gaussian, GaussianModel
+from internal.models.vanilla_gaussian_model import VanillaGaussian
 from internal.renderers import Renderer, VanillaRenderer, RendererConfig
 from internal.metrics.metric import Metric
 from internal.metrics.vanilla_metrics import VanillaMetrics
@@ -35,7 +36,7 @@ class GaussianSplatting(LightningModule):
             self,
             light_gaussian: LightGaussian,  # TODO: may be should implement as a hook
             save_iterations: List[int],
-            gaussian: VanillaGaussian = lazy_instance(VanillaGaussian),
+            gaussian: Gaussian = lazy_instance(VanillaGaussian),
             background_color: Tuple[float, float, float] = (0., 0., 0.),
             random_background: bool = False,
             output_path: str = None,
@@ -89,7 +90,7 @@ class GaussianSplatting(LightningModule):
         self.val_metrics: List[Tuple[str, Dict]] = []
 
         # hooks
-        self.on_train_batch_end_hooks: List[Callable[[Dict, Any, VanillaGaussianModel, int, Self], None]] = []
+        self.on_train_batch_end_hooks: List[Callable[[Dict, Any, GaussianModel, int, Self], None]] = []
 
     def log_metrics(
             self,
@@ -125,49 +126,24 @@ class GaussianSplatting(LightningModule):
         # TODO: may be should adapt sh_degree of ply or checkpoint to current value?
         if load_from.endswith(".ply") is True:
             from internal.utils.gaussian_utils import Gaussian as GaussianUtils
-            gaussians = GaussianUtils.load_from_ply(load_from).to_parameter_structure()
-            self.gaussian_model.setup_from_tensors({
-                "means": gaussians.xyz,
-                "opacities": gaussians.opacities,
-                "features_dc": gaussians.features_dc,
-                "features_rest": gaussians.features_rest,
-                "scales": gaussians.scales,
-                "rotations": gaussians.rotations,
-            })
+            gaussian_model, _ = GaussianModelLoader.initialize_model_and_renderer_from_ply_file(
+                ply_file_path=load_from,
+                device=self.device,
+                eval_mode=False,
+                pre_activate=False,
+            )
         else:
             # load from ckpt
-            ckpt = torch.load(load_from, map_location="cpu")
-            if isinstance(ckpt["hyper_parameters"]["gaussian"], VanillaGaussian):
-                # initialize params
-                # load state_dict
-                target_prefix = "gaussian_model.gaussians."
-                target_prefix_length = len(target_prefix)
-                state_dict = {}
-                for i in ckpt["state_dict"]:
-                    if i.startswith(target_prefix):
-                        state_dict[i[target_prefix_length:]] = ckpt["state_dict"][i]
-            else:
-                state_dict = {}
-                name_map = {
-                    "_xyz": "means",
-                    "_features_dc": "shs_dc",
-                    "_features_rest": "shs_rest",
-                    "_scaling": "scales",
-                    "_rotation": "rotations",
-                    "_opacity": "opacities",
-                    "_features_extra": "appearances",
-                }
-                for i in ckpt["state_dict"]:
-                    if i.startswith("gaussian_model."):
-                        old_name = i[i.find(".") + 1:]
-                        new_name = name_map[old_name]
-                        state_dict[new_name] = state_dict[old_name]
+            gaussian_model, _, _ = GaussianModelLoader.initialize_model_and_renderer_from_checkpoint_file(
+                load_from,
+                device=self.device,
+                eval_mode=False,
+                pre_activate=False,
+            )
 
-            unused_properties, unmet_properties = self.gaussian_model.setup_from_tensors(state_dict)
-            if len(unused_properties) > 0:
-                print("[WARNING] unused_properties={}".format(unused_properties))
-            if len(unmet_properties) > 0:
-                print("[WARNING] unmet_properties={}".format(unmet_properties))
+        # replace config
+        self.hparams["gaussians"] = gaussian_model.config
+        self.gaussian_model = gaussian_model
 
         print(f"initialize from {load_from}: sh_degree={self.gaussian_model.max_sh_degree}")
 
@@ -194,24 +170,9 @@ class GaussianSplatting(LightningModule):
 
     def on_load_checkpoint(self, checkpoint) -> None:
         # reinitialize parameters based on the gaussian number in the checkpoint
-        self.gaussian_model.setup_from_number(checkpoint["state_dict"]["gaussian_model._xyz"].shape[0])
-        # restore some extra parameters
-        # if "gaussian_model_extra_state_dict" in checkpoint:
-        #     for i in checkpoint["gaussian_model_extra_state_dict"]:
-        #         setattr(self.gaussian_model, i, checkpoint["gaussian_model_extra_state_dict"][i])
-        #     # for previous version
-        #     if "active_sh_degree" not in checkpoint["gaussian_model_extra_state_dict"]:
-        #         self.gaussian_model.active_sh_degree = self.gaussian_model.max_sh_degree
+        self.gaussian_model.setup_from_number(checkpoint["state_dict"]["gaussian_model.gaussians.means"].shape[0])
 
-        # if "gaussian_model._features_extra" not in checkpoint["state_dict"]:
-        #     # create an empty `_features_extra`
-        #     checkpoint["state_dict"]["gaussian_model._features_extra"] = torch.zeros_like(self.gaussian_model._features_extra)
-        #     # create an optimizer param group
-        #     new_param_groups = checkpoint["optimizer_states"][0]["param_groups"][0].copy()
-        #     new_param_groups["name"] = "f_extra"
-        #     new_param_groups["lr"] = 0.
-        #     new_param_groups["params"] = [len(checkpoint["optimizer_states"][0]["param_groups"])]
-        #     checkpoint["optimizer_states"][0]["param_groups"].append(new_param_groups)
+        # TODO: convert previous version checkpoints
 
         # get epoch and global_step, which used in the output path of the validation and test images
         self.restored_epoch = checkpoint["epoch"]
