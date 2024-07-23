@@ -224,7 +224,7 @@ class GaussianTransformUtils:
             from einops import einsum
         except:
             print("Please run `pip install e3nn einops` to enable SHs rotation")
-            return
+            return features
 
         if features.shape[1] == 1:
             return features

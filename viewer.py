@@ -13,7 +13,7 @@ import viser.transforms as vtf
 import torch
 from internal.renderers import VanillaRenderer
 from internal.utils.gaussian_model_loader import GaussianModelLoader
-from internal.models.simplified_gaussian_model_manager import SimplifiedGaussianModelManager
+from internal.utils.gaussian_model_editor import MultipleGaussianModelEditor
 from internal.viewer import ClientThread, ViewerRenderer
 from internal.viewer.ui import populate_render_tab, TransformPanel, EditPanel
 from internal.viewer.ui.up_direction_folder import UpDirectionFolder
@@ -168,15 +168,11 @@ class Viewer:
                     self.available_appearance_options = json.load(f)
             # self.available_appearance_options["@Disabled"] = None
 
-            if enable_transform is True:
-                model = SimplifiedGaussianModelManager(
-                    [model.to_device(torch.device("cpu"))],
-                    enable_transform=True,
-                    device=self.device,
-                )
+            if self.show_edit_panel is True or enable_transform is True:
+                model = MultipleGaussianModelEditor([model], device=self.device)
         else:
             # switch to vanilla renderer
-            model_list = [model.to_device(torch.device("cpu"))]
+            model_list = [model.to(torch.device("cpu"))]
             renderer = VanillaRenderer()
             for model_path in addition_models:
                 load_from = self._search_load_file(model_path)
@@ -186,9 +182,9 @@ class Viewer:
                     load_results = self._do_initialize_models_from_point_cloud(load_from, self.sh_degree, device=torch.device("cpu"))
                 model_list.append(load_results[0])
 
-            model = SimplifiedGaussianModelManager(model_list, enable_transform=enable_transform, device=self.device)
-
             self.loaded_model_count += len(addition_models)
+
+            model = MultipleGaussianModelEditor(model_list, device=self.device)
 
         self.gaussian_model = model
 
@@ -233,7 +229,7 @@ class Viewer:
 
     def _load_vanilla_seganygs(self, path):
         from plyfile import PlyData
-        from internal.utils.gaussian_utils import Gaussian
+        from internal.utils.gaussian_utils import GaussianPlyUtils
 
         max_iteration = -1
         load_from = None
@@ -255,7 +251,7 @@ class Viewer:
 
         plydata = PlyData.read(load_from)
         semantic_features = torch.tensor(
-            Gaussian.load_array_from_plyelement(plydata.elements[0], "f_"),
+            GaussianPlyUtils.load_array_from_plyelement(plydata.elements[0], "f_"),
             dtype=torch.float,
             device=self.device,
         )
@@ -400,19 +396,14 @@ class Viewer:
 
     @staticmethod
     def _do_initialize_models_from_checkpoint(checkpoint_path: str, device):
-        return GaussianModelLoader.initialize_simplified_model_from_checkpoint(checkpoint_path, device)
+        return GaussianModelLoader.initialize_model_and_renderer_from_checkpoint_file(checkpoint_path, device)
 
     def _initialize_models_from_checkpoint(self, checkpoint_path: str):
         return self._do_initialize_models_from_checkpoint(checkpoint_path, self.device)
 
     @staticmethod
     def _do_initialize_models_from_point_cloud(point_cloud_path: str, sh_degree, device, simplified: bool = True):
-        if simplified is True:
-            return GaussianModelLoader.initialize_simplified_model_from_point_cloud(point_cloud_path, sh_degree, device)
-        from internal.models.gaussian_model import GaussianModel
-        model = GaussianModel(sh_degree=sh_degree)
-        model.load_ply(point_cloud_path, device=device)
-        return model, VanillaRenderer()
+        return GaussianModelLoader.initialize_model_and_renderer_from_ply_file(point_cloud_path, device, pre_activate=simplified)
 
     def _initialize_models_from_point_cloud(self, point_cloud_path: str):
         return self._do_initialize_models_from_point_cloud(point_cloud_path, self.sh_degree, self.device, simplified=self.simplified_model)

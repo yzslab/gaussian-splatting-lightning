@@ -283,6 +283,7 @@ class EditPanel:
         selected_gaussian = torch.where(self._get_selected_gaussians_mask())
         return selected_gaussian
 
+    @torch.no_grad()
     def _update_pcd(self, selected_gaussians_indices=None):
         self.remove_point_cloud()
         if self.show_point_cloud_checkbox.value is False:

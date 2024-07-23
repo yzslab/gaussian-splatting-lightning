@@ -126,14 +126,16 @@ class TransformPanel:
         def _(event: viser.GuiEvent) -> None:
             if self.transform_control_no_handle_update is True:
                 return
-            model_pose = self.model_poses[idx]
-            model_pose.wxyz = controls.wxyz
-            model_pose.position = controls.position
 
-            self.model_t_xyz_text_handle[idx].value = model_pose.position.tolist()
-            self.model_r_xyz_text_handle[idx].value = self.quaternion_to_euler_angle_vectorized2(model_pose.wxyz)
+            with self.server.atomic():
+                model_pose = self.model_poses[idx]
+                model_pose.wxyz = controls.wxyz
+                model_pose.position = controls.position
 
-            self._transform_model(idx)
+                self.model_t_xyz_text_handle[idx].value = model_pose.position.tolist()
+                self.model_r_xyz_text_handle[idx].value = self.quaternion_to_euler_angle_vectorized2(model_pose.wxyz)
+
+                self._transform_model(idx)
             self.viewer.rerender_for_all_client()
 
     def _show_model_transform_handle(
@@ -216,7 +218,7 @@ class TransformPanel:
                     self.model_transform_controls[idx].wxyz = wxyz
                 self.model_poses[idx].wxyz = wxyz
 
-            self._transform_model(idx)
+                self._transform_model(idx)
             self.viewer.rerender_for_all_client()
 
     @staticmethod
