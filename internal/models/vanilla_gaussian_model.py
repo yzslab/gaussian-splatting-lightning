@@ -17,6 +17,7 @@ from internal.utils.general_utils import (
 )
 from internal.schedulers import Scheduler, ExponentialDecayScheduler
 
+
 @dataclass
 class OptimizationConfig:
     means_lr_init: float = 0.00016
@@ -306,25 +307,11 @@ class VanillaGaussianModel(
     def active_sh_degree(self, v: int):
         self._active_sh_degree.fill_(v)
 
-    # the properties returned by below getters are activated
-
-    def get_means(self) -> torch.Tensor:
-        """
-        Return: [n, 3]
-        """
-        return self.gaussians["means"]
-
     def opacity_activation(self, opacities: torch.Tensor) -> torch.Tensor:
         return torch.sigmoid(opacities)
 
     def opacity_inverse_activation(self, opacities: torch.Tensor) -> torch.Tensor:
         return inverse_sigmoid(opacities)
-
-    def get_opacities(self):
-        """
-        Return: [n, 1]
-        """
-        return self.opacity_activation(self.gaussians["opacities"])
 
     def scale_activation(self, scales: torch.Tensor) -> torch.Tensor:
         return torch.exp(scales)
@@ -332,51 +319,17 @@ class VanillaGaussianModel(
     def scale_inverse_activation(self, scales: torch.Tensor) -> torch.Tensor:
         return torch.log(scales)
 
-    def get_scales(self):
-        """
-        Return: [n, 3]
-        """
-        return self.scale_activation(self.gaussians["scales"])
-
     def rotation_activation(self, rotations: torch.Tensor) -> torch.Tensor:
         return torch.nn.functional.normalize(rotations)
 
     def rotation_inverse_activation(self, rotations: torch.Tensor) -> torch.Tensor:
         return rotations
 
-    def get_rotations(self):
-        """
-        Return: [n, 4]
-        """
-        return self.rotation_activation(self.gaussians["rotations"])
-
-    def get_shs(self):
-        """
-        overridden in the `__init__`
-
-        Return: [n, N_SHs, 3]
-        """
-        pass
-
     def get_shs_dc_and_rest(self):
         """
         Return: [n, N_SHs, 3]
         """
         return torch.cat((self.get_shs_dc(), self.get_shs_rest()), dim=1)
-
-    def get_shs_dc(self):
-        """
-        Return: [n, 1, 3]
-        """
-        return self.gaussians["shs_dc"]
-
-    def get_shs_rest(self):
-        """
-        Override in `__init__`
-
-        Return: [n, N_shs_rest, 3]
-        """
-        pass
 
     def _get_shs_rest_from_dict(self):
         """
@@ -387,19 +340,13 @@ class VanillaGaussianModel(
     def _get_empty_shs_rest(self):
         return torch.empty((self.n_gaussians, 0, 3), dtype=torch.float, device=self.get_means().device)
 
-    def get_covariances(self, scaling_modifier=1):
-        return self.build_covariance_from_scaling_rotation(
-            self.get_scales(),
-            scaling_modifier,
-            self.rotations,
-        )
+    @property
+    def shs_rest(self) -> torch.Tensor:
+        return self.get_shs_rest()
 
-    @staticmethod
-    def build_covariance_from_scaling_rotation(scaling, scaling_modifier, rotation):
-        L = build_scaling_rotation(scaling_modifier * scaling, rotation)
-        actual_covariance = L @ L.transpose(1, 2)
-        symm = strip_symmetric(actual_covariance)
-        return symm
+    @shs_rest.setter
+    def shs_rest(self, v):
+        self.set_property(self._shs_rest_name, v)
 
     # below getters are declared for the compatibility purpose
 
@@ -423,5 +370,16 @@ class VanillaGaussianModel(
     def get_opacity(self):
         return self.opacity_activation(self.gaussians["opacities"])
 
-    def get_covariance(self, scaling_modifier=1):
-        return self.get_covariances(scaling_modifier)
+    @staticmethod
+    def build_covariance_from_scaling_rotation(scaling, scaling_modifier, rotation):
+        L = build_scaling_rotation(scaling_modifier * scaling, rotation)
+        actual_covariance = L @ L.transpose(1, 2)
+        symm = strip_symmetric(actual_covariance)
+        return symm
+
+    def get_covariance(self, scaling_modifier: float = 1.):
+        return self.build_covariance_from_scaling_rotation(
+            self.get_scales(),
+            scaling_modifier,
+            self.get_rotations(),
+        )
