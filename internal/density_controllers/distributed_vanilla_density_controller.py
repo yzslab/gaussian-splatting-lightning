@@ -35,10 +35,12 @@ class DistributedVanillaDensityControllerImpl(VanillaDensityControllerImpl):
             if outputs["xys_grad_scale_required"] is True:
                 viewspace_points_grad_scale = 0.5 * torch.tensor([[member_data.width, member_data.height]], dtype=torch.float, device=xys.device)
 
+            # update states
             self.max_radii2D[visibility_filter] = torch.max(
                 self.max_radii2D[visibility_filter],
                 radii[visibility_filter]
             )
+            xys_grad = viewspace_point_tensor.grad
             if self.config.absgrad is True:
-                viewspace_point_tensor.grad = viewspace_point_tensor.absgrad
-            self._add_densification_stats(viewspace_point_tensor, visibility_filter, scale=viewspace_points_grad_scale)
+                xys_grad = viewspace_point_tensor.absgrad
+            self._add_densification_stats(xys_grad, visibility_filter, scale=viewspace_points_grad_scale)
