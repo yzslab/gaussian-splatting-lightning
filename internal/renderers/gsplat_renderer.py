@@ -196,11 +196,6 @@ class GSPlatRenderer(Renderer):
             **({} if extra_projection_kwargs is None else extra_projection_kwargs),
         )
 
-        try:
-            xys.retain_grad()
-        except:
-            pass
-
         if colors_precomp is not None:
             rgbs = colors_precomp
         elif color_computer is not None:

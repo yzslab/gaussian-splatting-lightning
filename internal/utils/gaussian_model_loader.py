@@ -92,11 +92,11 @@ class GaussianModelLoader:
             model_state_dict = {cls.previous_state_dict_key_to_new.get(name): model_state_dict[name] for name in model_state_dict}
             model_state_dict["_active_sh_degree"] = torch.tensor(sh_degree, dtype=torch.int, device=device)
 
-            from internal.models.vanilla_gaussian_model import VanillaGaussian
+            from internal.models.vanilla_gaussian import VanillaGaussian
 
             if "gaussians.appearance_features" in model_state_dict:
                 if model_state_dict["gaussians.appearance_features"].shape[-1] > 0:
-                    from internal.models.appearance_feature_gaussian_model import AppearanceFeatureGaussian
+                    from internal.models.appearance_feature_gaussian import AppearanceFeatureGaussian
                     model = AppearanceFeatureGaussian(sh_degree=sh_degree, appearance_feature_dims=model_state_dict["gaussians.appearance_features"].shape[-1]).instantiate()
                 else:
                     del model_state_dict["gaussians.appearance_features"]
@@ -152,7 +152,6 @@ class GaussianModelLoader:
 
     @staticmethod
     def initialize_model_and_renderer_from_ply_file(ply_file_path: str, device, eval_mode: bool = True, pre_activate: bool = True):
-        from internal.models.vanilla_gaussian_model import VanillaGaussian
         from internal.utils.gaussian_utils import GaussianPlyUtils
         gaussian_ply_utils = GaussianPlyUtils.load_from_ply(ply_file_path).to_parameter_structure()
         model_state_dict = {
@@ -165,7 +164,13 @@ class GaussianModelLoader:
             "gaussians.rotations": gaussian_ply_utils.rotations.to(device),
         }
 
-        model = VanillaGaussian(sh_degree=gaussian_ply_utils.sh_degrees).instantiate()
+        # use 2DGS if the number of last dim is 2
+        if model_state_dict["gaussians.scales"].shape[-1] == 2:
+            from internal.models.gaussian_2d import Gaussian2D
+            model = Gaussian2D(sh_degree=gaussian_ply_utils.sh_degrees).instantiate()
+        else:
+            from internal.models.vanilla_gaussian import VanillaGaussian
+            model = VanillaGaussian(sh_degree=gaussian_ply_utils.sh_degrees).instantiate()
         model.setup_from_number(gaussian_ply_utils.xyz.shape[0])
         model.to(device)
         model.load_state_dict(model_state_dict, strict=False)

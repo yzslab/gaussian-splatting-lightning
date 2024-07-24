@@ -5,7 +5,7 @@ from gsplat.rasterize import rasterize_gaussians
 from .renderer import Renderer
 from .gsplat_renderer import DEFAULT_BLOCK_SIZE, DEFAULT_ANTI_ALIASED_STATUS
 from ..cameras import Camera
-from ..models.gaussian_model import GaussianModel
+from ..models.gaussian import GaussianModel
 
 
 class GSplatContrastiveFeatureRenderer(Renderer):

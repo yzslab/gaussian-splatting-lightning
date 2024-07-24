@@ -4,7 +4,7 @@ import torch
 from torch import nn
 from lightning import LightningModule
 
-from internal.models.vanilla_gaussian_model import VanillaGaussianModel
+from internal.models.vanilla_gaussian import VanillaGaussianModel
 from internal.utils.general_utils import build_rotation
 from .density_controller import DensityController, DensityControllerImpl, Utils
 

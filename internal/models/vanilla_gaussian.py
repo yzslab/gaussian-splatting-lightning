@@ -68,12 +68,12 @@ class VanillaGaussianModel(
         self.config = config
 
         names = [
-            "means",
-            "shs_dc",
-            "opacities",
-            "scales",
-            "rotations",
-        ]
+                    "means",
+                    "shs_dc",
+                    "opacities",
+                    "scales",
+                    "rotations",
+                ] + self.get_extra_property_names()
         self.get_shs = self.get_shs_dc
         self.get_shs_rest = self._get_empty_shs_rest
         if config.sh_degree > 0:
@@ -86,6 +86,9 @@ class VanillaGaussianModel(
 
         # TODO: is it suitable to place `active_sh_degree` in gaussian model?
         self.register_buffer("_active_sh_degree", torch.tensor(0, dtype=torch.uint8), persistent=True)
+
+    def get_extra_property_names(self):
+        return []
 
     def before_setup_set_properties_from_pcd(self, xyz: torch.Tensor, rgb: torch.Tensor, property_dict: Dict[str, torch.Tensor], *args, **kwargs):
         pass

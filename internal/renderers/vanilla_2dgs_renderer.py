@@ -9,7 +9,7 @@ import torch
 import math
 from .renderer import RendererOutputTypes, RendererOutputInfo, Renderer
 from ..cameras import Camera
-from ..models.gaussian_model import GaussianModel
+from ..models.gaussian import GaussianModel
 
 from diff_surfel_rasterization import GaussianRasterizationSettings, GaussianRasterizer
 
@@ -39,10 +39,6 @@ class Vanilla2DGSRenderer(Renderer):
         # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
         screenspace_points = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True,
                                               device=bg_color.device) + 0
-        try:
-            screenspace_points.retain_grad()
-        except:
-            pass
 
         # Set up rasterization configuration
         tanfovx = math.tan(viewpoint_camera.fov_x * 0.5)
@@ -142,21 +138,6 @@ class Vanilla2DGSRenderer(Renderer):
         })
 
         return rets
-
-    def training_setup(self, module: lightning.LightningModule) -> Tuple[
-        Optional[Union[
-            List[torch.optim.Optimizer],
-            torch.optim.Optimizer,
-        ]],
-        Optional[Union[
-            List[torch.optim.lr_scheduler.LRScheduler],
-            torch.optim.lr_scheduler.LRScheduler,
-        ]]
-    ]:
-        with torch.no_grad():
-            # key to a quality comparable to hbb1/2d-gaussian-splatting
-            module.gaussian_model._rotation.copy_(torch.rand_like(module.gaussian_model._rotation))
-        return super().training_setup(module)
 
     @staticmethod
     def depths_to_points(view, depthmap):

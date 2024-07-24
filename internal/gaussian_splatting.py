@@ -19,7 +19,7 @@ from internal.viewer.training_viewer import TrainingViewer
 from internal.configs.light_gaussian import LightGaussian
 
 from internal.models.gaussian import Gaussian, GaussianModel
-from internal.models.vanilla_gaussian_model import VanillaGaussian
+from internal.models.vanilla_gaussian import VanillaGaussian
 from internal.renderers import Renderer, VanillaRenderer, RendererConfig
 from internal.metrics.metric import Metric
 from internal.metrics.vanilla_metrics import VanillaMetrics

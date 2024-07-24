@@ -1,6 +1,6 @@
 import unittest
 import torch
-from internal.models.vanilla_gaussian_model import VanillaGaussian, VanillaGaussianModel
+from internal.models.vanilla_gaussian import VanillaGaussian, VanillaGaussianModel
 
 
 class VanillaGaussianModelTestCase(unittest.TestCase):
