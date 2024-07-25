@@ -244,6 +244,9 @@ class HasSHs(ABC):
     # shs
 
     def get_shs(self) -> torch.Tensor:
+        """
+        Return: [n, N_SHs, 3]
+        """
         return torch.cat((self.shs_dc, self.shs_rest), dim=1)
 
     # max_sh_degree

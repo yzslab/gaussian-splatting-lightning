@@ -107,10 +107,10 @@ class MultipleGaussianModelEditor:
     def backup_properties(self):
         original_properties = {}
         properties = self.gaussian_model.properties
-        for key in ["means", "scales", "rotations", "shs_dc", "shs_rest", "shs"]:
-            if key not in properties:
-                continue
+        # pre-activated model has `shs` only
+        for key in ["means", "scales", "rotations"]:
             original_properties[key] = properties[key].clone()
+        original_properties["shs"] = self.gaussian_model.get_shs().clone()
         self._original_properties = original_properties
 
     def get_model_gaussian_indices(self, idx: int):
@@ -138,12 +138,7 @@ class MultipleGaussianModelEditor:
         # TODO: avoid memory copy if no rotation or scaling happened compared to previous state
         scaling = self._original_properties["scales"][begin:end].clone().to(device)
         rotation = self._original_properties["rotations"][begin:end].clone().to(device)
-        if "shs" in self._original_properties:
-            features = self._original_properties["shs"][begin:end].clone().to(device)  # consume a lot of memory
-        elif "shs_rest" in self._original_properties:
-            features = self._original_properties["shs_dc"][begin:end].clone().to(device)
-        else:
-            features = torch.concat([self._original_properties["shs_dc"][begin:end], self._original_properties["shs_rest"][begin:end]], dim=1).to(device)
+        features = self._original_properties["shs"][begin:end].clone().to(device)  # consume a lot of memory
 
         # rescale
         xyz, scaling = gaussian_utils.GaussianTransformUtils.rescale(
@@ -168,8 +163,10 @@ class MultipleGaussianModelEditor:
             "rotations": model.rotation_inverse_activation(rotation),
             "shs_dc": new_features[:, :1, :],
             "shs_rest": new_features[:, 1:, :],
+            # the pre-activated model only has `shs`
             "shs": new_features,
         }
+        # since only a slice of each property need to be updated, operating on `model.gaussians` directly is required
         for key, value in new_properties.items():
             if key not in model.gaussians:
                 continue

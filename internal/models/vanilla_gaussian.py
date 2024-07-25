@@ -70,16 +70,11 @@ class VanillaGaussianModel(
         names = [
                     "means",
                     "shs_dc",
+                    "shs_rest",
                     "opacities",
                     "scales",
                     "rotations",
                 ] + self.get_extra_property_names()
-        self.get_shs = self.get_shs_dc
-        self.get_shs_rest = self._get_empty_shs_rest
-        if config.sh_degree > 0:
-            names.append("shs_rest")
-            self.get_shs = self.get_shs_dc_and_rest
-            self.get_shs_rest = self._get_shs_rest_from_dict
         self._names = tuple(names)
 
         self.is_pre_activated = False
@@ -128,10 +123,7 @@ class VanillaGaussianModel(
         means = nn.Parameter(fused_point_cloud.requires_grad_(True))
         shs_dc = nn.Parameter(shs[:, :, 0:1].transpose(1, 2).contiguous().requires_grad_(True))
         shs_rest = shs[:, :, 1:].transpose(1, 2).contiguous()
-        if self.config.sh_degree > 0:
-            shs_rest = nn.Parameter(shs_rest.requires_grad_(True))
-        else:
-            shs_rest = None
+        shs_rest = nn.Parameter(shs_rest.requires_grad_(True))
 
         scales = nn.Parameter(scales.requires_grad_(True))
         rotations = nn.Parameter(rots.requires_grad_(True))
@@ -164,10 +156,7 @@ class VanillaGaussianModel(
 
         means = nn.Parameter(means.requires_grad_(True))
         shs_dc = nn.Parameter(shs_dc.requires_grad_(True))
-        if self.config.sh_degree > 0:
-            shs_rest = nn.Parameter(shs_rest.requires_grad_(True))
-        else:
-            shs_rest = None
+        shs_rest = nn.Parameter(shs_rest.requires_grad_(True))
         scales = nn.Parameter(scales.requires_grad_(True))
         rotations = nn.Parameter(rotations.requires_grad_(True))
         opacities = nn.Parameter(opacities.requires_grad_(True))
@@ -273,12 +262,11 @@ class VanillaGaussianModel(
         # the params with constant LR
         l = [
             {'params': [self.gaussians["shs_dc"]], 'lr': optimization_config.shs_dc_lr, "name": "shs_dc"},
+            {'params': [self.gaussians["shs_rest"]], 'lr': optimization_config.shs_rest_lr, "name": "shs_rest"},
             {'params': [self.gaussians["opacities"]], 'lr': optimization_config.opacities_lr, "name": "opacities"},
             {'params': [self.gaussians["scales"]], 'lr': optimization_config.scales_lr, "name": "scales"},
             {'params': [self.gaussians["rotations"]], 'lr': optimization_config.rotations_lr, "name": "rotations"},
         ]
-        if self.config.sh_degree > 0:
-            l.append({'params': [self.gaussians["shs_rest"]], 'lr': optimization_config.shs_rest_lr, "name": "shs_rest"})
         constant_lr_optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
 
         print("spatial_lr_scale={}, learning_rates=".format(spatial_lr_scale))
@@ -340,29 +328,6 @@ class VanillaGaussianModel(
     def rotation_inverse_activation(self, rotations: torch.Tensor) -> torch.Tensor:
         return rotations
 
-    def get_shs_dc_and_rest(self):
-        """
-        Return: [n, N_SHs, 3]
-        """
-        return torch.cat((self.get_shs_dc(), self.get_shs_rest()), dim=1)
-
-    def _get_shs_rest_from_dict(self):
-        """
-        Return: [n, N_shs_rest, 3]
-        """
-        return self.gaussians["shs_rest"]
-
-    def _get_empty_shs_rest(self):
-        return torch.empty((self.n_gaussians, 0, 3), dtype=torch.float, device=self.get_means().device)
-
-    @property
-    def shs_rest(self) -> torch.Tensor:
-        return self.get_shs_rest()
-
-    @shs_rest.setter
-    def shs_rest(self, v):
-        self.set_property(self._shs_rest_name, v)
-
     @staticmethod
     def _return_as_is(v):
         return v
@@ -379,14 +344,18 @@ class VanillaGaussianModel(
 
         # concat `shs_dc` and `shs_rest` and store it to dict, then remove `shs_dc` and `shs_rest`
         names = list(self._names)
+        ## concat
         self.gaussians["shs"] = self.get_shs()
         names.append("shs")
+        ## remove `shs_dc`
         del self.gaussians["shs_dc"]
         names.remove("shs_dc")
-        if "shs_rest" in self.gaussians:
-            del self.gaussians["shs_rest"]
-            names.remove("shs_rest")
+        ## remove `shs_rest`
+        del self.gaussians["shs_rest"]
+        names.remove("shs_rest")
+        ## replace `get_shs` interface
         self.get_shs = self._get_shs_from_dict
+        ## replace `names`
         self._names = tuple(names)
 
         self.scale_activation = self._return_as_is
