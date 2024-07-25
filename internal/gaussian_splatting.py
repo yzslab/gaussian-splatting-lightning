@@ -636,6 +636,7 @@ class GaussianSplatting(LightningModule):
             return
 
         if self.hparams["save_ply"] is True:
+            from internal.utils.gaussian_utils import GaussianPlyUtils
             # save ply file
             filename = "point_cloud.ply"
             # if self.trainer.global_rank != 0:
@@ -645,7 +646,7 @@ class GaussianSplatting(LightningModule):
                                           "iteration_{}".format(self.trainer.global_step))
                 os.makedirs(output_dir, exist_ok=True)
                 output_path = os.path.join(output_dir, filename)
-                self.gaussian_model.save_ply(output_path + ".tmp")
+                GaussianPlyUtils.load_from_model(self.gaussian_model).to_ply_format().save_to_ply(output_path + ".tmp")
                 os.rename(output_path + ".tmp", output_path)
 
             print("Gaussians saved to {}".format(output_path))

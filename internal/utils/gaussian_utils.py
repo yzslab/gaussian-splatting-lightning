@@ -23,6 +23,18 @@ class GaussianPlyUtils:
     rotations: Union[np.ndarray, torch.Tensor]  # [n, 4]
 
     @staticmethod
+    def detect_sh_degree_from_shs_rest(shs_rest):
+        sh_degrees = -1
+        features_rest_dims = shs_rest.shape[-1]
+        for i in range(4):
+            if features_rest_dims == (i + 1) ** 2 - 1:
+                sh_degrees = i
+                break
+        assert sh_degrees >= 0, f"invalid sh_degrees={sh_degrees}"
+
+        return sh_degrees
+
+    @staticmethod
     def load_array_from_plyelement(plyelement, name_prefix: str, required: bool = True):
         names = [p.name for p in plyelement.properties if p.name.startswith(name_prefix)]
         if len(names) == 0:
@@ -77,6 +89,68 @@ class GaussianPlyUtils:
             rotations=rots,
         )
 
+    @classmethod
+    def load_from_model(cls, model):
+        init_args = {
+            "sh_degrees": model.max_sh_degree,
+        }
+
+        for name_in_model, name_in_dataclass in [
+            ("means", "xyz"),
+            ("shs_dc", "features_dc"),
+            ("shs_rest", "features_rest"),
+            ("scales", "scales"),
+            ("rotations", "rotations"),
+            ("opacities", "opacities"),
+        ]:
+            init_args[name_in_dataclass] = model.get_property(name_in_model)
+
+        return cls(**init_args)
+
+    @classmethod
+    def load_from_state_dict(cls, state_dict):
+        if "gaussian_model.gaussians.means" in state_dict:
+            return cls.load_from_new_state_dict(state_dict)
+        return cls.load_from_old_state_dict(state_dict)
+
+    @classmethod
+    def load_from_new_state_dict(cls, state_dict):
+        prefix = "gaussian_model.gaussians."
+
+        init_args = {
+            "sh_degrees": cls.detect_sh_degree_from_shs_rest(state_dict["{}shs_rest".format(prefix)]),
+        }
+
+        for name_in_dict, name_in_dataclass in [
+            ("means", "xyz"),
+            ("shs_dc", "features_dc"),
+            ("shs_rest", "features_rest"),
+            ("scales", "scales"),
+            ("rotations", "rotations"),
+            ("opacities", "opacities"),
+        ]:
+            init_args[name_in_dataclass] = state_dict["{}{}".format(prefix, name_in_dict)]
+
+        return cls(**init_args)
+
+    @classmethod
+    def load_from_old_state_dict(cls, state_dict):
+        key_prefix = "gaussian_model._"
+
+        init_args = {
+            "sh_degrees": cls.detect_sh_degree_from_shs_rest(state_dict["{}features_rest".format(key_prefix)]),
+        }
+        for name_in_dict, name_in_dataclass in [
+            ("xyz", "xyz"),
+            ("features_dc", "features_dc"),
+            ("features_rest", "features_rest"),
+            ("scaling", "scales"),
+            ("rotation", "rotations"),
+            ("opacity", "opacities"),
+        ]:
+            init_args[name_in_dataclass] = state_dict["{}{}".format(key_prefix, name_in_dict)]
+
+        return cls(**init_args)
 
     def to_parameter_structure(self):
         assert isinstance(self.xyz, np.ndarray) is True
@@ -120,7 +194,6 @@ class GaussianPlyUtils:
         opacities = gaussian.opacities
         scale = gaussian.scales
         rotation = gaussian.rotations
-        # f_extra = gaussian.real_features_extra
 
         def construct_list_of_attributes():
             l = ['x', 'y', 'z', 'nx', 'ny', 'nz']
@@ -135,8 +208,6 @@ class GaussianPlyUtils:
                 l.append('scale_{}'.format(i))
             for i in range(gaussian.rotations.shape[1]):
                 l.append('rot_{}'.format(i))
-            # for i in range(self.real_features_extra.shape[1]):
-            #     l.append('f_extra_{}'.format(i))
             return l
 
         dtype_full = [(attribute, 'f4') for attribute in construct_list_of_attributes()]
