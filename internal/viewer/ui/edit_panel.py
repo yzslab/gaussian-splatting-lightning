@@ -196,29 +196,21 @@ class EditPanel:
                                     traceback.print_exc()
 
                                 if self.viewer.checkpoint is None:
+                                    from internal.utils.gaussian_utils import GaussianPlyUtils
                                     # save ply
                                     ply_save_path = os.path.join(output_directory, "{}.ply".format(name))
-                                    self.viewer.gaussian_model.to_ply_structure().save_to_ply(ply_save_path)
+                                    GaussianPlyUtils.load_from_model_properties(self.viewer.gaussian_model.get_non_pre_activated_properties(), self.viewer.gaussian_model.max_sh_degree).to_ply_format().save_to_ply(ply_save_path)
                                     message_text = "Saved to {}".format(ply_save_path)
                                 else:
                                     # save as a checkpoint if viewer started from a checkpoint
                                     checkpoint_save_path = os.path.join(output_directory, "{}.ckpt".format(name))
                                     checkpoint = self.viewer.checkpoint
                                     # update state dict of the checkpoint
-                                    state_dict_value = self.viewer.gaussian_model.to_parameter_structure()
-                                    for name_in_dict, name_in_dataclass in [
-                                        ("xyz", "xyz"),
-                                        ("features_dc", "features_dc"),
-                                        ("features_rest", "features_rest"),
-                                        ("scaling", "scales"),
-                                        ("rotation", "rotations"),
-                                        ("opacity", "opacities"),
-                                        ("features_extra", "real_features_extra"),
-                                    ]:
-                                        dict_key = "gaussian_model._{}".format(name_in_dict)
-                                        if dict_key not in checkpoint["state_dict"]:
-                                            print(f"WARNING: `{dict_key}` not found in original checkpoint")
-                                        checkpoint["state_dict"][dict_key] = getattr(state_dict_value, name_in_dataclass)
+                                    properties = self.viewer.gaussian_model.get_non_pre_activated_properties()
+                                    for name, value in properties.items():
+                                        key = "gaussian_model.gaussians.{}".format(name)
+                                        checkpoint["state_dict"][key] = properties[name].to(device=checkpoint["state_dict"][key].device)
+                                    # TODO: density controller and optimizer states need to be pruned too
                                     # save
                                     torch.save(checkpoint, checkpoint_save_path)
                                     message_text = "Saved to {}".format(checkpoint_save_path)

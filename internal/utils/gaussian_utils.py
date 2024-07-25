@@ -90,9 +90,12 @@ class GaussianPlyUtils:
         )
 
     @classmethod
-    def load_from_model(cls, model):
+    def load_from_model_properties(cls, properties, sh_degree: int = -1):
+        if sh_degree < 0:
+            sh_degree = cls.detect_sh_degree_from_shs_rest(properties["shs_rest"])
+
         init_args = {
-            "sh_degrees": model.max_sh_degree,
+            "sh_degrees": sh_degree,
         }
 
         for name_in_model, name_in_dataclass in [
@@ -103,9 +106,13 @@ class GaussianPlyUtils:
             ("rotations", "rotations"),
             ("opacities", "opacities"),
         ]:
-            init_args[name_in_dataclass] = model.get_property(name_in_model)
+            init_args[name_in_dataclass] = properties[name_in_model].detach()
 
         return cls(**init_args)
+
+    @classmethod
+    def load_from_model(cls, model):
+        return cls.load_from_model_properties(model.properties, sh_degree=model.max_sh_degree)
 
     @classmethod
     def load_from_state_dict(cls, state_dict):

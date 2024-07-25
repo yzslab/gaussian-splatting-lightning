@@ -365,6 +365,26 @@ class VanillaGaussianModel(
         self.opacity_activation = self._return_as_is
         self.opacity_inverse_activation = self._return_as_is
 
+    def get_non_pre_activated_properties(self):
+        if self.is_pre_activated is True:
+            activated_properties = self.properties
+            keys = list(activated_properties.keys())
+            non_pre_activated_properties = {}
+            non_pre_activated_properties["scales"] = torch.log(activated_properties["scales"])
+            keys.remove("scales")
+            non_pre_activated_properties["opacities"] = inverse_sigmoid(activated_properties["opacities"])
+            keys.remove("opacities")
+            non_pre_activated_properties["shs_dc"] = activated_properties["shs"][:, :1, :]
+            non_pre_activated_properties["shs_rest"] = activated_properties["shs"][:, 1:, :]
+            keys.remove("shs")
+
+            for key in keys:
+                non_pre_activated_properties[key] = activated_properties[key]
+
+            return non_pre_activated_properties
+        else:
+            return self.properties
+
     # below getters are declared for the compatibility purpose
 
     @property
