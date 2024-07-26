@@ -384,6 +384,8 @@ class GaussianSplatting(LightningModule):
             scheduler.step()
 
     def light_gaussian_prune(self, global_step):
+        # TODO: move elsewhere
+
         """
         LightGaussian prune
         """
@@ -421,7 +423,12 @@ class GaussianSplatting(LightningModule):
                   f"number_to_prune={prune_mask.sum().item()}, "
                   f"prune_percent={prune_percent}, "
                   f"anti_aliased={anti_aliased}")
-            self.gaussian_model.prune_points(prune_mask)
+
+            from internal.density_controllers.density_controller import Utils
+            valid_points_mask = ~prune_mask  # `True` to keep
+            self.gaussian_model.properties = Utils.prune_optimizers(valid_points_mask, self.gaussian_optimizers)
+            self.density_updated_by_renderer()
+
             print(f"number_of_gaussian_after_pruning={self.gaussian_model.get_xyz.shape[0]}")
 
     def on_train_batch_end(self, outputs: STEP_OUTPUT, batch: Any, batch_idx: int) -> None:
