@@ -10,7 +10,7 @@ from .renderer import RendererOutputTypes, RendererOutputInfo, Renderer
 from .gsplat_renderer import GSPlatRenderer, DEFAULT_ANTI_ALIASED_STATUS, DEFAULT_BLOCK_SIZE
 from .gsplat_contrastive_feature_renderer import GSplatContrastiveFeatureRenderer
 from ..cameras import Camera
-from ..models.gaussian_model import GaussianModel
+from ..models.gaussian import GaussianModel
 from internal.utils.seganygs import ScaleGateUtils, SegAnyGSUtils
 
 

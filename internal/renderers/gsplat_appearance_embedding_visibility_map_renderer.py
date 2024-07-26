@@ -9,7 +9,7 @@ from .renderer import Renderer
 from .gsplat_renderer import GSPlatRenderer, DEFAULT_ANTI_ALIASED_STATUS
 from internal.utils.network_factory import NetworkFactory
 from ..cameras import Camera
-from ..models.gaussian_model import GaussianModel
+from ..models.gaussian import GaussianModel
 from internal.encodings.positional_encoding import PositionalEncoding
 
 
@@ -272,7 +272,7 @@ class GSplatAppearanceEmbeddingVisibilityMapRenderer(Renderer):
         raw_rgb_offset, visibility = self.model(
             viewpoint_camera.width.item(),
             viewpoint_camera.height.item(),
-            pc.get_features_extra[is_gaussian_visible],
+            pc.get_appearance_features()[is_gaussian_visible],
             viewpoint_camera.appearance_id,
             view_directions
         )

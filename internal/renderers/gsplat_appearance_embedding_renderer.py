@@ -8,7 +8,7 @@ from .renderer import Renderer
 from .gsplat_renderer import GSPlatRenderer, DEFAULT_ANTI_ALIASED_STATUS
 from internal.utils.network_factory import NetworkFactory
 from ..cameras import Camera
-from ..models.gaussian_model import GaussianModel
+from ..models.gaussian import GaussianModel
 from internal.encodings.positional_encoding import PositionalEncoding
 
 
@@ -87,10 +87,6 @@ class GSplatAppearanceEmbeddingRenderer(Renderer):
         self.optimization_config = optimization
 
     def setup(self, stage: str, lightning_module, *args: Any, **kwargs: Any) -> Any:
-        # filling `_features_extra` with zero is the key to prevent overfitting,
-        # this has been done when the parameter being created
-        # nn.init.zeros_(lightning_module.gaussian_model._features_extra)
-
         if self.model_config.n_appearances <= 0:
             max_input_id = 0
             appearance_group_ids = lightning_module.trainer.datamodule.dataparser_outputs.appearance_group_ids
@@ -143,7 +139,7 @@ class GSplatAppearanceEmbeddingRenderer(Renderer):
         view_directions = detached_xyz[is_gaussian_visible] - viewpoint_camera.camera_center  # (N, 3)
         view_directions = view_directions / view_directions.norm(dim=-1, keepdim=True)
         base_rgb = spherical_harmonics(pc.active_sh_degree, view_directions, pc.get_features[is_gaussian_visible]) + 0.5
-        rgb_offset = self.model(pc.get_features_extra[is_gaussian_visible], viewpoint_camera.appearance_id, view_directions) * 2 - 1.
+        rgb_offset = self.model(pc.get_appearance_features()[is_gaussian_visible], viewpoint_camera.appearance_id, view_directions) * 2 - 1.
         rgbs = torch.zeros((radii.shape[0], 3), dtype=projection_results[0].dtype, device=radii.device)
         rgbs[is_gaussian_visible] = torch.clamp(base_rgb + rgb_offset, min=0., max=1.)
 

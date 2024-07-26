@@ -16,7 +16,7 @@ from tqdm import tqdm
 from internal.cameras.cameras import Cameras
 from internal.renderers.vanilla_renderer import VanillaRenderer
 from internal.utils.gaussian_model_loader import GaussianModelLoader
-from internal.models.simplified_gaussian_model_manager import SimplifiedGaussianModelManager
+from internal.utils.gaussian_model_editor import MultipleGaussianModelEditor
 from internal.viewer.renderer import ViewerRenderer
 
 
@@ -33,7 +33,7 @@ def initializer_viewer_renderer(
 
     load_device = torch.device("cuda") if len(model_paths) == 1 or enable_transform is False else torch.device("cpu")
     for model_path in model_paths:
-        model, renderer = GaussianModelLoader.search_and_load(model_path, sh_degree, load_device)
+        model, renderer = GaussianModelLoader.search_and_load(model_path, load_device)
         model_list.append(model)
 
     if len(model_paths) > 1:
@@ -42,7 +42,7 @@ def initializer_viewer_renderer(
         print(f"Renderer: {renderer_override.__class__}")
         renderer = renderer_override
 
-    model_manager = SimplifiedGaussianModelManager(model_list, enable_transform, device)
+    model_manager = MultipleGaussianModelEditor(model_list, device)
 
     return ViewerRenderer(model_manager, renderer, torch.tensor(background_color, dtype=torch.float, device=device))
 

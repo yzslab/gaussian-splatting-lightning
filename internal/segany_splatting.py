@@ -1,5 +1,7 @@
 """
 Most codes are copied from: https://github.com/Jumpat/SegAnyGAussians/blob/v2/train_contrastive_feature.py
+
+# TODO: re-implemented by adding `metrics` class
 """
 
 import os.path
@@ -65,7 +67,7 @@ class SegAnySplatting(lightning.LightningModule):
         initialize_from = self.hparams["initialize_from"]
         sh_degree = self.hparams["sh_degree"]
 
-        gaussian_model, _ = GaussianModelLoader.search_and_load(initialize_from, sh_degree, self.device)
+        gaussian_model, _ = GaussianModelLoader.search_and_load(initialize_from, self.device)
         self.models.gaussian = gaussian_model
 
         self.setup_parameters(n_gaussians=gaussian_model.get_xyz.shape[0])

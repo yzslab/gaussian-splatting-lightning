@@ -9,3 +9,7 @@
 !deform_model.py
 !vanilla_deform_model.py
 !swag_model.py
+!gaussian.py
+!vanilla_gaussian.py
+!appearance_feature_gaussian.py
+!gaussian_2d.py

@@ -72,7 +72,7 @@ class GSplatDistributedAppearanceEmbeddingRendererImpl(GSplatDistributedRenderer
         view_directions = detached_xyz[is_gaussian_visible] - member_data.camera_center  # (N, 3)
         view_directions = view_directions / view_directions.norm(dim=-1, keepdim=True)
         base_rgb = spherical_harmonics(pc.active_sh_degree, view_directions, pc.get_features[is_gaussian_visible]) + 0.5
-        rgb_offset = self.appearance_model(pc.get_features_extra[is_gaussian_visible], member_data.appearance_id, view_directions) * 2 - 1.
+        rgb_offset = self.appearance_model(pc.get_appearance_features()[is_gaussian_visible], member_data.appearance_id, view_directions) * 2 - 1.
         rgbs = torch.zeros((radii.shape[0], 3), dtype=projection_results[0].dtype, device=radii.device)
         rgbs[is_gaussian_visible] = torch.clamp(base_rgb + rgb_offset, min=0., max=1.)
 

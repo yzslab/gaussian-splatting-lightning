@@ -10,7 +10,7 @@ import sklearn
 import sklearn.decomposition
 import numpy as np
 from ..cameras import Camera
-from ..models.gaussian_model import GaussianModel
+from ..models.gaussian import GaussianModel
 
 
 class NoFeatureDecoder(torch.nn.Module):
@@ -63,7 +63,7 @@ class Feature3DGSRenderer(Renderer):
 
         # initialize features
         feature_tensor = torch.zeros(
-            (kwargs["lightning_module"].gaussian_model._xyz.shape[0], n_actual_feature_dims),
+            (kwargs["lightning_module"].gaussian_model.n_gaussians, n_actual_feature_dims),
             dtype=torch.float,
             device=kwargs["lightning_module"].device,
             requires_grad=True,

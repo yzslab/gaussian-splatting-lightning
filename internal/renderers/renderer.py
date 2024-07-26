@@ -4,7 +4,7 @@ import torch
 from typing import Any, Union, List, Tuple, Optional, Dict, Callable
 from internal.configs.instantiate_config import InstantiatableConfig
 from internal.cameras.cameras import Camera
-from internal.models.gaussian_model import GaussianModel
+from internal.models.gaussian import GaussianModel
 
 
 class RendererOutputTypes:
@@ -59,7 +59,6 @@ class Renderer(torch.nn.Module):
             viewpoint_camera: Camera,
             pc: GaussianModel,
             bg_color: torch.Tensor,
-            scaling_modifier=1.0,
             render_types: list = None,
             **kwargs,
     ):
@@ -67,7 +66,6 @@ class Renderer(torch.nn.Module):
             viewpoint_camera=viewpoint_camera,
             pc=pc,
             bg_color=bg_color,
-            scaling_modifier=scaling_modifier,
             **kwargs,
         )
 

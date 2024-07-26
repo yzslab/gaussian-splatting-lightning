@@ -10,5 +10,4 @@ class StaticDensityController(DensityController):
 
 
 class StaticDensityControllerImpl(DensityControllerImpl):
-    def forward(self, outputs: dict, batch, gaussian_model, global_step: int, pl_module: LightningModule) -> None:
-        return
+    pass

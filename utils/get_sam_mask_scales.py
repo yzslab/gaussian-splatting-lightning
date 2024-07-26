@@ -18,7 +18,7 @@ from common import AsyncImageSaver, AsyncTensorSaver
 parser = argparse.ArgumentParser()
 parser.add_argument("model_path", type=str)
 parser.add_argument("--data_path", type=str, default=None)
-parser.add_argument("--save_depth_map", action="store_true", default=False)
+parser.add_argument("--save_depth_map", "--preview", action="store_true", default=False)
 args = parser.parse_args()
 
 MODEL_DEVICE = "cuda"
@@ -27,7 +27,7 @@ MODEL_DEVICE = "cuda"
 # search checkpoint and load
 load_file = GaussianModelLoader.search_load_file(args.model_path)
 assert load_file.endswith(".ckpt")
-model, _, ckpt = GaussianModelLoader.initialize_simplified_model_from_checkpoint(load_file, device=MODEL_DEVICE)
+model, _, ckpt = GaussianModelLoader.initialize_model_and_renderer_from_checkpoint_file(load_file, device=MODEL_DEVICE)
 # renderer = VanillaDepthRenderer()
 renderer = GSplatContrastiveFeatureRenderer()
 

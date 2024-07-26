@@ -1,4 +1,5 @@
 model:
+  gaussian: internal.models.gaussian_2d.Gaussian2D
   renderer: internal.renderers.vanilla_2dgs_renderer.Vanilla2DGSRenderer
   metric: internal.metrics.gs2d_metrics.GS2DMetrics
   density:

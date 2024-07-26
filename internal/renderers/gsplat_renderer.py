@@ -103,11 +103,6 @@ class GSPlatRenderer(Renderer):
             block_width=self.block_size,
         )
 
-        try:
-            xys.retain_grad()
-        except:
-            pass
-
         viewdirs = pc.get_xyz.detach() - viewpoint_camera.camera_center  # (N, 3)
         # viewdirs = viewdirs / viewdirs.norm(dim=-1, keepdim=True)
         rgbs = spherical_harmonics(pc.active_sh_degree, viewdirs, pc.get_features)
@@ -200,11 +195,6 @@ class GSPlatRenderer(Renderer):
             block_width=block_size,
             **({} if extra_projection_kwargs is None else extra_projection_kwargs),
         )
-
-        try:
-            xys.retain_grad()
-        except:
-            pass
 
         if colors_precomp is not None:
             rgbs = colors_precomp
