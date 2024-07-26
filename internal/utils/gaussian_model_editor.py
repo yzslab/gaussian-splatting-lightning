@@ -105,13 +105,13 @@ class MultipleGaussianModelEditor:
         self.gaussian_model.properties = new_properties
 
     def backup_properties(self):
-        original_properties = {}
-        properties = self.gaussian_model.properties
-        # pre-activated model has `shs` only
-        for key in ["means", "scales", "rotations"]:
-            original_properties[key] = properties[key].clone()
-        original_properties["shs"] = self.gaussian_model.get_shs().clone()
-        self._original_properties = original_properties
+        # backup activated properties
+        self._original_properties = {
+            "means": self.gaussian_model.get_means().clone(),
+            "scales": self.gaussian_model.get_scales().clone(),
+            "rotations": self.gaussian_model.get_rotations().clone(),
+            "shs": self.gaussian_model.get_shs().clone(),
+        }
 
     def get_model_gaussian_indices(self, idx: int):
         return self.model_gaussian_indices[idx]
