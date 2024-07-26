@@ -112,29 +112,70 @@ class DensityControllerUtilsTest(unittest.TestCase):
                 )))
 
     def test_replace_tensors_to_optimizers(self):
+        def validate(properties, optimizers, new_properties, selector=None):
+            # validate returned tensors
+            self.assertEqual(list(new_properties.keys()), list(replaced_properties.keys()))
+            for key in replaced_properties.keys():
+                self.assertTrue(torch.all(torch.eq(
+                    new_properties[key],
+                    replaced_properties[key],
+                )))
+
+            # validate tensors in optimizers
+            for opt in optimizers:
+                for param_group_idx, param_group in enumerate(opt.param_groups):
+                    name = param_group["name"]
+                    self.assertTrue(torch.all(torch.eq(
+                        param_group["params"][0],
+                        new_properties[name],
+                    )))
+
+                    if name == "no_state":
+                        continue
+
+                    state = opt.state[param_group["params"][0]]
+                    if selector is None:
+                        self.assertTrue(torch.all(torch.eq(
+                            state["exp_avg"],
+                            0,
+                        )))
+                        self.assertTrue(torch.all(torch.eq(
+                            state["exp_avg_sq"],
+                            0,
+                        )))
+                    else:
+                        self.assertTrue(torch.all(torch.eq(
+                            state["exp_avg"][selector],
+                            0,
+                        )))
+                        self.assertTrue(torch.all(torch.eq(
+                            state["exp_avg_sq"][selector],
+                            0,
+                        )))
+                        self.assertTrue(torch.any(torch.not_equal(
+                            state["exp_avg"][~selector],
+                            0,
+                        )))
+                        self.assertTrue(torch.any(torch.not_equal(
+                            state["exp_avg_sq"][~selector],
+                            0,
+                        )))
+
+
+        # without selector
         properties = self.get_dummy_properties()
         optimizers = self.get_dummy_adam_optimizers(properties)
-
         new_properties = self.get_dummy_properties(5120)
-
         replaced_properties = Utils.replace_tensors_to_optimizers(new_properties, optimizers)
+        validate(properties, optimizers, new_properties)
 
-        # validate returned tensors
-        self.assertEqual(list(new_properties.keys()), list(replaced_properties.keys()))
-        for key in replaced_properties.keys():
-            self.assertTrue(torch.all(torch.eq(
-                new_properties[key],
-                replaced_properties[key],
-            )))
-
-        # validate tensors in optimizers
-        for opt in optimizers:
-            for param_group in opt.param_groups:
-                name = param_group["name"]
-                self.assertTrue(torch.all(torch.eq(
-                    param_group["params"][0],
-                    new_properties[name],
-                )))
+        # with selector
+        properties = self.get_dummy_properties()
+        optimizers = self.get_dummy_adam_optimizers(properties)
+        new_properties = self.get_dummy_properties(10240)
+        selector = torch.rand((10240,), generator=self.generator) > 0.5
+        replaced_properties = Utils.replace_tensors_to_optimizers(new_properties, optimizers, selector)
+        validate(properties, optimizers, new_properties, selector)
 
 
 if __name__ == '__main__':

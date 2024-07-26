@@ -80,6 +80,13 @@ class Utils:
 
     @staticmethod
     def prune_optimizers(mask, optimizers):
+        """
+
+        :param mask: The `False` indicating the ones to be pruned
+        :param optimizers:
+        :return: a new dict
+        """
+
         new_parameters = {}
         for opt in optimizers:
             for group in opt.param_groups:
@@ -103,6 +110,15 @@ class Utils:
 
     @staticmethod
     def replace_tensors_to_optimizers(tensors: Dict[str, torch.Tensor], optimizers, selector=None):
+        """
+        Args:
+            tensors: to be the new parameters of optimizers
+            optimizers: optimizer list
+            selector: indicating which ones have been updated, and their optimizer state will be reset. if is None, all states will be reset.
+        Return:
+            a new dict containing all the new parameters of optimizers
+        """
+
         new_parameters = {}
         for opt in optimizers:
             for group in opt.param_groups:
