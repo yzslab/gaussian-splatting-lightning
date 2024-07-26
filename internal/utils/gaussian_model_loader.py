@@ -189,12 +189,28 @@ class GaussianModelLoader:
         return model, renderer
 
     @classmethod
-    def search_and_load(cls, model_path: str, device):
+    def search_and_load(
+            cls,
+            model_path: str,
+            device,
+            eval_mode: bool = True,
+            pre_activate: bool = True,
+    ):
         load_from = cls.search_load_file(model_path)
         if load_from.endswith(".ckpt"):
-            model, renderer, _ = cls.initialize_model_and_renderer_from_checkpoint_file(load_from, device=device)
+            model, renderer, _ = cls.initialize_model_and_renderer_from_checkpoint_file(
+                load_from,
+                device=device,
+                eval_mode=eval_mode,
+                pre_activate=pre_activate,
+            )
         elif load_from.endswith(".ply"):
-            model, renderer = cls.initialize_model_and_renderer_from_ply_file(load_from, device=device)
+            model, renderer = cls.initialize_model_and_renderer_from_ply_file(
+                load_from,
+                device=device,
+                eval_mode=eval_mode,
+                pre_activate=pre_activate,
+            )
         else:
             raise ValueError("unsupported file {}".format(load_from))
 
