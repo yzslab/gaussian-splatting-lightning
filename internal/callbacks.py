@@ -79,6 +79,7 @@ class ProgressBar(TQDMProgressBar):
             file=sys.stdout,
             total=self.max_epochs,
         )
+        self.epoch_progress_bar.update(trainer.current_epoch)
 
     def on_train_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         super().on_train_epoch_end(trainer, pl_module)
