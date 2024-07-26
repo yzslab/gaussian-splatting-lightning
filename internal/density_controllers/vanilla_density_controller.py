@@ -148,6 +148,36 @@ class VanillaDensityControllerImpl(DensityControllerImpl):
         # Update optimizers and properties
         self._densification_postfix(new_properties, gaussian_model, optimizers)
 
+    def _split_means_and_scales(self, gaussian_model, selected_pts_mask, N):
+        scales = gaussian_model.get_scales()
+        device = scales.device
+
+        stds = scales[selected_pts_mask].repeat(N, 1)
+        means = torch.zeros((stds.size(0), 3), device=device)
+        samples = torch.normal(mean=means, std=stds)
+        rots = build_rotation(gaussian_model.get_property("rotations")[selected_pts_mask]).repeat(N, 1, 1)
+        # Split means and scales, they are a little bit different
+        new_means = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + gaussian_model.get_means()[selected_pts_mask].repeat(N, 1)
+        new_scales = gaussian_model.scale_inverse_activation(scales[selected_pts_mask].repeat(N, 1) / (0.8 * N))
+
+        new_properties = {
+            "means": new_means,
+            "scales": new_scales,
+        }
+
+        return new_properties
+
+    def _split_properties(self, gaussian_model, selected_pts_mask, N: int):
+        new_properties = self._split_means_and_scales(gaussian_model, selected_pts_mask, N)
+
+        # Split other properties
+        for key, value in gaussian_model.properties.items():
+            if key in new_properties:
+                continue
+            new_properties[key] = value[selected_pts_mask].repeat(N, *[1 for _ in range(value[selected_pts_mask].dim() - 1)])
+
+        return new_properties
+
     def _densify_and_split(self, grads, gaussian_model: VanillaGaussianModel, optimizers: List, N: int = 2):
         grad_threshold = self.config.densify_grad_threshold
         percent_dense = self.config.percent_dense
@@ -173,24 +203,7 @@ class VanillaDensityControllerImpl(DensityControllerImpl):
         )
 
         # Split
-        stds = scales[selected_pts_mask].repeat(N, 1)
-        means = torch.zeros((stds.size(0), 3), device=device)
-        samples = torch.normal(mean=means, std=stds)
-        rots = build_rotation(gaussian_model.get_property("rotations")[selected_pts_mask]).repeat(N, 1, 1)
-        # Split means and scales, they are a little bit different
-        new_means = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + gaussian_model.get_means()[selected_pts_mask].repeat(N, 1)
-        new_scales = gaussian_model.scale_inverse_activation(scales[selected_pts_mask].repeat(N, 1) / (0.8 * N))
-
-        new_properties = {
-            "means": new_means,
-            "scales": new_scales,
-        }
-
-        # Split other properties
-        for key, value in gaussian_model.properties.items():
-            if key in new_properties:
-                continue
-            new_properties[key] = value[selected_pts_mask].repeat(N, *[1 for _ in range(value[selected_pts_mask].dim() - 1)])
+        new_properties = self._split_properties(gaussian_model, selected_pts_mask, N)
 
         # Update optimizers and properties
         self._densification_postfix(new_properties, gaussian_model, optimizers)

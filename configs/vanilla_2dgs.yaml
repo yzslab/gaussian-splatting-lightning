@@ -3,7 +3,9 @@ model:
   renderer: internal.renderers.vanilla_2dgs_renderer.Vanilla2DGSRenderer
   metric: internal.metrics.gs2d_metrics.GS2DMetrics
   density:
-    cull_opacity_threshold: 0.05
+    class_path: internal.density_controllers.gs2d_density_controller.GS2DDensityController
+    init_args:
+      cull_opacity_threshold: 0.05
 data:
   val_max_num_images_to_cache: -1
   test_max_num_images_to_cache: -1
