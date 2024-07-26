@@ -33,7 +33,7 @@ class OptimizationConfig:
             "max_steps": 30_000,
         },
     })
-    means_spatial_lr_scale: float = -1  # auto calculate from camera poses if <= 0
+    spatial_lr_scale: float = -1  # auto calculate from camera poses if <= 0
 
     shs_dc_lr: float = 0.0025
 
@@ -237,7 +237,7 @@ class VanillaGaussianModel(
             torch.optim.lr_scheduler.LRScheduler,
         ]]
     ]:
-        spatial_lr_scale = self.config.optimization.means_spatial_lr_scale
+        spatial_lr_scale = self.config.optimization.spatial_lr_scale
         if spatial_lr_scale <= 0:
             spatial_lr_scale = module.trainer.datamodule.dataparser_outputs.camera_extent
         assert spatial_lr_scale > 0
