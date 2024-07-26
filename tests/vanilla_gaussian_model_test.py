@@ -99,7 +99,7 @@ class VanillaGaussianModelTestCase(unittest.TestCase):
         del state_dict["shs_dc"]
         model = VanillaGaussian(sh_degree=0).instantiate()
         unused, unmet = model.setup_from_tensors(state_dict)
-        self.assertEqual(unused, ["shs_rest"])
+        self.assertEqual(unused, [])
         self.assertEqual(unmet, ["shs_dc"])
         self.assertEqual(model.get_shs_rest().shape, (N, 0, 3))
 
