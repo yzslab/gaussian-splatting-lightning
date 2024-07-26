@@ -302,7 +302,7 @@ class ColmapDataParser(DataParser):
                 # fov_y = focal2fov(focal_length_y, height)
                 # fov_x = focal2fov(focal_length_x, width)
             else:
-                assert False, "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
+                assert False, "Unsupported camera model: only PINHOLE or SIMPLE_PINHOLE currently. Please undistort your images with the command `colmap image_undistorter ...` first."
 
             # whether mask exists
             mask_path = None
