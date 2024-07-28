@@ -215,3 +215,84 @@ class GaussianModelLoader:
             raise ValueError("unsupported file {}".format(load_from))
 
         return model, renderer
+
+
+class VanillaPVGModelLoader:
+    @staticmethod
+    def state_tuple_to_state_dict_and_model_config(state_tuple, device):
+        (
+            active_sh_degree,
+            _xyz,
+            _features_dc,
+            _features_rest,
+            _scaling,
+            _rotation,
+            _opacity,
+            _t,
+            _scaling_t,
+            _velocity,
+            max_radii2D,
+            xyz_gradient_accum,
+            t_gradient_accum,
+            denom,
+            opt_dict,
+            spatial_lr_scale,
+            T,
+            velocity_decay,
+        ) = state_tuple
+
+        state_dict = {
+            "_active_sh_degree": torch.tensor(active_sh_degree, dtype=torch.int, device=device),
+            "gaussians.means": _xyz.to(device),
+            "gaussians.shs_dc": _features_dc.to(device),
+            "gaussians.shs_rest": _features_rest.to(device),
+            "gaussians.scales": _scaling.to(device),
+            "gaussians.rotations": _rotation.to(device),
+            "gaussians.opacities": _opacity.to(device),
+            "gaussians.time": _t.to(device),
+            "gaussians.scale_time": _scaling_t.to(device),
+            "gaussians.velocity": _velocity.to(device),
+        }
+
+        from internal.models.periodic_vibration_gaussian import PeriodicVibrationGaussian
+
+        return state_dict, PeriodicVibrationGaussian(
+            sh_degree=active_sh_degree,
+            cycle=T,
+            velocity_decay=velocity_decay,
+        )
+
+    @classmethod
+    def search_and_load(cls, path, device):
+        max_iteration = -1
+        for i in glob.glob(os.path.join(path, "chkpnt*.pth")):
+            basename = os.path.basename(i)
+            iteration = int(basename[len("chkpnt"):basename.rfind(".")])
+            if iteration > max_iteration:
+                max_iteration = iteration
+
+        model_ckpt_file = os.path.join(path, "chkpnt{}.pth".format(max_iteration))
+        env_light_ckpt_file = os.path.join(path, "env_light_chkpnt{}.pth".format(max_iteration))
+
+        model_ckpt = torch.load(model_ckpt_file, map_location="cpu")
+        model_state_dict, model_config = cls.state_tuple_to_state_dict_and_model_config(model_ckpt[0], device)
+        model = model_config.instantiate()
+        model.setup_from_number(model_state_dict["gaussians.means"].shape[0])
+        model.to(device)
+        model.load_state_dict(model_state_dict)
+        model.eval()
+
+        from internal.renderers.periodic_vibration_gaussian_renderer import PeriodicVibrationGaussianRenderer
+
+        if os.path.exists(env_light_ckpt_file):
+            renderer = PeriodicVibrationGaussianRenderer(anti_aliased=False).instantiate()
+            renderer.setup("validation")
+            env_ckpt = torch.load(env_light_ckpt_file, map_location="cpu")
+            renderer.env_map.base = env_ckpt[0][0]
+        else:
+            renderer = PeriodicVibrationGaussianRenderer(env_map_res=-1, anti_aliased=False).instantiate()
+            renderer.setup("validation")
+        renderer.to(device)
+        renderer.eval()
+
+        return model, renderer
