@@ -249,8 +249,8 @@ class VanillaPVGModelLoader:
             "gaussians.scales": _scaling.to(device),
             "gaussians.rotations": _rotation.to(device),
             "gaussians.opacities": _opacity.to(device),
-            "gaussians.time": _t.to(device),
-            "gaussians.scale_time": _scaling_t.to(device),
+            "gaussians.t": _t.to(device),
+            "gaussians.scale_t": _scaling_t.to(device),
             "gaussians.velocity": _velocity.to(device),
         }
 
