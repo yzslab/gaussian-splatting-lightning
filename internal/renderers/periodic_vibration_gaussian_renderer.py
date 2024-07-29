@@ -113,8 +113,8 @@ class PeriodicVibrationGaussianRendererModule(Renderer):
 
     def gsplat_forward(self, viewpoint_camera: Camera, pc: GaussianModel, bg_color: torch.Tensor, scaling_modifier=1.0, render_types: list = None, **kwargs):
         # TODO: `time_shift`
-        means3D = pc.get_mean_SHM(viewpoint_camera.time)
-        marginal_t = pc.get_marginal_t(viewpoint_camera.time)
+        means3D = pc.get_mean_SHM(viewpoint_camera.time - 0.5)
+        marginal_t = pc.get_marginal_t(viewpoint_camera.time - 0.5)
 
         opacities = pc.get_opacities() * marginal_t
 
