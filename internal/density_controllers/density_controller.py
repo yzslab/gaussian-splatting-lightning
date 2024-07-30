@@ -35,6 +35,8 @@ class DensityController(InstantiatableConfig):
 
 
 class Utils:
+    # TODO: update non-optimizable properties
+
     @staticmethod
     def cat_tensors_to_optimizers(new_properties: Dict[str, torch.Tensor], optimizers: List[torch.optim.Optimizer]) -> Dict[str, torch.Tensor]:
         new_parameters = {}
