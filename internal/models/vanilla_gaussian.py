@@ -274,7 +274,7 @@ class VanillaGaussianModel(
         for i in l:
             print("  {}={}".format(i["name"], i["lr"]))
 
-        return [means_optimizer, constant_lr_optimizer], means_scheduler
+        return [means_optimizer, constant_lr_optimizer], [means_scheduler]
 
     def get_property_names(self) -> Tuple[str, ...]:
         return self._names
