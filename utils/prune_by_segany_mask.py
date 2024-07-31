@@ -1,4 +1,5 @@
 import add_pypath
+import os
 import argparse
 import torch
 from internal.utils.gaussian_model_loader import GaussianModelLoader
@@ -12,6 +13,7 @@ args = parser.parse_args()
 
 assert args.model != args.output
 assert args.output.endswith(".ply")
+assert os.path.exists(args.output) is False
 
 model, _ = GaussianModelLoader.search_and_load(args.model, device="cpu", eval_mode=True, pre_activate=False)
 mask = torch.load(args.mask, map_location="cpu")["mask"]
