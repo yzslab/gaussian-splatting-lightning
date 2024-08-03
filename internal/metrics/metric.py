@@ -27,6 +27,9 @@ class MetricImpl(torch.nn.Module):
             outputs=outputs,
         )
 
+    def training_setup(self, pl_module) -> Tuple:
+        return None, None
+
     def get_validate_metrics(self, pl_module, gaussian_model, batch, outputs) -> Tuple[Dict[str, float], Dict[str, bool]]:
         pass
 

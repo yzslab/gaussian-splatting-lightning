@@ -90,6 +90,7 @@ class GaussianSplatting(LightningModule):
         self.val_metrics: List[Tuple[str, Dict]] = []
 
         # hooks
+        self.on_after_backward_hooks: List[Callable[[Dict, Any, GaussianModel, int, Self], None]] = []
         self.on_train_batch_end_hooks: List[Callable[[Dict, Any, GaussianModel, int, Self], None]] = []
 
     def log_metrics(
@@ -374,6 +375,9 @@ class GaussianSplatting(LightningModule):
             global_step=global_step,
             pl_module=self,
         )
+        # invoke other hooks
+        for i in self.on_after_backward_hooks:
+            i(outputs, batch, self.gaussian_model, global_step, self)
 
         # optimize
         for optimizer in optimizers:
@@ -632,6 +636,10 @@ class GaussianSplatting(LightningModule):
         renderer_optimizer, renderer_scheduler = self.renderer.training_setup(self)
         add_optimizers_and_schedulers(renderer_optimizer, renderer_scheduler)
 
+        # metric optimizer and scheduler setup
+        metric_optimizer, metric_scheduler = self.metric.training_setup(self)
+        add_optimizers_and_schedulers(metric_optimizer, metric_scheduler)
+
         return optimizers, schedulers
 
     def density_updated_by_renderer(self):
@@ -681,8 +689,12 @@ class GaussianSplatting(LightningModule):
         print("Checkpoint saved to {}".format(checkpoint_path))
 
     def set_datamodule_device(self, device):
-        if self.trainer is None:
+        # whether trainer exists
+        try:
+            self.trainer
+        except RuntimeError:
             return
+
         datamodule = getattr(self.trainer, "datamodule", None)
         if datamodule is None:
             return
