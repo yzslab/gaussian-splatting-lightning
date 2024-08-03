@@ -36,10 +36,12 @@ class AsyncTensorSaver:
 
 
 class AsyncImageSaver:
-    def __init__(self, maxsize=16):
+    def __init__(self, maxsize=16, is_rgb: bool = False):
         self.queue = queue.Queue(maxsize=maxsize)
         self.thread = threading.Thread(target=self._save_image_from_queue)
         self.thread.start()
+
+        self.is_rgb = is_rgb
 
     def save(self, image, path):
         self.queue.put((image, path))
@@ -50,14 +52,14 @@ class AsyncImageSaver:
             if i is None:
                 break
             image, path = i
-            self._sync_save_image(image, path)
+            self._sync_save_image(image, path, self.is_rgb)
 
     def stop(self):
         self.queue.put(None)
         self.thread.join()
 
     @staticmethod
-    def _sync_save_image(image, path):
+    def _sync_save_image(image, path, is_rgb):
         dot_index = path.rfind(".")
         ext = path[dot_index:]
 
@@ -65,6 +67,8 @@ class AsyncImageSaver:
 
         os.makedirs(os.path.dirname(tmp_path), exist_ok=True)
 
+        if image.shape[-1] == 3 and is_rgb is True:
+            image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         cv2.imwrite(tmp_path, image)
         os.rename(tmp_path, path)
 
