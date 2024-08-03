@@ -302,7 +302,8 @@ class ColmapDataParser(DataParser):
                 # fov_y = focal2fov(focal_length_y, height)
                 # fov_x = focal2fov(focal_length_x, width)
             else:
-                assert False, "Unsupported camera model: only PINHOLE or SIMPLE_PINHOLE currently. Please undistort your images with the command `colmap image_undistorter ...` first."
+                undistorted_output_dir = os.path.join(self.path, "dense")
+                raise RuntimeError("Unsupported camera model: only PINHOLE or SIMPLE_PINHOLE currently. Please undistort your images with the command below first:\n  colmap image_undistorter --image_path {} --input_path {} --output_path {}\nthen use `{}` as the value of `--data.path`.".format(image_dir, sparse_model_dir, undistorted_output_dir, undistorted_output_dir))
 
             # whether mask exists
             mask_path = None
