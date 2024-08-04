@@ -67,7 +67,6 @@ class SpotLessMetrics(VanillaMetrics):
 
     def instantiate(self, *args, **kwargs) -> "SpotLessMetricsModule":
         assert self.rgb_diff_loss == "l1"
-        assert self.cluster is False
 
         return SpotLessMetricsModule(self)
 
@@ -75,37 +74,44 @@ class SpotLessMetrics(VanillaMetrics):
 class SpotLessMetricsModule(VanillaMetricsImpl):
     def setup(self, stage: str, pl_module):
         super().setup(stage, pl_module)
+
         self.register_buffer("_hist_err", torch.zeros((self.config.bin_size,)), persistent=True)
         self.register_buffer("_avg_err", torch.tensor(1., dtype=torch.float), persistent=True)
         self.register_buffer("_lower_err", torch.tensor(0., dtype=torch.float), persistent=True)
         self.register_buffer("_upper_err", torch.tensor(1., dtype=torch.float), persistent=True)
 
-        # currently using positional encoding of order 20 (4*20 = 80)
-        self.spotless_module = SpotLessModule(
-            num_classes=1, num_features=self.config.n_feature_dims + 80
-        )
+        if self.config.cluster is False:
+            # currently using positional encoding of order 20 (4*20 = 80)
+            self.spotless_module = SpotLessModule(
+                num_classes=1, num_features=self.config.n_feature_dims + 80
+            )
 
     def training_setup(self, pl_module):
-        # register spotless module training hook
-        pl_module.on_after_backward_hooks.append(self.spotless_module_loss_backward)
-        # register the hook to reset shs_rest
-        pl_module.on_after_backward_hooks.append(self.reset_shs_rest)
+        optimizers, schedulers = super().training_setup(pl_module)
+
+        if self.config.cluster is False:
+            # register spotless module training hook
+            pl_module.on_after_backward_hooks.append(self.spotless_module_loss_backward)
+
+            self.spotless_loss = lambda p, minimum, maximum: torch.mean(
+                torch.nn.ReLU()(p - minimum) + torch.nn.ReLU()(maximum - p)
+            )
+
+            # setup spotless module optimizer
+            optimizers += [
+                torch.optim.Adam(
+                    self.spotless_module.parameters(),
+                    lr=1e-3,
+                )
+            ]
+
         # register the hook to update states
         pl_module.on_after_backward_hooks.append(self.update_running_stats)
 
-        self.spotless_loss = lambda p, minimum, maximum: torch.mean(
-            torch.nn.ReLU()(p - minimum) + torch.nn.ReLU()(maximum - p)
-        )
+        # register the hook to reset shs_rest
+        pl_module.on_after_backward_hooks.append(self.reset_shs_rest)
 
-        # setup spotless module optimizer
-        spotless_optimizers = [
-            torch.optim.Adam(
-                self.spotless_module.parameters(),
-                lr=1e-3,
-            )
-        ]
-
-        return spotless_optimizers, None
+        return optimizers, schedulers
 
     def spotless_module_loss_backward(self, outputs, batch, gaussian_model, step, pl_module):
         pred_mask_up = outputs["pred_mask_up"]
@@ -215,12 +221,23 @@ class SpotLessMetricsModule(VanillaMetricsImpl):
 
         # spotless
         error_per_pixel = torch.abs(outputs["render"] - gt_image)  # [C, H, W]
-        pred_mask_up, pred_mask, lower_mask, upper_mask = self.mlp_mask(
-            sd_feature.unsqueeze(0),  # [1, C, H, W]
-            error_per_pixel.permute(1, 2, 0).unsqueeze(0),  # [1, H, W, C]
-            height=image.shape[1],
-            width=image.shape[2],
-        )  # [N_pixels, 1], [1, H, W, 1], ...
+        if self.config.cluster:
+            pred_mask = self.cluster_mask(
+                sd_feature.unsqueeze(0),  # [1, C, H, W]
+                error_per_pixel.permute(1, 2, 0).unsqueeze(0),  # [1, H, W, C]
+                height=image.shape[1],
+                width=image.shape[2],
+            )
+            pred_mask_up = None
+            lower_mask = None
+            upper_mask = None
+        else:
+            pred_mask_up, pred_mask, lower_mask, upper_mask = self.mlp_mask(
+                sd_feature.unsqueeze(0),  # [1, C, H, W]
+                error_per_pixel.permute(1, 2, 0).unsqueeze(0),  # [1, H, W, C]
+                height=image.shape[1],
+                width=image.shape[2],
+            )  # [N_pixels, 1], [1, H, W, 1], ...
         raw_pred_mask = pred_mask
         if self.config.schedule is True:
             # schedule sampling of the mask based on alpha
@@ -255,14 +272,22 @@ class SpotLessMetricsModule(VanillaMetricsImpl):
             "ssim": True,
         }
 
-    def cluster_mask(self, sf, colors, error_per_pixel):
+    def cluster_mask(self, sf, error_per_pixel, height: int, width: int):
+        """
+        Args:
+            sf: stable diffusion feature map, in [1, C, H, W]
+            error_per_pixel: in [1, H, W, C]
+            height: mask height
+            width: mask width
+        """
+
         pred_mask = self.robust_mask(
             error_per_pixel, self.avg_err,
         )
 
         # cluster the semantic feature and mask based on cluster voting
         sf = nn.Upsample(
-            size=(colors.shape[1], colors.shape[2]),
+            size=(height, width),
             mode="nearest",
         )(sf).squeeze(0)
         pred_mask = self.robust_cluster_mask(pred_mask, semantics=sf)
@@ -304,6 +329,23 @@ class SpotLessMetricsModule(VanillaMetricsImpl):
         )
 
         return pred_mask_up, pred_mask, lower_mask, upper_mask
+
+    @classmethod
+    def robust_cluster_mask(cls, inlier_sf, semantics):
+        inlier_sf = inlier_sf.squeeze(-1).unsqueeze(0)
+        cluster_size = torch.sum(
+            semantics, axis=[-1, -2], keepdims=True, dtype=torch.float
+        )
+        inlier_cluster_size = torch.sum(
+            inlier_sf * semantics, axis=[-1, -2], keepdims=True, dtype=torch.float
+        )
+        cluster_inlier_percentage = (inlier_cluster_size / cluster_size).float()
+        is_inlier_cluster = (cluster_inlier_percentage > 0.5).float()
+        inlier_sf = torch.sum(
+            semantics * is_inlier_cluster, axis=1, keepdims=True, dtype=torch.float
+        )
+        pred_mask = inlier_sf.squeeze(0).unsqueeze(-1)
+        return pred_mask
 
     @classmethod
     def robust_mask(

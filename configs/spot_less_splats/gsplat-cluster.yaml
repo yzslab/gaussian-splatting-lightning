@@ -6,5 +6,9 @@ model:
     class_path: internal.metrics.spotless_metrics.SpotLessMetrics
     init_args:
       lambda_dssim: 0.
+      cluster: true
 data:
-  parser: internal.dataparsers.spotless_colmap_dataparser.SpotLessColmap
+  parser:
+    class_path: internal.dataparsers.spotless_colmap_dataparser.SpotLessColmap
+    init_args:
+      cluster: true
