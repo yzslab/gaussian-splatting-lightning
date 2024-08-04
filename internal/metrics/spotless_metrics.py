@@ -249,7 +249,6 @@ class SpotLessMetricsModule(VanillaMetricsImpl):
                     max=1.0,
                 )
             )
-        rgb_diff_loss = (pred_mask.squeeze(-1).clone().detach() * error_per_pixel).mean()
 
         # add predicted masks to output dict, which is required by the on_after_backward hook
         outputs["pred_mask_up"] = pred_mask_up
@@ -258,8 +257,20 @@ class SpotLessMetricsModule(VanillaMetricsImpl):
         outputs["lower_mask"] = lower_mask
         outputs["upper_mask"] = upper_mask
 
-        # TODO: apply mask to SSIM metric
-        ssim_metric = ssim(outputs["render"], gt_image)
+        per_pixel_error_mask = pred_mask.squeeze(-1).clone().detach()
+        rgb_diff_loss = (per_pixel_error_mask * error_per_pixel).mean()
+
+        if self.config.lambda_dssim > 0:
+            # convert <0.5 to 0
+            sls_masked_pixels = per_pixel_error_mask * (per_pixel_error_mask > 0.5)
+            ssim_metric = ssim(image * sls_masked_pixels, gt_image * sls_masked_pixels)
+            # copy masked pixels from rendered image to G.T. image
+            # sls_masked_pixels = (per_pixel_error_mask < 0.5).repeat(3, 1, 1)
+            # ssim_gt_image = gt_image.clone()
+            # ssim_gt_image[sls_masked_pixels] = image.detach()[sls_masked_pixels]
+            # ssim_metric = ssim(image, ssim_gt_image)
+        else:
+            ssim_metric = 0.
         loss = (1.0 - self.lambda_dssim) * rgb_diff_loss + self.lambda_dssim * (1. - ssim_metric)
 
         return {
@@ -269,7 +280,7 @@ class SpotLessMetricsModule(VanillaMetricsImpl):
         }, {
             "loss": True,
             "rgb_diff": True,
-            "ssim": True,
+            "ssim": self.config.lambda_dssim > 0,
         }
 
     def cluster_mask(self, sf, error_per_pixel, height: int, width: int):
