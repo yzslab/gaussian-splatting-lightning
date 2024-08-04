@@ -6,6 +6,13 @@ from typing import Union
 from dataclasses import dataclass
 from plyfile import PlyData, PlyElement
 
+SHS_REST_DIM_TO_DEGREE = {
+    0: 0,
+    3: 1,
+    8: 2,
+    15: 3,
+}
+
 
 @dataclass
 class GaussianPlyUtils:

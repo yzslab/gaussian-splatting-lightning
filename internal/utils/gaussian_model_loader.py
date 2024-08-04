@@ -296,3 +296,43 @@ class VanillaPVGModelLoader:
         renderer.eval()
 
         return model, renderer
+
+
+class GSplatV1ExampleCheckpointLoader:
+    @classmethod
+    def load(cls, path, device, anti_aliased: bool = True, eval_mode: bool = True, pre_activate: bool = True):
+        ckpt = torch.load(path, map_location="cpu")
+        gaussian_state_dict = ckpt["splats"]
+
+        means_key = "means"
+        if "means3d" in gaussian_state_dict:
+            means_key = "means3d"
+
+        from internal.models.vanilla_gaussian import VanillaGaussian
+        from internal.utils.gaussian_utils import SHS_REST_DIM_TO_DEGREE
+        model = VanillaGaussian(sh_degree=SHS_REST_DIM_TO_DEGREE[gaussian_state_dict["shN"].shape[1]]).instantiate()
+        model.setup_from_number(gaussian_state_dict[means_key].shape[0])
+
+        model.load_state_dict({
+            "_active_sh_degree": torch.tensor(model.config.sh_degree, dtype=torch.int),
+            "gaussians.means": gaussian_state_dict[means_key],
+            "gaussians.shs_dc": gaussian_state_dict["sh0"],
+            "gaussians.shs_rest": gaussian_state_dict["shN"],
+            "gaussians.opacities": gaussian_state_dict["opacities"].unsqueeze(-1),
+            "gaussians.scales": gaussian_state_dict["scales"],
+            "gaussians.rotations": gaussian_state_dict["quats"],
+        })
+        model = model.to(device=device)
+
+        from internal.renderers.gsplat_renderer import GSPlatRenderer
+        renderer = GSPlatRenderer(anti_aliased=anti_aliased)
+        renderer.setup("validation")
+        renderer = renderer.to(device=device)
+
+        if eval_mode is True:
+            model.eval()
+            renderer.eval()
+        if pre_activate is True:
+            model.pre_activate_all_properties()
+
+        return model, renderer
