@@ -128,7 +128,7 @@ class SpotLessMetricsModule(VanillaMetricsImpl):
 
         with torch.no_grad():
             gaussian_model.shs_rest.clamp_(max=0.001)
-            DensityControllerUtils.replace_tensors_to_optimizers({"shs_rest": gaussian_model.shs_rest}, pl_module.gaussian_optimizers)
+            gaussian_model.update_properties(DensityControllerUtils.replace_tensors_to_optimizers({"shs_rest": gaussian_model.shs_rest}, pl_module.gaussian_optimizers))
 
     def update_running_stats(self, outputs, batch, gaussian_model, step, pl_module):
         if step > self.config.densify_until_iter:
