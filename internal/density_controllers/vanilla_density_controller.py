@@ -28,6 +28,8 @@ class VanillaDensityController(DensityController):
 
     camera_extent_factor: float = 1.
 
+    scene_extent_override: float = -1.
+
     absgrad: bool = False
 
     def instantiate(self, *args, **kwargs) -> DensityControllerImpl:
@@ -41,6 +43,11 @@ class VanillaDensityControllerImpl(DensityControllerImpl):
         if stage == "fit":
             self.cameras_extent = pl_module.trainer.datamodule.dataparser_outputs.camera_extent * self.config.camera_extent_factor
             self.prune_extent = pl_module.trainer.datamodule.prune_extent * self.config.camera_extent_factor
+
+            if self.config.scene_extent_override > 0:
+                self.cameras_extent = self.config.scene_extent_override
+                self.prune_extent = self.config.scene_extent_override
+                print(f"Override scene extent with {self.config.scene_extent_override}")
 
             self._init_state(pl_module.gaussian_model.n_gaussians, pl_module.device)
 
