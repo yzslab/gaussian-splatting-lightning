@@ -131,7 +131,7 @@ class SpotLessMetricsModule(VanillaMetricsImpl):
             gaussian_model.update_properties(DensityControllerUtils.replace_tensors_to_optimizers({"shs_rest": gaussian_model.shs_rest}, pl_module.gaussian_optimizers))
 
     def update_running_stats(self, outputs, batch, gaussian_model, step, pl_module):
-        if step > self.config.densify_until_iter:
+        if step >= self.config.densify_until_iter:
             return
 
         # [1, H, W, C]
@@ -221,6 +221,7 @@ class SpotLessMetricsModule(VanillaMetricsImpl):
             height=image.shape[1],
             width=image.shape[2],
         )  # [N_pixels, 1], [1, H, W, 1], ...
+        raw_pred_mask = pred_mask
         if self.config.schedule is True:
             # schedule sampling of the mask based on alpha
             alpha = np.exp(self.config.schedule_beta * np.floor((1 + step) / 1.5))
@@ -235,6 +236,7 @@ class SpotLessMetricsModule(VanillaMetricsImpl):
 
         # add predicted masks to output dict, which is required by the on_after_backward hook
         outputs["pred_mask_up"] = pred_mask_up
+        outputs["raw_pred_mask"] = raw_pred_mask
         outputs["pred_mask"] = pred_mask
         outputs["lower_mask"] = lower_mask
         outputs["upper_mask"] = upper_mask
