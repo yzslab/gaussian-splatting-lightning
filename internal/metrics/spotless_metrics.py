@@ -322,7 +322,7 @@ class SpotLessMetricsModule(VanillaMetricsImpl):
         )(sf).squeeze(0)  # [C, H, W]
         # TODO: smaller image to reduce memory consumption
         pos_enc = self.get_positional_encodings(
-            height, width, 20
+            height, width, 20, device=sf.device,
         ).permute((2, 0, 1))  # [C, H, W]
         sf = torch.cat([sf, pos_enc], dim=0)
         sf_flat = sf.reshape(sf.shape[0], -1).permute((1, 0))  # [N_pixels, N_features]
