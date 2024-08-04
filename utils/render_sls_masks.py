@@ -40,8 +40,8 @@ try:
             mask = outputs["pred_mask"].squeeze(-1).clone().detach().repeat(3, 1, 1)
 
             fused_rgb_mask = batch[1][1].clone()
-            fused_rgb_mask[-1, mask[0] == 0] *= 0.25
-            fused_rgb_mask[-1, mask[0] == 0] += 0.75
+            fused_rgb_mask[1:3, mask[0] == 0] *= 0.25
+            fused_rgb_mask[1:3, mask[0] == 0] += 0.75
 
             output_image = (torch.concat([batch[1][1], mask, fused_rgb_mask, outputs["render"]], dim=2) * 255).permute(1, 2, 0).to(dtype=torch.uint8).cpu().numpy()
 
