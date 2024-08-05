@@ -407,11 +407,9 @@ class SpotLessMetricsModule(VanillaMetricsImpl):
         is_inlier_pixel = (error_per_pixel < loss_threshold).float()
         window_size = 3
         channel = 1
-        window = torch.ones((1, 1, window_size, window_size), dtype=torch.float) / (
+        window = torch.ones((1, 1, window_size, window_size), dtype=torch.float, device=error_per_pixel.device) / (
                 window_size * window_size
         )
-        if error_per_pixel.is_cuda:
-            window = window.cuda(error_per_pixel.get_device())
         window = window.type_as(error_per_pixel)
         has_inlier_neighbors = F.conv2d(
             is_inlier_pixel, window, padding=window_size // 2, groups=channel
