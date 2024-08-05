@@ -66,6 +66,9 @@ class SpotLessMetrics(VanillaMetrics):
     max_mlp_mask_size: int = 800
     """ The max size of the mask predicted by MLP. Smaller it to reduce GPU memory consumption and speedup the optimization """
 
+    opacity_reg: float = 0.
+    """ Opacity regularization, aiming to replace opacity reset """
+
     densify_until_iter: int = 15_000
 
     n_feature_dims: int = 1280
@@ -276,16 +279,24 @@ class SpotLessMetricsModule(VanillaMetricsImpl):
             # ssim_metric = ssim(image, ssim_gt_image)
         else:
             ssim_metric = 0.
-        loss = (1.0 - self.lambda_dssim) * rgb_diff_loss + self.lambda_dssim * (1. - ssim_metric)
+
+        # opacity regularization
+        opacity_reg_loss = 0.
+        if self.config.opacity_reg > 0 and step < self.config.densify_until_iter:
+            opacity_reg_loss = self.config.opacity_reg * torch.abs(gaussian_model.get_opacity).mean()
+
+        loss = (1.0 - self.lambda_dssim) * rgb_diff_loss + self.lambda_dssim * (1. - ssim_metric) + opacity_reg_loss
 
         return {
             "loss": loss,
             "rgb_diff": rgb_diff_loss,
             "ssim": ssim_metric,
+            "o_reg": opacity_reg_loss,
         }, {
             "loss": True,
             "rgb_diff": True,
             "ssim": self.config.lambda_dssim > 0,
+            "o_reg": self.config.opacity_reg > 0,
         }
 
     def cluster_mask(self, sf, error_per_pixel, height: int, width: int):
