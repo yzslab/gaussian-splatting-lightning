@@ -8,3 +8,4 @@ model:
       lambda_dssim: 0.
 data:
   parser: internal.dataparsers.spotless_colmap_dataparser.SpotLessColmap
+cache_all_images: true

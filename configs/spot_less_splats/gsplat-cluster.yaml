@@ -12,3 +12,4 @@ data:
     class_path: internal.dataparsers.spotless_colmap_dataparser.SpotLessColmap
     init_args:
       cluster: true
+cache_all_images: true
