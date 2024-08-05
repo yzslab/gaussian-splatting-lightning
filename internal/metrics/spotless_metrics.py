@@ -63,6 +63,9 @@ class SpotLessMetrics(VanillaMetrics):
     robust_percentile: float = 0.7
     """ Robust loss percentile for threshold """
 
+    max_mlp_mask_size: int = 800
+    """ The max size of the mask predicted by MLP. Smaller it to reduce GPU memory consumption and speedup the optimization """
+
     densify_until_iter: int = 15_000
 
     n_feature_dims: int = 1280
@@ -318,21 +321,40 @@ class SpotLessMetricsModule(VanillaMetricsImpl):
             width: mask width
         """
 
+        mask_size = (height, width)
+        image_max_size = max(height, width)
+
+        is_mask_resizing_required = image_max_size > self.config.max_mlp_mask_size
+
+        # smaller mask size predicted by MLP
+        if is_mask_resizing_required:
+            mask_size = (self.config.max_mlp_mask_size, self.config.max_mlp_mask_size)
+
         sf = nn.Upsample(
-            size=(height, width),
+            size=mask_size,
             mode="bilinear",
         )(sf).squeeze(0)  # [C, H, W]
-        # TODO: smaller image to reduce memory consumption
         pos_enc = self.get_positional_encodings(
-            height, width, 20, device=sf.device,
+            mask_size[0], mask_size[1], 20, device=sf.device,
         ).permute((2, 0, 1))  # [C, H, W]
         sf = torch.cat([sf, pos_enc], dim=0)
         sf_flat = sf.reshape(sf.shape[0], -1).permute((1, 0))  # [N_pixels, N_features]
         self.spotless_module.eval()
         pred_mask_up = self.spotless_module(sf_flat)  # [N_pixels, 1]
-        pred_mask = pred_mask_up.reshape(
-            1, height, width, 1
-        )  # [1, H, W, 1]
+
+        if is_mask_resizing_required:
+            pred_mask = F.interpolate(
+                pred_mask_up.reshape(1, 1, mask_size[0], mask_size[1]),
+                size=(height, width),
+                mode="bilinear",
+            ).squeeze(0).unsqueeze(-1)
+            # replace with the interpolations
+            pred_mask_up = pred_mask.flatten()
+        else:
+            pred_mask = pred_mask_up.reshape(
+                1, mask_size[0], mask_size[1], 1
+            )  # [1, H, W, 1]
+
         # calculate lower and upper bound masks for spotless mlp loss
         lower_mask = self.robust_mask(
             error_per_pixel, self.lower_err
