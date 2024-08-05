@@ -313,10 +313,11 @@ class SpotLessMetricsModule(VanillaMetricsImpl):
         )
 
         # cluster the semantic feature and mask based on cluster voting
-        sf = nn.Upsample(
+        sf = F.interpolate(
+            sf,
             size=(height, width),
             mode="nearest",
-        )(sf).squeeze(0)
+        ).squeeze(0)
         pred_mask = self.robust_cluster_mask(pred_mask, semantics=sf)
 
         return pred_mask
@@ -341,10 +342,11 @@ class SpotLessMetricsModule(VanillaMetricsImpl):
         if is_mask_resizing_required:
             mask_size = (self.config.max_mlp_mask_size, self.config.max_mlp_mask_size)
 
-        sf = nn.Upsample(
+        sf = F.interpolate(
+            sf,
             size=mask_size,
             mode="bilinear",
-        )(sf).squeeze(0)  # [C, H, W]
+        ).squeeze(0)  # [C, H, W]
         pos_enc = self.get_positional_encodings(
             mask_size[0], mask_size[1], 20, device=sf.device,
         ).permute((2, 0, 1))  # [C, H, W]
