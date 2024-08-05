@@ -1,3 +1,5 @@
+# Most codes are copied from https://github.com/lilygoli/SpotLessSplats
+
 from dataclasses import dataclass
 from typing import Tuple, Dict, Any
 

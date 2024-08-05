@@ -38,6 +38,7 @@
   * <a href="#214-feature-distillation">Feature distillation (2.14.)</a>
   * <a href="#215-in-the-wild">In the wild (2.15.)</a>
   * <a href="#216-new-multiple-gpu-training-strategy">New Multiple GPU training strategy (2.16.)</a>
+  * <a href="#217-spotlesssplats">SpotLessSplats (2.17.)</a>
 ## 1. Installation
 ### 1.1. Clone repository
 
@@ -539,6 +540,41 @@ python utils/merge_distributed_ckpts.py outputs/TRAINED_MODEL_DIR
 ```bash
 python viewer.py outputs/TRAINED_MODEL_DIR/checkpoints/MERGED_CHECKPOINT_FILE
 ```
+
+### 2.17. <a href="https://spotlesssplats.github.io/">SpotLessSplats</a>
+<b>[NOTE]</b> No utilization-based pruning (4.2.3 of the paper) and appearance modeling (4.2.4 of the paper)
+
+* Install requirements
+  ```bash
+  pip install diffusers==0.27.2 transformers==4.40.1 scikit-learn
+  ```
+* Extract Stable Diffusion features
+  ```bash
+  python utils/sd_feature_extraction.py YOUR_IMAGE_DIR
+  ```
+* Training
+  * Spatial clustering (SLS-agg, 4.1.1)
+    ```bash
+    python main.py fit \
+        --config configs/spot_less_splats/gsplat-cluster.yaml \
+        --data.parser.split_mode "reconstruction" \
+        --data.path YOUR_DATASET_PATH \
+        -n EXPERIMENT_NAME
+    ```
+  * Spatio-temporal clustering (SLS-mlp, 4.1.2)
+    ```bash
+    python main.py fit \
+        --config configs/spot_less_splats/gsplat-mlp.yaml \
+        --data.parser.split_mode "reconstruction" \
+        --data.path YOUR_DATASET_PATH \
+        -n EXPERIMENT_NAME
+    ```
+  Change the value of `--data.parser.split_mode` to `keyword` if you are using the <a href="https://storage.googleapis.com/jax3d-public/projects/robustnerf/robustnerf.tar.gz">RobustNeRF dataset</a>.
+
+* Render SLS predicted masks
+  ```bash
+  python utils/render_sls_masks.py outputs/EXPERIMENT_NAME
+  ```
 
 ## 3. Evaluation
 
