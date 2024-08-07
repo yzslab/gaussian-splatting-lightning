@@ -300,8 +300,7 @@ class VanillaPVGModelLoader:
 
 class GSplatV1ExampleCheckpointLoader:
     @classmethod
-    def load(cls, path, device, anti_aliased: bool = True, eval_mode: bool = True, pre_activate: bool = True):
-        ckpt = torch.load(path, map_location="cpu")
+    def load_from_ckpt(cls, ckpt, device, anti_aliased: bool = True, eval_mode: bool = True, pre_activate: bool = True):
         gaussian_state_dict = ckpt["splats"]
 
         means_key = "means"
@@ -336,3 +335,14 @@ class GSplatV1ExampleCheckpointLoader:
             model.pre_activate_all_properties()
 
         return model, renderer
+
+    @classmethod
+    def load(cls, path, device, anti_aliased: bool = True, eval_mode: bool = True, pre_activate: bool = True):
+        ckpt = torch.load(path, map_location="cpu")
+        return cls.load_from_ckpt(
+            ckpt,
+            device=device,
+            anti_aliased=anti_aliased,
+            eval_mode=eval_mode,
+            pre_activate=pre_activate,
+        )
