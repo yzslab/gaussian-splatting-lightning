@@ -48,3 +48,5 @@
 !distributed.yaml
 !pvg_dynamic.yaml
 !spot_less_splats
+!depth_regularization
+!depth_regularization/estimated_inverse_depth-l1.yaml

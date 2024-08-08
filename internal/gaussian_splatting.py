@@ -49,6 +49,7 @@ class GaussianSplatting(LightningModule):
             save_ply: bool = False,
             web_viewer: bool = False,
             initialize_from: str = None,
+            renderer_output_types: Optional[List[str]] = None,
     ) -> None:
         super().__init__()
         self.automatic_optimization = False
@@ -63,6 +64,8 @@ class GaussianSplatting(LightningModule):
         if isinstance(renderer, RendererConfig):
             renderer = renderer.instantiate()
         self.renderer = renderer
+
+        self.renderer_output_types = renderer_output_types
 
         # instantiate density controller
         self.density_controller = density.instantiate()
@@ -237,11 +240,13 @@ class GaussianSplatting(LightningModule):
                 camera,
                 self.gaussian_model,
                 bg_color=self.get_background_color().to(camera.R.device),
+                render_types=self.renderer_output_types,
             )
         return self.renderer(
             camera,
             self.gaussian_model,
             bg_color=self._fixed_background_color().to(camera.R.device),
+            render_types=self.renderer_output_types,
         )
 
     def optimizers(self, use_pl_optimizer: bool = True):

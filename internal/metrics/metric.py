@@ -3,7 +3,7 @@ import torch
 from internal.configs.instantiate_config import InstantiatableConfig
 
 
-class MetricImpl(torch.nn.Module):
+class MetricModule(torch.nn.Module):
     def __init__(self, config, *args, **kwargs) -> None:
         super().__init__()
         self.config = config
@@ -37,6 +37,10 @@ class MetricImpl(torch.nn.Module):
         pass
 
 
+class MetricImpl(MetricModule):
+    pass
+
+
 class Metric(InstantiatableConfig):
-    def instantiate(self, *args, **kwargs) -> MetricImpl:
+    def instantiate(self, *args, **kwargs) -> MetricModule:
         pass

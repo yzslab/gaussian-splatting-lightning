@@ -66,6 +66,7 @@ class Renderer(torch.nn.Module):
             viewpoint_camera=viewpoint_camera,
             pc=pc,
             bg_color=bg_color,
+            render_types=render_types,
             **kwargs,
         )
 

@@ -108,3 +108,18 @@ class AsyncImageReader:
             except:
                 pass
             self.tpe.shutdown(wait=False, cancel_futures=True)
+
+
+def find_files(dir: str, extensions: list[str], as_relative_path: bool = True) -> list[str]:
+    from glob import glob
+
+    image_list = []
+    for ext in extensions:
+        image_list += list(glob(os.path.join(dir, "**/*.{}".format(ext)), recursive=True))
+    image_list.sort()
+
+    dir_len = len(dir)
+    if as_relative_path is True:
+        image_list = [i[dir_len:].lstrip("/") for i in image_list]
+
+    return image_list
