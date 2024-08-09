@@ -53,7 +53,7 @@ class HasInverseDepthMetricsModule(VanillaMetricsImpl):
         camera, _, gt_disparity = batch
 
         if gt_disparity is None:
-            return 0.
+            return torch.tensor(0., device=camera.device)
 
         return self._get_inverse_depth_loss(gt_disparity, outputs["inverse_depth"].squeeze(0))
 
