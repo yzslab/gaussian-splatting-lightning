@@ -9,14 +9,44 @@ DEFAULT_ANTI_ALIASED_STATUS: bool = True
 
 
 class GSPlatRenderer(Renderer):
+    _RGB_REQUIRED = 1
+    _ALPHA_REQUIRED = 1 << 1
+    _ACC_DEPTH_REQUIRED = 1 << 2
+    _ACC_DEPTH_INVERTED_REQUIRED = 1 << 3
+    _EXP_DEPTH_REQUIRED = 1 << 4
+    _EXP_DEPTH_INVERTED_REQUIRED = 1 << 5
+    _INVERSE_DEPTH_REQUIRED = 1 << 6
+
+    RENDER_TYPE_BITS = {
+        "rgb": _RGB_REQUIRED,
+        "alpha": _ALPHA_REQUIRED | _ACC_DEPTH_REQUIRED,
+        "acc_depth": _ACC_DEPTH_REQUIRED,
+        "acc_depth_inverted": _ACC_DEPTH_REQUIRED | _ACC_DEPTH_INVERTED_REQUIRED,
+        "exp_depth": _ACC_DEPTH_REQUIRED | _EXP_DEPTH_REQUIRED,
+        "exp_depth_inverted": _ACC_DEPTH_REQUIRED | _EXP_DEPTH_REQUIRED | _EXP_DEPTH_INVERTED_REQUIRED,
+        "inverse_depth": _INVERSE_DEPTH_REQUIRED,
+    }
+
     def __init__(self, block_size: int = DEFAULT_BLOCK_SIZE, anti_aliased: bool = DEFAULT_ANTI_ALIASED_STATUS) -> None:
         super().__init__()
         self.block_size = block_size
         self.anti_aliased = anti_aliased
 
-    def forward(self, viewpoint_camera: Camera, pc: GaussianModel, bg_color: torch.Tensor, scaling_modifier=1.0, render_types: list = None, **kwargs):
+    def parse_render_types(self, render_types: list) -> int:
         if render_types is None:
-            render_types = ["rgb"]
+            return self._RGB_REQUIRED
+        else:
+            bits = 0
+            for i in render_types:
+                bits |= self.RENDER_TYPE_BITS[i]
+            return bits
+
+    @staticmethod
+    def is_type_required(bits: int, type: int) -> bool:
+        return bits & type != 0
+
+    def forward(self, viewpoint_camera: Camera, pc: GaussianModel, bg_color: torch.Tensor, scaling_modifier=1.0, render_types: list = None, **kwargs):
+        render_type_bits = self.parse_render_types(render_types)
 
         img_height = int(viewpoint_camera.height.item())
         img_width = int(viewpoint_camera.width.item())
@@ -37,73 +67,82 @@ class GSPlatRenderer(Renderer):
             block_width=self.block_size,
         )
 
-        viewdirs = pc.get_xyz.detach() - viewpoint_camera.camera_center  # (N, 3)
-        # viewdirs = viewdirs / viewdirs.norm(dim=-1, keepdim=True)
-        rgbs = spherical_harmonics(pc.active_sh_degree, viewdirs, pc.get_features)
-        rgbs = torch.clamp(rgbs + 0.5, min=0.0)  # type: ignore
-
         opacities = pc.get_opacity
         if self.anti_aliased is True:
             opacities = opacities * comp[:, None]
 
+        def rasterize(input_features: torch.Tensor, background, return_alpha: bool = False):
+            return rasterize_gaussians(  # type: ignore
+                xys,
+                depths,
+                radii,
+                conics,
+                num_tiles_hit,  # type: ignore
+                input_features,
+                opacities,
+                img_height=img_height,
+                img_width=img_width,
+                block_width=self.block_size,
+                background=background,
+                return_alpha=return_alpha,
+            )
+
+        # rgb
         rgb = None
-        if "rgb" in render_types:
-            rgb = rasterize_gaussians(  # type: ignore
-                xys,
-                depths,
-                radii,
-                conics,
-                num_tiles_hit,  # type: ignore
-                rgbs,
-                opacities,
-                img_height=img_height,
-                img_width=img_width,
-                block_width=self.block_size,
-                background=bg_color,
-                return_alpha=False,
-            )  # type: ignore
-            rgb = rgb.permute(2, 0, 1)
+        if self.is_type_required(render_type_bits, self._RGB_REQUIRED):
+            viewdirs = pc.get_xyz.detach() - viewpoint_camera.camera_center  # (N, 3)
+            rgbs = spherical_harmonics(pc.active_sh_degree, viewdirs, pc.get_features)
+            rgbs = torch.clamp(rgbs + 0.5, min=0.0)  # type: ignore
 
-        depth_im = None
-        if "depth" in render_types:
-            depth_im, alpha = rasterize_gaussians(
-                xys,
-                depths,
-                radii,
-                conics,
-                num_tiles_hit,  # type: ignore
-                depths.unsqueeze(-1).repeat(1, 3),
-                opacities,
-                img_height=img_height,
-                img_width=img_width,
-                block_width=self.block_size,
-                background=torch.zeros_like(bg_color),
-                return_alpha=True,
-            )  # type: ignore
+            rgb = rasterize(rgbs, bg_color).permute(2, 0, 1)
+
+        alpha = None
+        acc_depth_im = None
+        acc_depth_inverted_im = None
+        exp_depth_im = None
+        exp_depth_inverted_im = None
+        if self.is_type_required(render_type_bits, self._ACC_DEPTH_REQUIRED):
+            # acc depth
+            acc_depth_im, alpha = rasterize(depths.unsqueeze(-1), torch.zeros((1,), device=bg_color.device), True)
             alpha = alpha[..., None]
-            depth_im = torch.where(alpha > 0, depth_im / alpha, depth_im.detach().max())
-            depth_im = depth_im.permute(2, 0, 1)
 
+            # acc depth inverted
+            if self.is_type_required(render_type_bits, self._ACC_DEPTH_INVERTED_REQUIRED):
+                acc_depth_inverted_im = torch.where(acc_depth_im > 0, 1. / acc_depth_im, acc_depth_im.detach().max())
+                acc_depth_inverted_im = acc_depth_inverted_im.permute(2, 0, 1)
+
+            # exp depth
+            if self.is_type_required(render_type_bits, self._EXP_DEPTH_REQUIRED):
+                exp_depth_im = torch.where(alpha > 0, acc_depth_im / alpha, acc_depth_im.detach().max())
+
+                exp_depth_im = exp_depth_im.permute(2, 0, 1)
+
+            # alpha
+            if self.is_type_required(render_type_bits, self._ALPHA_REQUIRED):
+                alpha = alpha.permute(2, 0, 1)
+            else:
+                alpha = None
+
+            # permute acc depth
+            acc_depth_im = acc_depth_im.permute(2, 0, 1)
+
+            # exp depth inverted
+            if self.is_type_required(render_type_bits, self._EXP_DEPTH_INVERTED_REQUIRED):
+                exp_depth_inverted_im = torch.where(exp_depth_im > 0, 1. / exp_depth_im, exp_depth_im.detach().max())
+
+        # inverse depth
         inverse_depth_im = None
-        if "inverse_depth" in render_types:
+        if self.is_type_required(render_type_bits, self._INVERSE_DEPTH_REQUIRED):
             inverse_depth = 1. / (depths.clamp_min(0.) + 1e-8).unsqueeze(-1)
-            inverse_depth_im = rasterize_gaussians(
-                xys,
-                depths,
-                radii,
-                conics,
-                num_tiles_hit,  # type: ignore
-                inverse_depth,
-                opacities,
-                img_height=img_height,
-                img_width=img_width,
-                block_width=self.block_size,
-                background=torch.zeros((1,), dtype=torch.float, device=bg_color.device),
-            ).permute(2, 0, 1)
+            inverse_depth_im = rasterize(inverse_depth, torch.zeros((1,), dtype=torch.float, device=bg_color.device)).permute(2, 0, 1)
 
         return {
             "render": rgb,
-            "depth": depth_im,
+            "alpha": alpha,
+            "acc_depth": acc_depth_im,
+            "acc_depth_inverted": acc_depth_inverted_im,
+            "exp_depth": exp_depth_im,
+            "exp_depth_inverted": exp_depth_inverted_im,
             "inverse_depth": inverse_depth_im,
             "viewspace_points": xys,
             "viewspace_points_grad_scale": 0.5 * torch.tensor([[img_width, img_height]]).to(xys),
@@ -291,6 +330,10 @@ class GSPlatRenderer(Renderer):
     def get_available_outputs(self) -> Dict:
         return {
             "rgb": RendererOutputInfo("render"),
-            "depth": RendererOutputInfo("depth", type=RendererOutputTypes.GRAY),
+            "alpha": RendererOutputInfo("alpha"),
+            "acc_depth": RendererOutputInfo("acc_depth", type=RendererOutputTypes.GRAY),
+            "acc_depth_inverted": RendererOutputInfo("acc_depth_inverted", type=RendererOutputTypes.GRAY),
+            "exp_depth": RendererOutputInfo("exp_depth", type=RendererOutputTypes.GRAY),
+            "exp_depth_inverted": RendererOutputInfo("exp_depth_inverted", type=RendererOutputTypes.GRAY),
             "inverse_depth": RendererOutputInfo("inverse_depth", type=RendererOutputTypes.GRAY),
         }
