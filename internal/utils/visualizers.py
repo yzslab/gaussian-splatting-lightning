@@ -1,6 +1,7 @@
-from typing import Literal
+from typing import Literal, Dict, Callable
 import torch
 import matplotlib
+from internal.renderers.renderer import RendererOutputTypes, RendererOutputVisualizer, RendererOutputInfo
 
 
 class Visualizers:
@@ -9,7 +10,25 @@ class Visualizers:
         return i
 
     @staticmethod
-    def float_colormap(image, colormap: Literal["default", "turbo", "viridis", "magma", "inferno", "cividis", "gray"]):
+    def normalization_preprocessor(image: torch.Tensor, visualizer, max_clamp: float = -1, gamma: float = 1.):
+        if max_clamp > 0:
+            image = torch.clamp_max(image, max=max_clamp)
+
+        max_value = image.max()
+        min_value = image.min()
+        max_diff = max_value - min_value
+
+        image = image - min_value
+        if max_diff > 0:
+            image = image / max_diff
+
+        if gamma != 1.:
+            image = torch.pow(image, gamma)
+
+        return visualizer(image)
+
+    @staticmethod
+    def float_colormap(image, colormap: Literal["default", "turbo", "viridis", "magma", "inferno", "cividis", "gray"] = "default"):
         """Copied from NeRFStudio: https://github.com/nerfstudio-project/nerfstudio/blob/f97eb2e5f0c754e1ab0873374c8dcea5d18e169c/nerfstudio/utils/colormaps.py#L93-L114. Please follow their license.
 
         Convert single channel to a color image.
@@ -83,3 +102,42 @@ class Visualizers:
     @staticmethod
     def normal_map_colormap(normal_map):
         return torch.nn.functional.normalize(normal_map, dim=0) * 0.5 + 0.5
+
+    @staticmethod
+    def create_as_visualizer(func, *args, **kwargs) -> RendererOutputVisualizer:
+        def visualizer(image, outputs, info):
+            return func(image, *args, **kwargs)
+
+        return visualizer
+
+    @classmethod
+    def get_visualizer_by_renderer_output_info(cls, output_info: Dict[str, RendererOutputInfo]) -> Dict[str, RendererOutputVisualizer]:
+        visualizers = {}
+        for name, info in output_info.items():
+            if info.visualizer is not None:
+                visualizers[name] = info.visualizer
+            elif info.type == RendererOutputTypes.RGB:
+                visualizers[name] = cls.create_as_visualizer(cls.no_processing)
+            elif info.type == RendererOutputTypes.GRAY:
+                visualizers[name] = cls.create_as_visualizer(cls.normalization_preprocessor, visualizer=cls.float_colormap)
+            elif info.type == RendererOutputTypes.NORMAL_MAP:
+                visualizers[name] = cls.create_as_visualizer(cls.normal_map_colormap)
+            elif info.type == RendererOutputTypes.FEATURE_MAP:
+                visualizers[name] = cls.create_as_visualizer(cls.pca_colormap)
+            else:
+                raise RuntimeError("Unsupported type of output {}".format(name))
+
+        return visualizers
+
+    @classmethod
+    def get_simplified_visualizer_by_renderer_output_info(cls, output_info: Dict[str, RendererOutputInfo]) -> Dict[str, Callable[[Dict], torch.Tensor]]:
+        def get_simplified_visualizer(key: str, info: RendererOutputInfo, func):
+            def simplified_visualizer(outputs):
+                return func(outputs[key], outputs, info)
+
+            return simplified_visualizer
+
+        visualizers = cls.get_visualizer_by_renderer_output_info(output_info)
+        simplified_visualizers = {name: get_simplified_visualizer(info.key, info, visualizers[name]) for name, info in output_info.items()}
+
+        return simplified_visualizers

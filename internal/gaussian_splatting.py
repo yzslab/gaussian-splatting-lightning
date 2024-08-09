@@ -480,9 +480,16 @@ class GaussianSplatting(LightningModule):
         if self.trainer.global_rank == 0 and self.hparams["save_val_output"] is True and (
                 self.hparams["max_save_val_output"] < 0 or batch_idx < self.hparams["max_save_val_output"]
         ):
+            output_images = []
+            if self.renderer_output_types is None:
+                output_images.append(outputs["render"].cpu())
+            else:
+                for i in self.renderer_output_types:
+                    output_images.append(self.renderer_output_visualizers[i](outputs).cpu())
+            if "extra_image" in outputs:
+                output_images.append(outputs["extra_image"].cpu())
             self.image_queue.put({
-                "output_image": outputs["render"].cpu(),
-                "extra_image": outputs["extra_image"].cpu() if "extra_image" in outputs else None,
+                "output_images": output_images,
                 "gt_image": gt_image.cpu(),
                 "stage": name,
                 "image_name": image_info[0],
@@ -515,6 +522,9 @@ class GaussianSplatting(LightningModule):
     def on_validation_epoch_start(self) -> None:
         super().on_validation_epoch_start()
         if self.hparams["save_val_output"] is True:
+            from internal.utils.visualizers import Visualizers
+            self.renderer_output_visualizers = Visualizers.get_simplified_visualizer_by_renderer_output_info(self.renderer.get_available_outputs())
+
             for i in range(self.max_image_saving_threads):
                 thread = threading.Thread(target=self.save_images)
                 self.image_saving_threads.append(thread)
@@ -574,13 +584,9 @@ class GaussianSplatting(LightningModule):
                 break
 
             try:
-                image_list = []
-                if item["extra_image"] is not None:
-                    extra_image = item["extra_image"]
-                    if extra_image.shape[0] == 1:
-                        extra_image = extra_image.repeat(3, 1, 1)
-                    image_list.append(extra_image)
-                image_list += [item["output_image"], item["gt_image"]]
+                image_list = [item["gt_image"]]
+                for i in item["output_images"]:
+                    image_list.append(i)
                 image = torch.concat(image_list, dim=-1)
 
                 if self.log_image is not None:

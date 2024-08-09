@@ -30,7 +30,7 @@ class RendererOutputInfo:
     """
     The first parameter is the value retrieved from the dict returned by `forward()`. 
     The second parameter is the dict returned by `forward()`. 
-    The Third one is a `RendererOutput` instance.
+    The Third one is a `RendererOutputInfo` instance.
     """
 
     def __post_init__(self):
