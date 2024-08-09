@@ -50,12 +50,12 @@ class HasInverseDepthMetricsModule(VanillaMetricsImpl):
     def get_inverse_depth_metric(self, batch, outputs):
         # TODO: apply mask
 
-        camera, _, gt_disparity = batch
+        camera, _, gt_inverse_depth = batch
 
-        if gt_disparity is None:
+        if gt_inverse_depth is None:
             return torch.tensor(0., device=camera.device)
 
-        return self._get_inverse_depth_loss(gt_disparity, outputs["inverse_depth"].squeeze(0))
+        return self._get_inverse_depth_loss(gt_inverse_depth, outputs["inverse_depth"].squeeze(0))
 
     def get_weight(self, step: int):
         return self.config.depth_loss_weight.init * (self.config.depth_loss_weight.final_factor ** min(step / self.config.depth_loss_weight.max_steps, 1))
