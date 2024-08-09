@@ -50,3 +50,4 @@
 !spot_less_splats
 !depth_regularization
 !depth_regularization/estimated_inverse_depth-l1.yaml
+!depth_regularization/estimated_inverse_depth-l2.yaml

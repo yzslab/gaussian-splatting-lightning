@@ -20,9 +20,6 @@ class HasInverseDepthMetrics(VanillaMetrics):
     depth_loss_weight: WeightScheduler = field(default_factory=lambda: WeightScheduler())
 
     def instantiate(self, *args, **kwargs) -> "HasInverseDepthMetricsModule":
-        # TODO: implement other types
-        assert self.depth_loss_type == "l1"
-
         return HasInverseDepthMetricsModule(self)
 
 
@@ -32,18 +29,33 @@ class HasInverseDepthMetricsModule(VanillaMetricsImpl):
     def setup(self, stage: str, pl_module):
         super().setup(stage, pl_module)
 
-        self._get_disparity_loss = self._l1_metric
+        if self.config.depth_loss_type == "l1":
+            self._get_inverse_depth_loss = self._depth_l1_loss
+        elif self.config.depth_loss_type == "l2":
+            self._get_inverse_depth_loss = self._depth_l2_loss
+        # elif self.config.depth_loss_type == "kl":
+        #     self._get_inverse_depth_loss = self._depth_kl_loss
+        else:
+            raise NotImplementedError()
 
-    def _l1_metric(self, a, b):
+    def _depth_l1_loss(self, a, b):
         return torch.abs(a - b).mean()
 
-    def get_disparity_metric(self, batch, outputs):
+    def _depth_l2_loss(self, a, b):
+        return ((a - b) ** 2).mean()
+
+    def _depth_kl_loss(self, a, b):
+        pass
+
+    def get_inverse_depth_metric(self, batch, outputs):
+        # TODO: apply mask
+
         camera, _, gt_disparity = batch
 
         if gt_disparity is None:
             return 0.
 
-        return self._get_disparity_loss(gt_disparity, outputs["inverse_depth"].squeeze(0))
+        return self._get_inverse_depth_loss(gt_disparity, outputs["inverse_depth"].squeeze(0))
 
     def get_weight(self, step: int):
         return self.config.depth_loss_weight.init * (self.config.depth_loss_weight.final_factor ** min(step / self.config.depth_loss_weight.max_steps, 1))
@@ -52,7 +64,7 @@ class HasInverseDepthMetricsModule(VanillaMetricsImpl):
         metrics, pbar = super().get_train_metrics(pl_module, gaussian_model, step, batch, outputs)
 
         d_reg_weight = self.get_weight(step)
-        d_reg = self.get_disparity_metric(batch, outputs) * d_reg_weight
+        d_reg = self.get_inverse_depth_metric(batch, outputs) * d_reg_weight
 
         metrics["loss"] = metrics["loss"] + d_reg
         metrics["d_reg"] = d_reg
@@ -65,7 +77,7 @@ class HasInverseDepthMetricsModule(VanillaMetricsImpl):
     def get_validate_metrics(self, pl_module, gaussian_model, batch, outputs) -> Tuple[Dict[str, float], Dict[str, bool]]:
         metrics, pbar = super().get_validate_metrics(pl_module, gaussian_model, batch, outputs)
 
-        d_reg = self.get_disparity_metric(batch, outputs)
+        d_reg = self.get_inverse_depth_metric(batch, outputs)
 
         metrics["loss"] = metrics["loss"] + d_reg
         metrics["d_reg"] = d_reg
