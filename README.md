@@ -587,7 +587,7 @@ This is implemented with reference to <a href="https://repo-sam.inria.fr/fungrap
   
   # NOTE: do not run `pip install -r utils/Depth-Anything-V2/requirements.txt`
   
-  # download the pretrained model `Depth-Anything-V2-Largg`
+  # download the pretrained model `Depth-Anything-V2-Large`
   mkdir utils/Depth-Anything-V2/checkpoints
   wget -O utils/Depth-Anything-V2/checkpoints/depth_anything_v2_vitl.pth "https://huggingface.co/depth-anything/Depth-Anything-V2-Large/resolve/main/depth_anything_v2_vitl.pth?download=true"
    ```
