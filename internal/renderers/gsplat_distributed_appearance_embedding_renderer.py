@@ -7,7 +7,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from gsplat.sh import spherical_harmonics
 from . import Renderer
 from .gsplat_distributed_renderer import GSplatDistributedRenderer, GSplatDistributedRendererImpl, MemberData
-from .gsplat_appearance_embedding_renderer import Model as AppearanceEmbeddingModel, ModelConfig, OptimizationConfig, GSplatAppearanceEmbeddingRenderer
+from .gsplat_appearance_embedding_renderer import Model as AppearanceEmbeddingModel, ModelConfig, OptimizationConfig, GSplatAppearanceEmbeddingRendererModule as GSplatAppearanceEmbeddingRenderer
 
 
 class GSplatDistributedAppearanceEmbeddingRendererImpl(GSplatDistributedRendererImpl):
