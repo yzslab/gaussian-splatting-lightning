@@ -21,7 +21,7 @@ data:
 model:
   gaussian:
     optimization:
-      spatial_lr_scale: 3  # avoid large xyz learning rate
+      spatial_lr_scale: 0.2  # avoid large xyz learning rate
     sh_degree: 0  # avoid CUDA OOM
   density:
     densify_grad_threshold: 0.0006  # avoid CUDA OOM

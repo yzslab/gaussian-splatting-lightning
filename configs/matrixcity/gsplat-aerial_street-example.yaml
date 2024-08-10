@@ -11,11 +11,12 @@ data:
       test:
         - aerial/block_1_test/transforms_origin.json
         - street/small_city_road_down_test/transforms_0-2.json
+      scale: 0.1  # default is 0.01, remember to rescale `spatial_lr_scale` below by the same factor if you changed this
       depth_read_step: 4
 model:
   gaussian:
     optimization:
-      spatial_lr_scale: 3  # avoid large xyz learning rate
+      spatial_lr_scale: 2  # avoid large xyz learning rate
     sh_degree: 0  # avoid CUDA OOM
   density:
     densify_grad_threshold: 0.0006  # avoid CUDA OOM

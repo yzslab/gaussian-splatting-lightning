@@ -46,17 +46,17 @@ Please note that the `transforms.json` and `transforms_origin.json` are not the 
 * Via config file
   ```bash
   python main.py fit \
-      --config configs/gsplat-matrixcity-aerial.yaml \
+      --config configs/matrixcity/gsplat-aerial.yaml \
       --data.path data/MatrixCity/small_city/aerial \
       ...
   ```
-  See <a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/configs/gsplat-matrixcity-aerial.yaml">`configs/gsplat-matrixcity-aerial.yaml`</a> for more details.
+  See <a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/configs/matrixcity/gsplat-aerial.yaml">`configs/matrixcity/gsplat-aerial.yaml`</a> for more details.
 * Mixing aerial and street views is also possible
   ```bash
   python main.py fit \
-      --config configs/gsplat-matrixcity-aerial_street-example.yaml \
+      --config configs/matrixcity/gsplat-aerial_street-example.yaml \
       --data.path data/MatrixCity/small_city \
       ...
   ```
   
-  Please note that the value of `--data.path` is different from above. Take a look <a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/configs/gsplat-matrixcity-aerial_street-example.yaml">`configs/gsplat-matrixcity-aerial_street-example.yaml`</a> for more details.
+  Please note that the value of `--data.path` is different from above. Take a look <a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/configs/matrixcity/gsplat-aerial_street-example.yaml">`configs/matrixcity/gsplat-aerial_street-example.yaml`</a> for more details.

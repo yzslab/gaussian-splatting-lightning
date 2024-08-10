@@ -13,7 +13,7 @@
   * Colmap
   * <a href="https://github.com/google/nerfies?tab=readme-ov-file#datasets">Nerfies</a>
   * <a href="https://github.com/facebookresearch/NSVF?tab=readme-ov-file#dataset">NSVF (Synthetic only)</a>
-  * <a href="https://city-super.github.io/matrixcity/">MatrixCity</a> (<a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/internal/dataparsers/MatrixCity.md">Prepare your dataset</a>)
+  * <a href="https://city-super.github.io/matrixcity/">MatrixCity</a> (<a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/configs/matrixcity/README.md">Prepare your dataset</a>)
   * <a href="https://www.cs.ubc.ca/~kmyi/imw2020/data.html">PhotoTourism</a>
 * <a href="#4-web-viewer">Interactive web viewer</a>
   * Load multiple models

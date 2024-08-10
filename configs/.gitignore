@@ -43,8 +43,10 @@
 !feature_3dgs/lseg-speedup.yaml
 !appearance_embedding_visibility_map_renderer/view_independent-2x_ds.yaml
 !appearance_embedding_visibility_map_renderer/view_independent-2x_ds-exp.yaml
-!gsplat-matrixcity-aerial.yaml
-!gsplat-matrixcity-aerial_street-example.yaml
+!matrixcity
+!matrixcity/README.md
+!matrixcity/gsplat-aerial.yaml
+!matrixcity/gsplat-aerial_street-example.yaml
 !distributed.yaml
 !pvg_dynamic.yaml
 !spot_less_splats
