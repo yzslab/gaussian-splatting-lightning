@@ -580,6 +580,10 @@ python viewer.py outputs/TRAINED_MODEL_DIR/checkpoints/MERGED_CHECKPOINT_FILE
 ### 2.18. Depth Regularization with <a href="https://depth-anything-v2.github.io/">Depth Anything V2</a>
 This is implemented with reference to <a href="https://repo-sam.inria.fr/fungraph/hierarchical-3d-gaussians/">Hierarchical 3DGS</a>.
 
+| Baseline | DepthReg |  DepthReg + AppearanceModel |
+| --- | --- | --- |
+| <video src="https://github.com/user-attachments/assets/138290ca-6c19-4dc0-81c0-f5b1fd7dbb04"></video> | <video src="https://github.com/user-attachments/assets/4f6b04f7-c889-4d80-b32d-32339fe5ddb7"></video> | <video src="https://github.com/user-attachments/assets/68c57124-87c0-4eb6-8e2e-4457103beee2"></video> |
+
 * Setup Depth Anything V2
   ```bash
   # clone the repo.
