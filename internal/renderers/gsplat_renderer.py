@@ -330,7 +330,7 @@ class GSPlatRenderer(Renderer):
     def get_available_outputs(self) -> Dict:
         return {
             "rgb": RendererOutputInfo("render"),
-            "alpha": RendererOutputInfo("alpha"),
+            "alpha": RendererOutputInfo("alpha", type=RendererOutputTypes.GRAY),
             "acc_depth": RendererOutputInfo("acc_depth", type=RendererOutputTypes.GRAY),
             "acc_depth_inverted": RendererOutputInfo("acc_depth_inverted", type=RendererOutputTypes.GRAY),
             "exp_depth": RendererOutputInfo("exp_depth", type=RendererOutputTypes.GRAY),
