@@ -19,6 +19,8 @@ class HasInverseDepthMetrics(VanillaMetrics):
 
     depth_loss_weight: WeightScheduler = field(default_factory=lambda: WeightScheduler())
 
+    depth_normalized: bool = False
+
     def instantiate(self, *args, **kwargs) -> "HasInverseDepthMetricsModule":
         return HasInverseDepthMetricsModule(self)
 
@@ -55,7 +57,14 @@ class HasInverseDepthMetricsModule(VanillaMetricsImpl):
         if gt_inverse_depth is None:
             return torch.tensor(0., device=camera.device)
 
-        return self._get_inverse_depth_loss(gt_inverse_depth, outputs["inverse_depth"].squeeze(0))
+        predicted_inverse_depth = outputs["inverse_depth"].squeeze(0)
+        if self.config.depth_normalized:
+            with torch.no_grad():
+                max_depth = predicted_inverse_depth.max()
+                min_depth = predicted_inverse_depth.min()
+            predicted_inverse_depth = (predicted_inverse_depth - min_depth) / (max_depth - min_depth + 1e-8)
+
+        return self._get_inverse_depth_loss(gt_inverse_depth, predicted_inverse_depth)
 
     def get_weight(self, step: int):
         return self.config.depth_loss_weight.init * (self.config.depth_loss_weight.final_factor ** min(step / self.config.depth_loss_weight.max_steps, 1))
