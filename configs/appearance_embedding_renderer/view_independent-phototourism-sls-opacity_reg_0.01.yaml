@@ -18,8 +18,6 @@ model:
   metric:
     class_path: internal.metrics.spotless_metrics.SpotLessMetrics
     init_args:
-      lower_bound: 0.3
-      upper_bound: 0.8
       opacity_reg: 0.01
 data:
   val_max_num_images_to_cache: -1
