@@ -272,6 +272,8 @@ def parse_args():
     parser.add_argument("--extensions", "-e", type=str, default=["jpg", "JPG", "jpeg", "JPEG"])
     parser.add_argument("--image-size", "-s", type=int, default=800)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--image_list", "--image-list", type=str, default=None)
+    parser.add_argument("--nerfw_tsv", type=str, default=None)
     distibuted_tasks.configure_arg_parser(parser)
 
     return parser.parse_args()
@@ -291,9 +293,19 @@ def main():
 
     # find images
     image_list = []
-    for ext in args.extensions:
-        image_list += list(glob(os.path.join(args.image_dir, "**/*.{}".format(ext)), recursive=True))
-    image_list.sort()
+    if args.image_list is not None:
+        with open(args.image_list, "r") as f:
+            image_list = [os.path.join(args.image_dir, i) for i in f]
+    elif args.nerfw_tsv is not None:
+        import csv
+        with open(args.nerfw_tsv, "r") as f:
+            rd = csv.DictReader(f, delimiter="\t", quotechar='"')
+            for i in rd:
+                image_list.append(os.path.join(args.image_dir, i["filename"]))
+    else:
+        for ext in args.extensions:
+            image_list += list(glob(os.path.join(args.image_dir, "**/*.{}".format(ext)), recursive=True))
+        image_list.sort()
     print("{} images found".format(len(image_list)))
 
     # get an image list slice
