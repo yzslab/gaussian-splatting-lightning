@@ -283,7 +283,7 @@ def main():
     # parse args
     args = parse_args()
     if args.output is None:
-        args.output = os.path.join(os.path.dirname(args.image_dir), "SD")
+        args.output = os.path.join(os.path.dirname(args.image_dir.rstrip("/")), "SD")
     img_size = args.image_size
 
     # seed
