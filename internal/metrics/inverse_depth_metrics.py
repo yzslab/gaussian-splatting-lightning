@@ -1,6 +1,7 @@
 from typing import Literal, Tuple, Dict, Any
 from dataclasses import dataclass, field
 import torch
+from torchmetrics.image import StructuralSimilarityIndexMeasure
 from .vanilla_metrics import VanillaMetrics, VanillaMetricsImpl
 
 
@@ -15,7 +16,9 @@ class WeightScheduler:
 
 @dataclass
 class HasInverseDepthMetrics(VanillaMetrics):
-    depth_loss_type: Literal["l1", "l2", "kl"] = "l1"
+    depth_loss_type: Literal["l1", "l1+ssim", "l2", "kl"] = "l1"
+
+    depth_loss_ssim_weight: float = 0.2
 
     depth_loss_weight: WeightScheduler = field(default_factory=lambda: WeightScheduler())
 
@@ -33,6 +36,9 @@ class HasInverseDepthMetricsModule(VanillaMetricsImpl):
 
         if self.config.depth_loss_type == "l1":
             self._get_inverse_depth_loss = self._depth_l1_loss
+        elif self.config.depth_loss_type == "l1+ssim":
+            self.ssim = StructuralSimilarityIndexMeasure()
+            self._get_inverse_depth_loss = self._depth_l1_and_ssim_loss
         elif self.config.depth_loss_type == "l2":
             self._get_inverse_depth_loss = self._depth_l2_loss
         # elif self.config.depth_loss_type == "kl":
@@ -42,6 +48,12 @@ class HasInverseDepthMetricsModule(VanillaMetricsImpl):
 
     def _depth_l1_loss(self, a, b):
         return torch.abs(a - b).mean()
+
+    def _depth_l1_and_ssim_loss(self, a, b):
+        l1_loss = self._depth_l1_loss(a, b)
+        ssim_metric = self.ssim(a[None, None, ...], b[None, None, ...])
+
+        return (1 - self.config.depth_loss_ssim_weight) * l1_loss + self.config.depth_loss_ssim_weight * (1 - ssim_metric)
 
     def _depth_l2_loss(self, a, b):
         return ((a - b) ** 2).mean()
