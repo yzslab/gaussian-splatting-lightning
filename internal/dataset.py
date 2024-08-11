@@ -264,7 +264,7 @@ class DataModule(LightningDataModule):
             background_sphere_center: Literal["points", "cameras"] = "points",
             background_sphere_distance: float = 2.2,
             background_sphere_points: int = 204_800,
-            background_sphere_color: Literal["random", "white"] = random,
+            background_sphere_color: Literal["random", "white"] = "random",
             camera_on_cpu: bool = False,
             image_on_cpu: bool = True,
     ) -> None:
