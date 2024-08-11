@@ -64,6 +64,12 @@ class HasInverseDepthMetricsModule(VanillaMetricsImpl):
                 min_depth = predicted_inverse_depth.min()
             predicted_inverse_depth = (predicted_inverse_depth - min_depth) / (max_depth - min_depth + 1e-8)
 
+        if isinstance(gt_inverse_depth, tuple):
+            gt_inverse_depth, gt_inverse_depth_mask = gt_inverse_depth
+
+            gt_inverse_depth = gt_inverse_depth * gt_inverse_depth_mask
+            predicted_inverse_depth = predicted_inverse_depth * gt_inverse_depth_mask
+
         return self._get_inverse_depth_loss(gt_inverse_depth, predicted_inverse_depth)
 
     def get_weight(self, step: int):

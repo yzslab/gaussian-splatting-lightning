@@ -19,15 +19,24 @@ class MatrixCity(DataParserConfig):
     test: list[str] = None
 
     scale: float = 0.01
+    """ Scene size scale """
 
     depth_scale: float = 0.01
+    """ Do not change this """
 
     max_depth: float = 65_000
     """ Using to remove sky, multiply with scale and depth_scale automatically """
 
     depth_read_step: int = 1
+    """ Take every `depth_read_step`th depth map for generating the point cloud """
 
     max_points: int = 3_840_000
+    """ How many points will be used for initialization """
+
+    use_depth: bool = False
+    """ Whether load depth maps into training batches. Enable this if you need depth regularization. """
+
+    use_inverse_depth: bool = True
 
     def instantiate(self, path: str, output_path: str, global_rank: int) -> DataParser:
         return MatrixCityDataParser(path=path, output_path=output_path, global_rank=global_rank, params=self)
@@ -150,7 +159,10 @@ class MatrixCityDataParser(DataParser):
 
             # check whether need to regenerate point cloud based on params
             params_dict = dataclasses.asdict(self.params)
+            params_dict["train"].sort()
             del params_dict["test"]  # ignore test set
+            del params_dict["use_depth"]
+            del params_dict["use_inverse_depth"]
             params_json = json.dumps(params_dict, indent=4, ensure_ascii=False)
             print(params_json)
             ply_file_path = os.path.join(
@@ -186,7 +198,7 @@ class MatrixCityDataParser(DataParser):
                 with tqdm(range(len(image_paths) // self.params.depth_read_step), desc="Building point cloud") as t:
                     for frame_idx in t:
                         frame_idx = frame_idx * self.params.depth_read_step
-                        t.set_description(image_paths[frame_idx])
+                        t.set_postfix_str(depth_paths[frame_idx][len(self.path):].lstrip("/"))
                         # build intrinsics matrix
                         fx = cameras.fx[frame_idx]
                         fy = cameras.fy[frame_idx]
@@ -252,9 +264,10 @@ class MatrixCityDataParser(DataParser):
         return ImageSet(
             image_names=image_names,
             image_paths=image_paths,
-            depth_paths=depth_paths,
             mask_paths=None,
             cameras=cameras,
+            extra_data=depth_paths,
+            extra_data_processor=self.get_depth_map_processor(self.params.scale, self.params.depth_scale, self.params.max_depth, self.params.use_inverse_depth) if self.params.use_depth else self.return_none
         ), point_cloud
 
     def get_outputs(self) -> DataParserOutputs:
@@ -268,3 +281,35 @@ class MatrixCityDataParser(DataParser):
             point_cloud=point_cloud,
             appearance_group_ids=None,
         )
+
+    @staticmethod
+    def get_depth_map_processor(scale, depth_scale, max_depth, inverse: bool):
+        os.environ['OPENCV_IO_ENABLE_OPENEXR'] = '1'
+        import cv2
+
+        depth_value_scale_factor = scale * depth_scale
+
+        def read_depth_map(path):
+            depth_map = cv2.imread(
+                path,
+                cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH,
+            )[..., 0] * depth_value_scale_factor
+            depth_map_mask = depth_map < max_depth * depth_value_scale_factor
+
+            depth_map = torch.tensor(depth_map, dtype=torch.float)
+            depth_map_mask = torch.tensor(depth_map_mask, dtype=torch.bool)
+
+            if inverse:
+                depth_map = torch.where(
+                    depth_map > 0.,
+                    1. / depth_map,
+                    depth_map.max(),
+                )
+
+            return depth_map, depth_map_mask
+
+        return read_depth_map
+
+    @staticmethod
+    def return_none(*args, **kwargs):
+        return None

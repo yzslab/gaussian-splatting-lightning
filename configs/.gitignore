@@ -47,6 +47,7 @@
 !matrixcity/README.md
 !matrixcity/gsplat-aerial.yaml
 !matrixcity/gsplat-aerial_street-example.yaml
+!matrixcity/gsplat-aerial_street-depth_reg-example.yaml
 !distributed.yaml
 !pvg_dynamic.yaml
 !spot_less_splats

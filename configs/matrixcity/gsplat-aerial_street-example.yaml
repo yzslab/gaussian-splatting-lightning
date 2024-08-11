@@ -6,11 +6,10 @@ data:
     init_args:
       train:
         - aerial/block_1/transforms_origin.json
-        - street/small_city_road_down/transforms_0-29.json
-        - street/small_city_road_down/transforms_0-59.json
+        - street/small_city_road_down/transforms-0_59.json
       test:
         - aerial/block_1_test/transforms_origin.json
-        - street/small_city_road_down_test/transforms_0-2.json
+        - street/small_city_road_down_test/transforms-0_2.json
       scale: 0.1  # default is 0.01, remember to rescale `spatial_lr_scale` below by the same factor if you changed this
       depth_read_step: 4
 model:
