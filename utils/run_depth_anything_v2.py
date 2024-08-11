@@ -1,12 +1,11 @@
+import add_pypath
 import os
 import sys
-import numpy as np
 import argparse
 import torch
-import cv2
-
-from common import find_files
 from tqdm import tqdm
+from internal.utils.visualizers import Visualizers
+from common import find_files, AsyncNDArraySaver, AsyncImageSaver, AsyncImageReader
 
 parser = argparse.ArgumentParser()
 parser.add_argument("image_dir")
@@ -15,6 +14,7 @@ parser.add_argument("--output", "-o", default=None)
 parser.add_argument("--encoder", default="vitl")
 parser.add_argument("--extensions", "-e", default=["jpg", "JPG", "jpeg", "JPEG"])
 parser.add_argument("--preview", "-p", action="store_true", default=False)
+parser.add_argument("--colormap", type=str, default="default")
 parser.add_argument("--da2_path", type=str, default=os.path.join(os.path.dirname(__file__), "Depth-Anything-V2"))
 args = parser.parse_args()
 
@@ -24,7 +24,7 @@ from depth_anything_v2.dpt import DepthAnythingV2
 if args.output is None:
     args.output = os.path.join(os.path.dirname(args.image_dir), "estimated_depths")
 
-images = find_files(args.image_dir, args.extensions)
+images = find_files(args.image_dir, args.extensions, as_relative_path=False)
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
 
@@ -39,16 +39,31 @@ depth_anything = DepthAnythingV2(**model_configs[args.encoder])
 depth_anything.load_state_dict(torch.load(f'{args.da2_path}/checkpoints/depth_anything_v2_{args.encoder}.pth', map_location='cpu'))
 depth_anything = depth_anything.to(DEVICE).eval()
 
-with torch.no_grad(), tqdm(images) as t:
-    for image_name in t:
-        raw_image = cv2.imread(os.path.join(args.image_dir, image_name))
 
-        depth = depth_anything.infer_image(raw_image, args.input_size)
-        normalized_depth = (depth - depth.min()) / (depth.max() - depth.min())
+def apply_color_map(normalized_depth):
+    colored_depth = Visualizers.float_colormap(torch.from_numpy(normalized_depth).unsqueeze(0), colormap=args.colormap)
+    colored_depth = (colored_depth.permute(1, 2, 0) * 255).to(torch.uint8).numpy()
+    return colored_depth
 
-        output_filename = os.path.join(args.output, "{}.npy".format(image_name))
-        os.makedirs(os.path.dirname(output_filename), exist_ok=True)
-        np.save(output_filename, normalized_depth)
 
-        if args.preview is True:
-            cv2.imwrite(os.path.join(args.output, "{}.png".format(image_name)), (normalized_depth * 255)[..., np.newaxis].astype(np.uint8))
+ndarray_saver = AsyncNDArraySaver()
+image_reader = AsyncImageReader(image_list=images)
+image_saver = AsyncImageSaver(is_rgb=True)
+try:
+    with torch.no_grad(), tqdm(range(len(images))) as t:
+        for _ in t:
+            image_path, raw_image = image_reader.get()
+            image_name = image_path[len(args.image_dir):].lstrip("/")
+
+            depth = depth_anything.infer_image(raw_image, args.input_size)
+            normalized_depth = (depth - depth.min()) / (depth.max() - depth.min())
+
+            output_filename = os.path.join(args.output, "{}.npy".format(image_name))
+            ndarray_saver.save(normalized_depth, output_filename)
+
+            if args.preview is True:
+                image_saver.save(normalized_depth, os.path.join(args.output, "{}.png".format(image_name)), processor=apply_color_map)
+finally:
+    ndarray_saver.stop()
+    image_reader.stop()
+    image_saver.stop()

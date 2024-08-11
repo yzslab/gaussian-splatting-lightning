@@ -4,6 +4,7 @@ import threading
 import concurrent.futures
 from concurrent.futures.thread import ThreadPoolExecutor
 import torch
+import numpy as np
 import cv2
 
 
@@ -35,6 +36,33 @@ class AsyncTensorSaver:
         os.rename(path + ".tmp", path)
 
 
+class AsyncNDArraySaver:
+    def __init__(self, maxsize: int = 16):
+        self.queue = queue.Queue(maxsize=maxsize)
+        self.thread = threading.Thread(target=self._save_ndarray_from_queue)
+        self.thread.start()
+
+    def _save_ndarray_from_queue(self):
+        while True:
+            t = self.queue.get()
+            if t is None:
+                break
+            ndarray, path = t
+            self._sync_save_ndarray_to_file(ndarray, path)
+
+    def save(self, ndarray, path):
+        self.queue.put((ndarray, path))
+
+    def stop(self):
+        self.queue.put(None)
+        self.thread.join()
+
+    @staticmethod
+    def _sync_save_ndarray_to_file(ndarray, path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        np.save(path, ndarray)
+
+
 class AsyncImageSaver:
     def __init__(self, maxsize=16, is_rgb: bool = False):
         self.queue = queue.Queue(maxsize=maxsize)
@@ -43,23 +71,23 @@ class AsyncImageSaver:
 
         self.is_rgb = is_rgb
 
-    def save(self, image, path):
-        self.queue.put((image, path))
+    def save(self, image, path, processor=None):
+        self.queue.put((image, path, processor))
 
     def _save_image_from_queue(self):
         while True:
             i = self.queue.get()
             if i is None:
                 break
-            image, path = i
-            self._sync_save_image(image, path, self.is_rgb)
+            image, path, func = i
+            self._sync_save_image(image, path, func, self.is_rgb)
 
     def stop(self):
         self.queue.put(None)
         self.thread.join()
 
     @staticmethod
-    def _sync_save_image(image, path, is_rgb):
+    def _sync_save_image(image, path, func, is_rgb):
         dot_index = path.rfind(".")
         ext = path[dot_index:]
 
@@ -67,6 +95,8 @@ class AsyncImageSaver:
 
         os.makedirs(os.path.dirname(tmp_path), exist_ok=True)
 
+        if func is not None:
+            image = func(image)
         if image.shape[-1] == 3 and is_rgb is True:
             image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         cv2.imwrite(tmp_path, image)
