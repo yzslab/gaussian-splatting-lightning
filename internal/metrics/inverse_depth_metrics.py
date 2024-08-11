@@ -37,7 +37,7 @@ class HasInverseDepthMetricsModule(VanillaMetricsImpl):
         if self.config.depth_loss_type == "l1":
             self._get_inverse_depth_loss = self._depth_l1_loss
         elif self.config.depth_loss_type == "l1+ssim":
-            self.ssim = StructuralSimilarityIndexMeasure()
+            self.depth_ssim = StructuralSimilarityIndexMeasure()
             self._get_inverse_depth_loss = self._depth_l1_and_ssim_loss
         elif self.config.depth_loss_type == "l2":
             self._get_inverse_depth_loss = self._depth_l2_loss
@@ -51,7 +51,7 @@ class HasInverseDepthMetricsModule(VanillaMetricsImpl):
 
     def _depth_l1_and_ssim_loss(self, a, b):
         l1_loss = self._depth_l1_loss(a, b)
-        ssim_metric = self.ssim(a[None, None, ...], b[None, None, ...])
+        ssim_metric = self.depth_ssim(a[None, None, ...], b[None, None, ...])
 
         return (1 - self.config.depth_loss_ssim_weight) * l1_loss + self.config.depth_loss_ssim_weight * (1 - ssim_metric)
 
