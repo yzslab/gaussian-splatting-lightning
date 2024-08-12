@@ -24,6 +24,8 @@ class HasInverseDepthMetrics(VanillaMetrics):
 
     depth_normalized: bool = False
 
+    depth_output_key: str = "inverse_depth"
+
     def instantiate(self, *args, **kwargs) -> "HasInverseDepthMetricsModule":
         return HasInverseDepthMetricsModule(self)
 
@@ -69,7 +71,7 @@ class HasInverseDepthMetricsModule(VanillaMetricsImpl):
         if gt_inverse_depth is None:
             return torch.tensor(0., device=camera.device)
 
-        predicted_inverse_depth = outputs["inverse_depth"].squeeze(0)
+        predicted_inverse_depth = outputs[self.config.depth_output_key].squeeze(0)
         if self.config.depth_normalized:
             with torch.no_grad():
                 max_depth = predicted_inverse_depth.max()

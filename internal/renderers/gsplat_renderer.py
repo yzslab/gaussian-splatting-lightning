@@ -16,6 +16,8 @@ class GSPlatRenderer(Renderer):
     _EXP_DEPTH_REQUIRED = 1 << 4
     _EXP_DEPTH_INVERTED_REQUIRED = 1 << 5
     _INVERSE_DEPTH_REQUIRED = 1 << 6
+    _HARD_DEPTH_REQUIRED = 1 << 7
+    _HARD_INVERSE_DEPTH_REQUIRED = 1 << 8
 
     RENDER_TYPE_BITS = {
         "rgb": _RGB_REQUIRED,
@@ -25,6 +27,8 @@ class GSPlatRenderer(Renderer):
         "exp_depth": _ACC_DEPTH_REQUIRED | _EXP_DEPTH_REQUIRED,
         "exp_depth_inverted": _ACC_DEPTH_REQUIRED | _EXP_DEPTH_REQUIRED | _EXP_DEPTH_INVERTED_REQUIRED,
         "inverse_depth": _INVERSE_DEPTH_REQUIRED,
+        "hard_depth": _HARD_DEPTH_REQUIRED,
+        "hard_inverse_depth": _HARD_INVERSE_DEPTH_REQUIRED,
     }
 
     def __init__(self, block_size: int = DEFAULT_BLOCK_SIZE, anti_aliased: bool = DEFAULT_ANTI_ALIASED_STATUS) -> None:
@@ -136,6 +140,43 @@ class GSPlatRenderer(Renderer):
             inverse_depth = 1. / (depths.clamp_min(0.) + 1e-8).unsqueeze(-1)
             inverse_depth_im = rasterize(inverse_depth, torch.zeros((1,), dtype=torch.float, device=bg_color.device)).permute(2, 0, 1)
 
+        # hard depth
+        hard_depth_im = None
+        if self.is_type_required(render_type_bits, self._HARD_DEPTH_REQUIRED):
+            hard_depth_im = rasterize_gaussians(
+                xys,
+                depths,
+                radii,
+                conics,
+                num_tiles_hit,
+                depths.unsqueeze(-1),
+                opacities + (1 - opacities.detach()),
+                img_height=img_height,
+                img_width=img_width,
+                block_width=self.block_size,
+                background=torch.zeros((1,), dtype=torch.float, device=bg_color.device),
+                return_alpha=False,
+            ).permute(2, 0, 1)
+
+        # hard inverse depth
+        hard_inverse_depth_im = None
+        if self.is_type_required(render_type_bits, self._HARD_INVERSE_DEPTH_REQUIRED):
+            inverse_depth = 1. / (depths.clamp_min(0.) + 1e-8).unsqueeze(-1)
+            hard_inverse_depth_im = rasterize_gaussians(
+                xys,
+                depths,
+                radii,
+                conics,
+                num_tiles_hit,
+                inverse_depth,
+                opacities + (1 - opacities.detach()),  # aiming to reduce the opacities of artifacts
+                img_height=img_height,
+                img_width=img_width,
+                block_width=self.block_size,
+                background=torch.zeros((1,), dtype=torch.float, device=bg_color.device),
+                return_alpha=False,
+            ).permute(2, 0, 1)
+
         return {
             "render": rgb,
             "alpha": alpha,
@@ -144,6 +185,8 @@ class GSPlatRenderer(Renderer):
             "exp_depth": exp_depth_im,
             "exp_depth_inverted": exp_depth_inverted_im,
             "inverse_depth": inverse_depth_im,
+            "hard_depth": hard_depth_im,
+            "hard_inverse_depth": hard_inverse_depth_im,
             "viewspace_points": xys,
             "viewspace_points_grad_scale": 0.5 * torch.tensor([[img_width, img_height]]).to(xys),
             "visibility_filter": radii > 0,
@@ -336,4 +379,6 @@ class GSPlatRenderer(Renderer):
             "exp_depth": RendererOutputInfo("exp_depth", type=RendererOutputTypes.GRAY),
             "exp_depth_inverted": RendererOutputInfo("exp_depth_inverted", type=RendererOutputTypes.GRAY),
             "inverse_depth": RendererOutputInfo("inverse_depth", type=RendererOutputTypes.GRAY),
+            "hard_depth": RendererOutputInfo("hard_depth", type=RendererOutputTypes.GRAY),
+            "hard_inverse_depth": RendererOutputInfo("hard_inverse_depth", type=RendererOutputTypes.GRAY),
         }
