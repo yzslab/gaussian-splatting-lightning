@@ -121,10 +121,10 @@ class GSplatAppearanceEmbeddingRendererModule(Renderer):
                 self.model_config.n_appearances = n_appearances
 
             self._setup_model()
+            print(self.model)
 
     def _setup_model(self, device=None):
         self.model = Model(self.model_config)
-        print(self.model)
         self.renderer = GSPlatRenderer()
 
         if device is not None:
