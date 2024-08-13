@@ -46,7 +46,7 @@ def to_command_args(max_steps: int, scale_params):
     ]
 
     for i, v in scale_params.items():
-        args.append("--{} {}".format(i, v))
+        args += ["--{}".format(i), "{}".format(v)]
 
     return args
 

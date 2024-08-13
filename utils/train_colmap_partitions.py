@@ -6,14 +6,17 @@ from tqdm.auto import tqdm
 from auto_hyper_parameter import auto_hyper_parameter, to_command_args
 
 parser = argparse.ArgumentParser()
-parser.add_argument("path")
+parser.add_argument("path", help="The directory where the partition data placed, "
+                                 "e.g.: `data/LargeScene/colmap/dense_max_2048/0/partitions-threshold_0.2`")
 parser.add_argument("--config", "-c", type=str, required=True)
 parser.add_argument("--project", "-p", type=str, required=True)
 parser.add_argument("--parts", "-b", type=str, nargs="*", default=[])
 parser.add_argument("--dry-run", action="store_true", default=False)
 parser.add_argument("--total-tasks", type=int, default=1)
 parser.add_argument("--current-task-id", type=int, default=1, help="Start from 1")
-args = parser.parse_args()
+args, extra_training_args = parser.parse_known_args()
+
+args.path = args.path.rstrip("/")
 
 assert args.total_tasks > 0
 assert args.current_task_id > 0 and args.current_task_id <= args.total_tasks
@@ -44,11 +47,12 @@ with tqdm(image_lists) as t:
 
             training_args = [
                                 "python", "main.py", "fit",
+                                "--data.parser", "Colmap",
                                 "--config", f"configs/{args.config}.yaml",
                                 "--data.path", os.path.dirname(args.path),
-                                "--data.params.colmap.appearance_groups", "appearance_image_dedicated",
-                                "--data.params.colmap.image_list", image_list_path,
-                                "--data.params.colmap.eval_step", "64",
+                                "--data.parser.appearance_groups", "appearance_image_dedicated",
+                                "--data.parser.image_list", image_list_path,
+                                "--data.parser.eval_step", "64",
                                 "--logger", "wandb",
                                 "--output", os.path.join("outputs", args.project),
                                 "--project", args.project,
@@ -57,6 +61,8 @@ with tqdm(image_lists) as t:
                                 "--model.renderer.init_args.optimization.max_steps",
                                 str(max_steps),
                             ]
+            if len(extra_training_args):
+                training_args += extra_training_args
             if args.dry_run is False:
                 subprocess.run(training_args)
             else:
