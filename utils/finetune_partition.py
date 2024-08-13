@@ -11,7 +11,8 @@ from auto_hyper_parameter import auto_hyper_parameter, to_command_args
 
 parser = argparse.ArgumentParser()
 parser.add_argument("partition_path")
-parser.add_argument("--model_path", "-m", type=str, required=True)
+parser.add_argument("--model_path", "-m", type=str, required=True,
+                    help="The path of the directory containing all the partitions' training outputs")
 parser.add_argument("--project", "-p", type=str, required=True)
 parser.add_argument("--epoch", "-e", type=int, default=30)
 parser.add_argument("--exclude-parts", nargs="*", type=str, default=[], action="extend")
@@ -19,7 +20,9 @@ parser.add_argument("--parts", nargs="*", type=str, default=[], action="extend")
 parser.add_argument("--dry-run", action="store_true", default=False)
 parser.add_argument("--total-tasks", type=int, default=1)
 parser.add_argument("--current-task-id", type=int, default=1, help="Start from 1")
-args = parser.parse_args()
+args, extra_training_args = parser.parse_known_args()
+
+args.partition_path = args.partition_path.rstrip("/")
 
 with open(os.path.join(args.partition_path, "image_lists.json"), "r") as f:
     image_lists = json.load(f)
@@ -67,6 +70,9 @@ with tqdm(image_lists) as t:
                             # "--model.renderer.init_args.optimization.embedding_lr_init", str(0.),
                             # "--model.renderer.init_args.optimization.lr_init", str(0.),
                         ]
+
+        if len(extra_training_args) != 0:
+            training_args += extra_training_args
 
         try:
             if args.dry_run is False:
