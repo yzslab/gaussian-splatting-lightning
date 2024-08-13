@@ -210,9 +210,22 @@ class GSplatAppearanceEmbeddingRendererModule(Renderer):
                 anti_aliased=False,  # already applied AA above
             )
 
+        hard_inverse_depth_im = None
+        if "hard_inverse_depth" in render_types:
+            inverse_depth = 1. / (depths.clamp_min(0.) + 1e-8).unsqueeze(-1)
+            hard_inverse_depth_im = self.renderer.rasterize_simplified(
+                project_results=projection_results,
+                viewpoint_camera=viewpoint_camera,
+                colors=inverse_depth,
+                bg_color=torch.zeros((1,), dtype=torch.float, device=bg_color.device),
+                opacities=opacities + (1 - opacities.detach()),
+                anti_aliased=False,  # already applied AA above
+            )
+
         return {
             "render": rgb,
             "inverse_depth": inverse_depth_im,
+            "hard_inverse_depth": hard_inverse_depth_im,
             "viewspace_points": xys,
             "viewspace_points_grad_scale": 0.5 * torch.tensor([[viewpoint_camera.width, viewpoint_camera.height]]).to(xys),
             "visibility_filter": is_gaussian_visible,
@@ -260,4 +273,5 @@ class GSplatAppearanceEmbeddingRendererModule(Renderer):
         return {
             "rgb": RendererOutputInfo("render"),
             "inverse_depth": RendererOutputInfo("inverse_depth", type=RendererOutputTypes.GRAY),
+            "hard_inverse_depth": RendererOutputInfo("hard_inverse_depth", type=RendererOutputTypes.GRAY),
         }
