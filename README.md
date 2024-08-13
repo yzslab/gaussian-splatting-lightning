@@ -314,7 +314,7 @@ python main.py fit \
 
 There is no single script to finish the whole pipeline. Please refer to below contents about how to reconstruct a large scale scene.
 * Partitioning
-  * MatrixCity: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/matrix_city_aerial_split.ipynb">notebooks/matrix_city_aerial_split.ipynb</a> (Refer to <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/internal/dataparsers/MatrixCity.md">MatrixCity.md</a> about preparing MatrixCity dataset)
+  * MatrixCity: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/matrix_city_aerial_split.ipynb">notebooks/matrix_city_aerial_split.ipynb</a> (Refer to <a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/configs/matrixcity/README.md">MatrixCity.md</a> about preparing MatrixCity dataset)
   * Colmap: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/colmap_aerial_split.ipynb">notebooks/colmap_aerial_split.ipynb</a>
 * Training
   * MatrixCity: Included in its partitioning notebook
