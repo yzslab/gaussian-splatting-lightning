@@ -573,7 +573,7 @@ python viewer.py outputs/TRAINED_MODEL_DIR/checkpoints/MERGED_CHECKPOINT_FILE
   * Other available configs
     * [gsplat-mlp-with_ssim.yaml](https://github.com/yzslab/gaussian-splatting-lightning/blob/main/configs/spot_less_splats/gsplat-mlp-with_ssim.yaml): with SSIM metric
     * [gsplat-mlp-opacity_reg_0.01.yaml](https://github.com/yzslab/gaussian-splatting-lightning/blob/main/configs/spot_less_splats/gsplat-mlp-opacity_reg_0.01.yaml): with opacity regularization, aiming to reduce floaters/artifacts
-    * [view_independent-phototourism-sls-opacity_reg_0.01.yaml](https://github.com/yzslab/gaussian-splatting-lightning/blob/main/configs/appearance_embedding_renderer/view_independent-phototourism-sls-opacity_reg_0.01.yaml): With [new appearance model (2.12.)](#212-appearance-model) (not the one mentioned in the SLS paper)
+    * [view_independent-phototourism-sls-opacity_reg_0.01.yaml](https://github.com/yzslab/gaussian-splatting-lightning/blob/main/configs/appearance_embedding_renderer/view_independent-phototourism-sls-opacity_reg_0.01.yaml): with [new appearance model (2.12.)](#212-appearance-model) (not the one mentioned in the SLS paper)
     
   Change the value of `--data.parser.split_mode` to `keyword` if you are using the <a href="https://storage.googleapis.com/jax3d-public/projects/robustnerf/robustnerf.tar.gz">RobustNeRF dataset</a>.
 
