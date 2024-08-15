@@ -6,6 +6,15 @@ from torch import nn
 from internal.configs.instantiate_config import InstantiatableConfig
 
 
+class FrozenParameterDict(nn.ParameterDict):
+    def __setitem__(self, key: str, value: Any) -> None:
+        if not isinstance(value, nn.Parameter):
+            value = nn.Parameter(value, requires_grad=False)
+        else:
+            value.requires_grad_(False)
+        super().__setitem__(key, value)
+
+
 class GaussianModel(nn.Module, ABC):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -71,6 +80,9 @@ class GaussianModel(nn.Module, ABC):
     @property
     def n_gaussians(self) -> int:
         return self.get_n_gaussians()
+
+    def freeze(self):
+        self.gaussians = FrozenParameterDict(self.gaussians)
 
     @abstractmethod
     def setup_from_pcd(self, xyz, rgb, *args, **kwargs):
