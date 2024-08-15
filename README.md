@@ -570,6 +570,11 @@ python viewer.py outputs/TRAINED_MODEL_DIR/checkpoints/MERGED_CHECKPOINT_FILE
         --data.path YOUR_DATASET_PATH \
         -n EXPERIMENT_NAME
     ```
+  * Other available configs
+    * [gsplat-mlp-with_ssim.yaml](https://github.com/yzslab/gaussian-splatting-lightning/blob/main/configs/spot_less_splats/gsplat-mlp-with_ssim.yaml): with SSIM metric
+    * [gsplat-mlp-opacity_reg_0.01.yaml](https://github.com/yzslab/gaussian-splatting-lightning/blob/main/configs/spot_less_splats/gsplat-mlp-opacity_reg_0.01.yaml): with opacity regularization, aiming to reduce floaters/artifacts
+    * [view_independent-phototourism-sls-opacity_reg_0.01.yaml](https://github.com/yzslab/gaussian-splatting-lightning/blob/main/configs/appearance_embedding_renderer/view_independent-phototourism-sls-opacity_reg_0.01.yaml): With [new appearance model (2.12.)](#212-appearance-model) (not the one mentioned in the SLS paper)
+    
   Change the value of `--data.parser.split_mode` to `keyword` if you are using the <a href="https://storage.googleapis.com/jax3d-public/projects/robustnerf/robustnerf.tar.gz">RobustNeRF dataset</a>.
 
 * Render SLS predicted masks
@@ -624,6 +629,17 @@ This is implemented with reference to <a href="https://repo-sam.inria.fr/fungrap
       --data.path data/Family \
       -n EXPERIMENT_NAME
   ```
+  
+  Other available configs:
+    * [estimated_inverse_depth-l1_ssim.yaml](https://github.com/yzslab/gaussian-splatting-lightning/blob/main/configs/depth_regularization/estimated_inverse_depth-hard_depth-l1_ssim.yaml): with SSIM as an extra depth metric
+    * [estimated_inverse_depth-l2.yaml](https://github.com/yzslab/gaussian-splatting-lightning/blob/main/configs/depth_regularization/estimated_inverse_depth-l2.yaml): L2 depth loss
+    * [estimated_inverse_depth-hard_depth-l1.yaml](https://github.com/yzslab/gaussian-splatting-lightning/blob/main/configs/depth_regularization/estimated_inverse_depth-hard_depth-l1.yaml): better at removing floaters/artifacts
+    * [estimated_inverse_depth-hard_depth-l1_ssim.yaml](https://github.com/yzslab/gaussian-splatting-lightning/blob/main/configs/depth_regularization/estimated_inverse_depth-hard_depth-l1_ssim.yaml)
+    * with [new appearance model (2.12.)](#212-appearance-model)
+      * [view_dependent-estimated_depth_reg.yaml](https://github.com/yzslab/gaussian-splatting-lightning/blob/main/configs/appearance_embedding_renderer/view_dependent-estimated_depth_reg.yaml)
+      * [view_dependent-estimated_depth_reg-hard_depth.yaml](https://github.com/yzslab/gaussian-splatting-lightning/blob/main/configs/appearance_embedding_renderer/view_dependent-estimated_depth_reg-hard_depth.yaml)
+    
+    In my experiments, simply L1 is slightly better than L2 or the one with SSIM.
 
 ## 3. Evaluation
 
