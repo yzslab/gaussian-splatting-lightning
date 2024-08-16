@@ -17,7 +17,27 @@ class FreezableParameterDictTestCase(unittest.TestCase):
             self.assertTrue(isinstance(i, torch.nn.Parameter))
             self.assertTrue(i.requires_grad)
 
-        # untouched
+        def test_replace_existing_tensor(dict_to_test):
+            KEY = "replace_test"
+            self.assertEqual(dict_to_test.get(KEY, None), None)
+
+            dict_to_test[KEY] = torch.rand((16, 16))
+
+            # inverse its `requires_grad` state
+            previous_state = dict_to_test[KEY].requires_grad
+            dict_to_test[KEY].requires_grad_(not previous_state)
+            new_state = dict_to_test[KEY].requires_grad
+            self.assertNotEqual(previous_state, new_state)
+
+            # the new one should retain the replaced one's state
+            new_one = torch.rand((16, 16)).requires_grad_(previous_state)
+            dict_to_test[KEY] = new_one
+            self.assertTrue(torch.all(torch.eq(new_one, dict_to_test[KEY])))
+            self.assertEqual(dict_to_test[KEY].requires_grad, new_state)
+
+            del dict_to_test[KEY]
+
+        # new untouched
         freezable_parameter_dict = FreezableParameterDict(parameter_dict)
         self.assertEqual(freezable_parameter_dict.keys(), parameter_dict.keys())
         for i in freezable_parameter_dict.values():
@@ -27,7 +47,9 @@ class FreezableParameterDictTestCase(unittest.TestCase):
         freezable_parameter_dict["optimizable"] = torch.rand((3, 3)).requires_grad_(True)
         self.assertTrue(freezable_parameter_dict["optimizable"].requires_grad)
 
-        # freeze by default
+        test_replace_existing_tensor(freezable_parameter_dict)
+
+        # new freeze by default
         frozen_parameter_dict = FreezableParameterDict(freezable_parameter_dict, new_requires_grad=False)
         self.assertEqual(frozen_parameter_dict.keys(), freezable_parameter_dict.keys())
         for i in frozen_parameter_dict.values():
@@ -35,13 +57,17 @@ class FreezableParameterDictTestCase(unittest.TestCase):
         frozen_parameter_dict["freeze_new_tensor"] = torch.rand((3, 3)).requires_grad_(True)
         self.assertFalse(frozen_parameter_dict["freeze_new_tensor"].requires_grad)
 
-        # optimizable by default (same as `nn.ParameterDict`)
+        test_replace_existing_tensor(frozen_parameter_dict)
+
+        # new optimizable by default (same as `nn.ParameterDict`)
         optimizable_parameter_dict = FreezableParameterDict(frozen_parameter_dict, new_requires_grad=True)
         self.assertEqual(optimizable_parameter_dict.keys(), frozen_parameter_dict.keys())
         for i in optimizable_parameter_dict.values():
             self.assertTrue(i.requires_grad)
         optimizable_parameter_dict["optimizable_new"] = torch.rand((3, 3))
         self.assertTrue(optimizable_parameter_dict["optimizable_new"].requires_grad)
+
+        test_replace_existing_tensor(optimizable_parameter_dict)
 
 
 if __name__ == '__main__':
