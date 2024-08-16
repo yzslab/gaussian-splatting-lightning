@@ -34,6 +34,7 @@ def initializer_viewer_renderer(
     load_device = torch.device("cuda") if len(model_paths) == 1 or enable_transform is False else torch.device("cpu")
     for model_path in model_paths:
         model, renderer = GaussianModelLoader.search_and_load(model_path, load_device)
+        model.freeze()
         model_list.append(model)
 
     if len(model_paths) > 1:

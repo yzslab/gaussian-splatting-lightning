@@ -68,6 +68,7 @@ class SegAnySplatting(lightning.LightningModule):
         sh_degree = self.hparams["sh_degree"]
 
         gaussian_model, _ = GaussianModelLoader.search_and_load(initialize_from, self.device)
+        gaussian_model.freeze()
         self.models.gaussian = gaussian_model
 
         self.setup_parameters(n_gaussians=gaussian_model.get_xyz.shape[0])

@@ -185,6 +185,8 @@ class Viewer:
                     self.available_appearance_options = json.load(f)
             # self.available_appearance_options["@Disabled"] = None
 
+            model.freeze()
+
             if self.show_edit_panel is True or enable_transform is True:
                 model = MultipleGaussianModelEditor([model], device=self.device)
         else:
@@ -200,6 +202,9 @@ class Viewer:
                 model_list.append(load_results[0])
 
             self.loaded_model_count += len(addition_models)
+
+            for i in model_list:
+                i.freeze()
 
             model = MultipleGaussianModelEditor(model_list, device=self.device)
 
