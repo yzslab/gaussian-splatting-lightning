@@ -9,6 +9,7 @@ from PIL import Image
 from tqdm import tqdm
 from dataclasses import dataclass
 from internal.cameras.cameras import Cameras
+from internal.utils.depth_map_utils import depth_map_to_colored_points, read_depth_as_tensor
 from .dataparser import ImageSet, PointCloud, DataParserConfig, DataParser, DataParserOutputs
 
 
@@ -153,7 +154,7 @@ class MatrixCityDataParser(DataParser):
             camera_type=torch.zeros_like(width),
         )
         if build_point_cloud is True:
-            import open3d as o3d
+            from internal.utils.graphics_utils import store_ply, fetch_ply_without_rgb_normalization
             import hashlib
             import dataclasses
 
@@ -170,95 +171,79 @@ class MatrixCityDataParser(DataParser):
                 "{}.ply".format(hashlib.sha1(params_json.encode("utf-8")).hexdigest()),
             )
             if os.path.exists(ply_file_path):
-                final_pcd = o3d.io.read_point_cloud(ply_file_path)
+                final_pcd = fetch_ply_without_rgb_normalization(ply_file_path)
                 point_cloud = PointCloud(
-                    np.asarray(final_pcd.points),
-                    (np.asarray(final_pcd.colors) * 255).astype(np.uint8),
+                    final_pcd.points,
+                    final_pcd.colors,
                 )
             else:
-                c2w = torch.concat(c2w_tensor_list, dim=0)
+                c2w = torch.concat(c2w_tensor_list, dim=0).to(dtype=torch.float)
+                torch.inverse(torch.ones((1, 1), device=c2w.device))  # https://github.com/pytorch/pytorch/issues/90613#issuecomment-1817307008
 
                 os.environ['OPENCV_IO_ENABLE_OPENEXR'] = '1'
                 import cv2
 
                 points_per_image = math.ceil(self.params.max_points / (len(image_paths) // self.params.depth_read_step))
-
-                def read_depth(path: str, scale: float):
-                    return cv2.imread(
-                        path,
-                        cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH,
-                    )[..., 0] * scale
+                final_depth_scale = self.params.scale * self.params.depth_scale
 
                 def read_rgb(path: str):
                     image = cv2.imread(path)
                     return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
+                def build_single_image_3d_points(frame_idx):
+                    fx = cameras.fx[frame_idx]
+                    fy = cameras.fy[frame_idx]
+                    cx = cameras.cx[frame_idx]
+                    cy = cameras.cy[frame_idx]
+
+                    # read rgb and depth
+                    rgb = read_rgb(image_paths[frame_idx])
+                    depth = read_depth_as_tensor(depth_paths[frame_idx]).to(dtype=c2w.dtype, device=c2w.device) * final_depth_scale
+
+                    valid_pixel_mask = depth < self.params.max_depth * final_depth_scale
+
+                    points_3d_in_world, rgb = depth_map_to_colored_points(
+                        depth_map=depth,
+                        rgb=rgb,
+                        fx=fx,
+                        fy=fy,
+                        cx=cx,
+                        cy=cy,
+                        c2w=c2w[frame_idx],
+                        valid_pixel_mask=valid_pixel_mask,
+                    )
+
+                    # random sample
+                    n_points = points_3d_in_world.shape[0]
+                    if points_per_image < n_points:
+                        sample_indices = torch.randperm(n_points)[:points_per_image]
+                        points_3d_in_world = points_3d_in_world[sample_indices]
+                        rgb = rgb[sample_indices.cpu().numpy()]
+
+                    return points_3d_in_world.cpu(), rgb
+
                 xyz_list = []
                 rgb_list = []
-                with tqdm(range(len(image_paths) // self.params.depth_read_step), desc="Building point cloud") as t:
-                    for frame_idx in t:
-                        frame_idx = frame_idx * self.params.depth_read_step
-                        t.set_postfix_str(depth_paths[frame_idx][len(self.path):].lstrip("/"))
-                        # build intrinsics matrix
-                        fx = cameras.fx[frame_idx]
-                        fy = cameras.fy[frame_idx]
-                        cx = cameras.cx[frame_idx]
-                        cy = cameras.cy[frame_idx]
-                        K = np.eye(3)
-                        K[0, 2] = cx
-                        K[1, 2] = cy
-                        K[0, 0] = fx
-                        K[1, 1] = fy
 
-                        # build pixel coordination
-                        width = int(cameras.width[frame_idx])
-                        height = int(cameras.height[frame_idx])
-                        image_pixel_count = width * height
-                        u_coord = np.tile(np.arange(width), (height, 1)).reshape(image_pixel_count)
-                        v_coord = np.tile(np.arange(height), (width, 1)).T.reshape(image_pixel_count)
-                        p2d = np.array([u_coord, v_coord, np.ones_like(u_coord)]).T
-                        homogenous_coordinate = np.matmul(p2d, np.linalg.inv(K).T)
-
-                        # read rgb and depth
-                        rgb = read_rgb(image_paths[frame_idx]).reshape((-1, 3))
-                        depth = read_depth(depth_paths[frame_idx], self.params.scale * self.params.depth_scale).reshape((-1,))
-
-                        # discard invalid depth
-                        valid_depth_indices = np.where(depth < self.params.max_depth * self.params.scale * self.params.depth_scale)
-                        rgb = rgb[valid_depth_indices]
-                        depth = depth[valid_depth_indices]
-                        homogenous_coordinate = homogenous_coordinate[valid_depth_indices]
-
-                        # random sample
-                        valid_pixel_count = rgb.shape[0]
-                        if points_per_image < valid_pixel_count:
-                            sample_indices = np.random.choice(valid_pixel_count, points_per_image, replace=False)
-                            homogenous_coordinate = homogenous_coordinate[sample_indices]
-                            rgb = rgb[sample_indices]
-                            depth = depth[sample_indices]
-
-                        # convert to world coordination
-                        points_3d_in_camera = homogenous_coordinate * depth[:, None]
-                        points_3d_in_camera[:, 1] *= -1
-                        points_3d_in_camera[:, 2] *= -1
-                        image_c2w = c2w[frame_idx].numpy()
-                        image_c2w[:3, 1:3] *= -1
-                        points_3d_in_world = np.matmul(points_3d_in_camera, image_c2w[:3, :3].T) + image_c2w[:3, 3]
-
-                        xyz_list.append(points_3d_in_world)
+                from concurrent.futures import ThreadPoolExecutor
+                with ThreadPoolExecutor(max_workers=8) as tpe:
+                    read_depth_frame_id_list = list(range(len(image_paths)))[::self.params.depth_read_step]
+                    for xyz, rgb in tqdm(tpe.map(
+                            build_single_image_3d_points,
+                            read_depth_frame_id_list,
+                    ), total=len(read_depth_frame_id_list)):
+                        xyz_list.append(xyz)
                         rgb_list.append(rgb)
 
                 point_cloud = PointCloud(
-                    np.concatenate(xyz_list, axis=0),
+                    torch.concat(xyz_list, dim=0).numpy(),
                     np.concatenate(rgb_list, axis=0),
                 )
 
-                final_pcd = o3d.geometry.PointCloud()
-                final_pcd.points = o3d.utility.Vector3dVector(point_cloud.xyz)
-                final_pcd.colors = o3d.utility.Vector3dVector(point_cloud.rgb / 255.)
-                o3d.io.write_point_cloud(ply_file_path, final_pcd)
+                store_ply(ply_file_path, point_cloud.xyz, point_cloud.rgb)
                 with open("{}.config.json".format(ply_file_path), "w") as f:
                     f.write(params_json)
+                print("Point cloud saved to '{}'".format(ply_file_path))
         else:
             point_cloud = None
         return ImageSet(

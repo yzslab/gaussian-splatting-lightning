@@ -1,13 +1,14 @@
+from typing import Union
 import torch
 import numpy as np
 import cv2
 
 
 def build_homogenous_coordinates(
-        fx: float,
-        fy: float,
-        cx: float,
-        cy: float,
+        fx: Union[float, torch.Tensor],
+        fy: Union[float, torch.Tensor],
+        cx: Union[float, torch.Tensor],
+        cy: Union[float, torch.Tensor],
         width: int,
         height: int,
         dtype=torch.float,
@@ -36,10 +37,10 @@ def build_homogenous_coordinates(
 
 def depth_map_to_points(
         depth_map: torch.Tensor,  # [H, W]
-        fx: float,
-        fy: float,
-        cx: float,
-        cy: float,
+        fx: Union[float, torch.Tensor],
+        fy: Union[float, torch.Tensor],
+        cx: Union[float, torch.Tensor],
+        cy: Union[float, torch.Tensor],
         c2w: torch.Tensor,  # [4, 4]
         valid_pixel_mask: torch.Tensor = None,  # [H, W]
 ):
@@ -69,10 +70,10 @@ def depth_map_to_points(
 def depth_map_to_colored_points_with_down_sample(
         depth_map: torch.Tensor,  # [H, W]
         rgb: np.ndarray,  # [H, W, 3]
-        fx: float,
-        fy: float,
-        cx: float,
-        cy: float,
+        fx: Union[float, torch.Tensor],
+        fy: Union[float, torch.Tensor],
+        cx: Union[float, torch.Tensor],
+        cy: Union[float, torch.Tensor],
         c2w: torch.Tensor,  # [4, 4]
         down_sample_factor: int = 1,
         valid_pixel_mask: torch.Tensor = None,  # [H, W]
@@ -149,6 +150,17 @@ def depth_map_to_colored_points(
         rgb = rgb[valid_pixel_mask.cpu().numpy()]
 
     return points_3d, rgb
+
+
+def read_depth(path: str) -> np.ndarray:
+    return cv2.imread(
+        path,
+        cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH,
+    )[..., 0]
+
+
+def read_depth_as_tensor(path: str) -> torch.Tensor:
+    return torch.from_numpy(read_depth(path))
 
 
 def test_build_homogenous_coordinates():

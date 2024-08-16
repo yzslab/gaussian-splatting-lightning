@@ -8,7 +8,7 @@ import random
 import numpy as np
 import torch
 import cv2
-import open3d as o3d
+from internal.utils.graphics_utils import store_ply
 from internal.utils.depth_map_utils import depth_map_to_colored_points_with_down_sample
 from tqdm import tqdm
 
@@ -190,10 +190,7 @@ def main():
         max_workers=args.max_workers,
         down_sample_factor=args.down_sample,
     )
-    final_pcd = o3d.geometry.PointCloud()
-    final_pcd.points = o3d.utility.Vector3dVector(xyz)
-    final_pcd.colors = o3d.utility.Vector3dVector(rgb / 255.)
-    o3d.io.write_point_cloud(args.output, final_pcd)
+    store_ply(args.output, xyz, rgb)
 
 
 if __name__ == "__main__":

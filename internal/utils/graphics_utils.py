@@ -22,13 +22,19 @@ class BasicPointCloud(NamedTuple):
     normals: np.array
 
 
-def fetch_ply(path):
+def fetch_ply_without_rgb_normalization(path):
     plydata = PlyData.read(path)
     vertices = plydata['vertex']
     positions = np.vstack([vertices['x'], vertices['y'], vertices['z']]).T
-    colors = np.vstack([vertices['red'], vertices['green'], vertices['blue']]).T / 255.0
+    colors = np.vstack([vertices['red'], vertices['green'], vertices['blue']]).T
     normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T
     return BasicPointCloud(points=positions, colors=colors, normals=normals)
+
+
+def fetch_ply(path):
+    pcd = fetch_ply_without_rgb_normalization(path)
+    pcd.colors /= 255.
+    return pcd
 
 
 def store_ply(path, xyz, rgb):
