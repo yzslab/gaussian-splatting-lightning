@@ -6,7 +6,7 @@ import torch
 
 from typing import Tuple
 from PIL import Image
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from dataclasses import dataclass
 from internal.cameras.cameras import Cameras
 from internal.utils.depth_map_utils import depth_map_to_colored_points, read_depth_as_tensor
@@ -38,6 +38,8 @@ class MatrixCity(DataParserConfig):
     """ Whether load depth maps into training batches. Enable this if you need depth regularization. """
 
     use_inverse_depth: bool = True
+
+    point_cloud_generation_device: str = "cpu"
 
     def instantiate(self, path: str, output_path: str, global_rank: int) -> DataParser:
         return MatrixCityDataParser(path=path, output_path=output_path, global_rank=global_rank, params=self)
@@ -160,10 +162,11 @@ class MatrixCityDataParser(DataParser):
 
             # check whether need to regenerate point cloud based on params
             params_dict = dataclasses.asdict(self.params)
-            params_dict["train"].sort()
+            params_dict["train"] = sorted(params_dict["train"])
             del params_dict["test"]  # ignore test set
             del params_dict["use_depth"]
             del params_dict["use_inverse_depth"]
+            del params_dict["point_cloud_generation_device"]
             params_json = json.dumps(params_dict, indent=4, ensure_ascii=False)
             print(params_json)
             ply_file_path = os.path.join(
@@ -177,7 +180,7 @@ class MatrixCityDataParser(DataParser):
                     final_pcd.colors,
                 )
             else:
-                c2w = torch.concat(c2w_tensor_list, dim=0).to(dtype=torch.float)
+                c2w = torch.concat(c2w_tensor_list, dim=0).to(dtype=torch.float, device=torch.device(self.params.point_cloud_generation_device))
                 torch.inverse(torch.ones((1, 1), device=c2w.device))  # https://github.com/pytorch/pytorch/issues/90613#issuecomment-1817307008
 
                 os.environ['OPENCV_IO_ENABLE_OPENEXR'] = '1'
@@ -239,6 +242,10 @@ class MatrixCityDataParser(DataParser):
                     torch.concat(xyz_list, dim=0).numpy(),
                     np.concatenate(rgb_list, axis=0),
                 )
+
+                if self.params.point_cloud_generation_device != "cpu":
+                    del c2w
+                    torch.cuda.empty_cache()
 
                 store_ply(ply_file_path, point_cloud.xyz, point_cloud.rgb)
                 with open("{}.config.json".format(ply_file_path), "w") as f:

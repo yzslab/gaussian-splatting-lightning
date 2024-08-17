@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Union, Optional
 import torch
 import numpy as np
 import cv2
@@ -69,7 +69,7 @@ def depth_map_to_points(
 
 def depth_map_to_colored_points_with_down_sample(
         depth_map: torch.Tensor,  # [H, W]
-        rgb: np.ndarray,  # [H, W, 3]
+        rgb: Optional[np.ndarray],  # [H, W, 3]
         fx: Union[float, torch.Tensor],
         fy: Union[float, torch.Tensor],
         cx: Union[float, torch.Tensor],
@@ -150,6 +150,11 @@ def depth_map_to_colored_points(
         rgb = rgb[valid_pixel_mask.cpu().numpy()]
 
     return points_3d, rgb
+
+
+def enable_exr():
+    import os
+    os.environ['OPENCV_IO_ENABLE_OPENEXR'] = '1'
 
 
 def read_depth(path: str) -> np.ndarray:
