@@ -1,3 +1,4 @@
+import add_pypath
 import argparse
 import time
 import viser
@@ -10,6 +11,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--cameras", default="cameras.json", required=True, type=str)
 parser.add_argument("--points", default=None, type=str)
 parser.add_argument("--up", nargs="+", required=False, type=float, default=None)
+parser.add_argument("--camera-scale", type=float, default=0.02)
+parser.add_argument("--point-size", type=float, default=0.002)
 args = parser.parse_args()
 
 with open(args.cameras, "r") as f:
@@ -36,14 +39,14 @@ for camera in camera_poses:
     cy = camera["height"] // 2
     fx = camera["fx"]
 
-    camera_handle = viser_server.add_camera_frustum(
+    camera_handle = viser_server.scene.add_camera_frustum(
         name="cameras/{}".format(name),
         fov=float(2 * np.arctan(cx / fx)),
-        scale=0.02,
+        scale=args.camera_scale,
         aspect=float(cx / cy),
         wxyz=R.wxyz,
         position=c2w[:3, 3],
-        color=(255, 0, 0),
+        color=camera.get("color", (255, 0, 0)),
     )
 
     up += torch.tensor(camera["rotation"])[:3, 1]
@@ -54,17 +57,17 @@ print("up vector = {}".format(up))
 up = -up / torch.linalg.norm(up)
 
 if args.points is not None:
-    import open3d as o3d
+    from internal.utils.graphics_utils import fetch_ply_without_rgb_normalization
 
-    pcd = o3d.io.read_point_cloud(args.points)
-    viser_server.add_point_cloud(
+    pcd = fetch_ply_without_rgb_normalization(args.points)
+    viser_server.scene.add_point_cloud(
         "points",
-        np.asarray(pcd.points),
-        (np.asarray(pcd.colors) * 255).astype(np.uint8),
-        point_size=0.005,
+        pcd.points,
+        pcd.colors,
+        point_size=args.point_size,
     )
 
-reset_up_button = viser_server.add_gui_button(
+reset_up_button = viser_server.gui.add_button(
     "Reset up direction",
     icon=viser.Icon.ARROW_AUTOFIT_UP,
     hint="Reset the orbit up direction.",
@@ -77,7 +80,7 @@ def _(event: viser.GuiEvent) -> None:
     event.client.camera.up_direction = vtf.SO3(event.client.camera.wxyz) @ np.array([0.0, -1.0, 0.0])
 
 
-viser_server.set_up_direction(up)
+viser_server.scene.set_up_direction(up)
 
 
 while True:

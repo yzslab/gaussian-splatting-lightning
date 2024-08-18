@@ -1,9 +1,14 @@
-import os.path
+import os
 from typing import Tuple, Callable
 import dataclasses
 from dataclasses import dataclass
+
+import matplotlib.pyplot as plt
 from tqdm.auto import tqdm
 import torch
+import numpy as np
+import matplotlib.patches as mpatches
+from matplotlib.pyplot import cm
 
 
 @dataclass
@@ -67,6 +72,218 @@ class PartitionCoordinates:
             min=xy_min,
             max=xy_max,
         )
+
+    def get_str_id(self, idx: int) -> str:
+        return Partitioning.partition_id_to_str(self.id[idx])
+
+
+@dataclass
+class PartitionableScene:
+    scene_config: SceneConfig
+
+    camera_centers: torch.Tensor
+
+    camera_center_based_bounding_box: MinMaxBoundingBox = None
+
+    scene_bounding_box: SceneBoundingBox = None
+
+    partition_coordinates: PartitionCoordinates = None
+
+    is_camera_in_partition: torch.Tensor = None  # [N_partitions, N_cameras]
+
+    camera_visibilities: torch.Tensor = None  # [N_partitions, N_cameras]
+
+    is_partitions_visible_to_cameras: torch.Tensor = None  # [N_partitions, N_cameras]
+
+    def get_bounding_box_by_camera_centers(self, enlarge: float = 0.):
+        self.camera_center_based_bounding_box = Partitioning.get_bounding_box_by_camera_centers(self.camera_centers, enlarge=enlarge)
+        return self.camera_center_based_bounding_box
+
+    def get_scene_bounding_box(self):
+        self.scene_bounding_box = Partitioning.align_bounding_box(
+            self.camera_center_based_bounding_box,
+            origin=self.scene_config.origin,
+            size=self.scene_config.partition_size,
+        )
+        return self.scene_bounding_box
+
+    def build_partition_coordinates(self):
+        self.partition_coordinates = Partitioning.build_partition_coordinates(
+            self.scene_bounding_box,
+            self.scene_config.partition_size,
+        )
+        return self.partition_coordinates
+
+    def camera_center_based_partition_assignment(self):
+        self.is_camera_in_partition = Partitioning.camera_center_based_partition_assignment(
+            partition_coordinates=self.partition_coordinates,
+            camera_centers=self.camera_centers,
+            size=self.scene_config.partition_size,
+            enlarge=self.scene_config.location_based_enlarge,
+        )
+        return self.is_camera_in_partition
+
+    def calculate_point_based_camera_visibilities(self, point_getter: Callable, device):
+        self.camera_visibilities = Partitioning.cameras_point_based_visibilities_calculation(
+            partition_coordinates=self.partition_coordinates,
+            size=self.scene_config.partition_size,
+            n_cameras=self.camera_centers.shape[0],
+            point_getter=point_getter,
+            device=device,
+        )
+        return self.camera_visibilities
+
+    def visibility_based_partition_assignment(self):
+        self.is_partitions_visible_to_cameras = Partitioning.visibility_based_partition_assignment(
+            partition_coordinates=self.partition_coordinates,
+            camera_centers=self.camera_centers,
+            size=self.scene_config.partition_size,
+            max_distance=self.scene_config.visibility_based_distance,
+            assigned_mask=self.is_camera_in_partition,
+            visibilities=self.camera_visibilities,
+            visibility_threshold=self.scene_config.visibility_threshold,
+        )
+        return self.is_partitions_visible_to_cameras
+
+    def build_output_dirname(self):
+        return "partitions-size_{}-enlarge_{}-visibility_{}_{}".format(
+            self.scene_config.partition_size,
+            self.scene_config.location_based_enlarge,
+            self.scene_config.visibility_based_distance,
+            self.scene_config.visibility_threshold,
+        )
+
+    def save(self, output_dir: str, extra_data=None):
+        return Partitioning.save_partitions(
+            output_dir,
+            scene_config=self.scene_config,
+            scene_bounding_box=self.scene_bounding_box,
+            partition_coordinates=self.partition_coordinates,
+            visibilities=self.camera_visibilities,
+            location_based_assignments=self.is_camera_in_partition,
+            visibility_based_assignments=self.is_partitions_visible_to_cameras,
+            extra_data=extra_data,
+        )
+
+    def set_plot_ax_limit(self, ax, plot_enlarge: float = 0.25):
+        ax.set_xlim([
+            self.scene_bounding_box.bounding_box.min[0] - plot_enlarge * self.scene_config.partition_size,
+            self.scene_bounding_box.bounding_box.max[0] + plot_enlarge * self.scene_config.partition_size,
+        ])
+        ax.set_ylim([
+            self.scene_bounding_box.bounding_box.min[1] - plot_enlarge * self.scene_config.partition_size,
+            self.scene_bounding_box.bounding_box.max[1] + plot_enlarge * self.scene_config.partition_size,
+        ])
+
+    def plot_scene_bounding_box(self, ax):
+        ax.set_aspect('equal', adjustable='box')
+
+        ax.scatter(self.camera_centers[:, 0], self.camera_centers[:, 1], s=0.2)
+        ax.add_artist(mpatches.Rectangle(
+            self.scene_bounding_box.bounding_box.min.tolist(),
+            self.scene_bounding_box.bounding_box.max[0] - self.scene_bounding_box.bounding_box.min[0],
+            self.scene_bounding_box.bounding_box.max[1] - self.scene_bounding_box.bounding_box.min[1],
+            fill=False,
+            color="green",
+        ))
+        self.set_plot_ax_limit(ax)
+
+    def plot_partitions(self, ax=None, annotate_font_size: int = 5, annotate_position: float = 0.125):
+        self.set_plot_ax_limit(ax)
+        ax.set_aspect('equal', adjustable='box')
+
+        colors = list(iter(cm.rainbow(np.linspace(0, 1, len(self.partition_coordinates)))))
+        # random.shuffle(colors)
+        ax.scatter(self.camera_centers[:, 0], self.camera_centers[:, 1], s=0.2)
+
+        color_iter = iter(colors)
+        idx = 0
+        for partition_id, partition_xy in self.partition_coordinates:
+            ax.add_artist(mpatches.Rectangle(
+                (partition_xy[0], partition_xy[1]),
+                self.scene_config.partition_size,
+                self.scene_config.partition_size,
+                fill=False,
+                color=next(color_iter),
+            ))
+            ax.annotate(
+                "#{} ({}, {})".format(idx, partition_id[0], partition_id[1]),
+                xy=(
+                    partition_xy[0] + annotate_position * self.scene_config.partition_size,
+                    partition_xy[1] + annotate_position * self.scene_config.partition_size,
+                ),
+                fontsize=annotate_font_size,
+            )
+            idx += 1
+
+    def plot_partition_assigned_cameras(self, ax, partition_idx: int, point_xyzs: torch.Tensor = None, point_rgbs: torch.Tensor = None, point_size: float = 0.1, point_sparsify: int = 8):
+        location_base_assignment_bounding_boxes = self.partition_coordinates.get_bounding_boxes(
+            size=self.scene_config.partition_size,
+            enlarge=self.scene_config.location_based_enlarge,
+        )
+        location_base_assignment_bounding_box_sizes = location_base_assignment_bounding_boxes.max - location_base_assignment_bounding_boxes.min
+
+        visibility_base_assignment_bounding_boxes = self.partition_coordinates.get_bounding_boxes(
+            size=self.scene_config.partition_size,
+            enlarge=self.scene_config.visibility_based_distance,
+        )
+        visibility_base_assignment_bounding_box_size = visibility_base_assignment_bounding_boxes.max - visibility_base_assignment_bounding_boxes.min
+
+        location_based_assignment = self.is_camera_in_partition[partition_idx]
+        visibility_based_assignment = self.is_partitions_visible_to_cameras[partition_idx]
+        location_based_assignment.nonzero().squeeze(-1), visibility_based_assignment.nonzero().squeeze(-1)
+
+        ax.set_aspect('equal', adjustable='box')
+        if point_xyzs is not None:
+            ax.scatter(point_xyzs[::point_sparsify, 0], point_xyzs[::point_sparsify, 1], c=point_rgbs[::point_sparsify] / 255., s=point_size)
+
+        # plot original partition bounding box
+        ax.add_artist(mpatches.Rectangle(
+            self.partition_coordinates.xy[partition_idx],
+            self.scene_config.partition_size,
+            self.scene_config.partition_size,
+            fill=False,
+            color="green",
+        ))
+
+        # plot location based assignment bounding box
+        ax.add_artist(mpatches.Rectangle(
+            location_base_assignment_bounding_boxes.min[partition_idx],
+            location_base_assignment_bounding_box_sizes[partition_idx, 0].item(),
+            location_base_assignment_bounding_box_sizes[partition_idx, 1].item(),
+            fill=False,
+            color="purple",
+        ))
+
+        # plot visibility based assignment bounding box
+        ax.add_artist(mpatches.Rectangle(
+            visibility_base_assignment_bounding_boxes.min[partition_idx],
+            visibility_base_assignment_bounding_box_size[partition_idx, 0].item(),
+            visibility_base_assignment_bounding_box_size[partition_idx, 1].item(),
+            fill=False,
+            color="yellow",
+        ))
+
+        # plot assigned cameras
+        ax.scatter(self.camera_centers[location_based_assignment.numpy(), 0],
+                   self.camera_centers[location_based_assignment.numpy(), 1], s=0.2, c="blue")
+        ax.scatter(self.camera_centers[visibility_based_assignment.numpy(), 0],
+                   self.camera_centers[visibility_based_assignment.numpy(), 1], s=0.2, c="red")
+
+        ax.annotate(
+            text="#{} ({}, {})".format(partition_idx, self.partition_coordinates.id[partition_idx, 0].item(),
+                                   self.partition_coordinates.id[partition_idx, 1].item()),
+            xy=self.partition_coordinates.xy[partition_idx] + 0.05 * self.scene_config.partition_size,
+            color="orange",
+        )
+
+        self.set_plot_ax_limit(ax)
+
+    def plot(self, func: Callable, *args, **kwargs):
+        plt.close()
+        fig, ax = plt.subplots()
+        func(ax, *args, **kwargs)
+        plt.show(fig)
 
 
 class Partitioning:
@@ -251,7 +468,9 @@ class Partitioning:
             visibilities: torch.Tensor,  # [N_partitions, N_cameras]
             location_based_assignments: torch.Tensor,  # [N_partitions, N_cameras]
             visibility_based_assignments: torch.Tensor,  # [N_partitions, N_cameras]
+            extra_data=None,
     ):
+        os.makedirs(dir, exist_ok=True)
         save_to = os.path.join(dir, "partitions.pt")
         torch.save(
             {
@@ -261,6 +480,7 @@ class Partitioning:
                 "visibilities": visibilities,
                 "location_based_assignments": location_based_assignments,
                 "visibility_based_assignments": visibility_based_assignments,
+                "extra_data": extra_data,
             },
             save_to,
         )

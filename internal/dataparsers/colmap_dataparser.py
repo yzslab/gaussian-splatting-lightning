@@ -104,17 +104,19 @@ class ColmapDataParser(DataParser):
         c = torch.dot(a, b)
         # If vectors are exactly opposite, we add a little noise to one of them
         if c < -1 + 1e-8:
-            eps = (torch.rand(3) - 0.5) * 0.01
+            eps = (torch.rand(3, dtype=a.dtype, device=a.device) - 0.5) * 0.01
             return ColmapDataParser.rotation_matrix(a + eps, b)
         s = torch.linalg.norm(v)
-        skew_sym_mat = torch.Tensor(
+        skew_sym_mat = torch.tensor(
             [
                 [0, -v[2], v[1]],
                 [v[2], 0, -v[0]],
                 [-v[1], v[0], 0],
-            ]
+            ],
+            dtype=a.dtype,
+            device=a.device,
         )
-        return torch.eye(3) + skew_sym_mat + skew_sym_mat @ skew_sym_mat * ((1 - c) / (s ** 2 + 1e-8))
+        return torch.eye(3, dtype=a.dtype, device=a.device) + skew_sym_mat + skew_sym_mat @ skew_sym_mat * ((1 - c) / (s ** 2 + 1e-8))
 
     @staticmethod
     def read_points3D_binary(path_to_model_file, selected_image_ids: dict = None):
