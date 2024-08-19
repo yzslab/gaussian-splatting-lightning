@@ -118,6 +118,6 @@ depth_params = {
 }
 
 with open(args.output, "w") as f:
-    json.dump(depth_params, f, indent=4)
+    json.dump(depth_params, f, indent=4, ensure_ascii=False)
 
 print("Saved to `{}`".format(args.output))

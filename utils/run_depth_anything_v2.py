@@ -6,6 +6,8 @@ import torch
 from tqdm import tqdm
 from internal.utils.visualizers import Visualizers
 from common import find_files, AsyncNDArraySaver, AsyncImageSaver, AsyncImageReader
+from distibuted_tasks import configure_arg_parser, get_task_list_with_args
+from utils.distibuted_tasks import get_task_list_with_args
 
 parser = argparse.ArgumentParser()
 parser.add_argument("image_dir")
@@ -16,6 +18,7 @@ parser.add_argument("--extensions", "-e", default=["jpg", "JPG", "jpeg", "JPEG"]
 parser.add_argument("--preview", "-p", action="store_true", default=False)
 parser.add_argument("--colormap", type=str, default="default")
 parser.add_argument("--da2_path", type=str, default=os.path.join(os.path.dirname(__file__), "Depth-Anything-V2"))
+configure_arg_parser(parser)
 args = parser.parse_args()
 
 sys.path.insert(0, args.da2_path)
@@ -24,7 +27,7 @@ from depth_anything_v2.dpt import DepthAnythingV2
 if args.output is None:
     args.output = os.path.join(os.path.dirname(args.image_dir), "estimated_depths")
 
-images = find_files(args.image_dir, args.extensions, as_relative_path=False)
+images = get_task_list_with_args(args, find_files(args.image_dir, args.extensions, as_relative_path=False))
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
 
