@@ -17,8 +17,8 @@ def auto_hyper_parameter(
         n: int,
         base: int = 300,
         extra_epoch: int = 0,
-        scalable_params: dict = SCALABEL_PARAMS,
-        extra_epoch_scalable_params: dict = EXTRA_EPOCH_SCALABLE_STEP_PARAMS,
+        scalable_params: dict[str, int] = SCALABEL_PARAMS,
+        extra_epoch_scalable_params: list[str] = EXTRA_EPOCH_SCALABLE_STEP_PARAMS,
 ):
     scale_up = max(n / base, 1)
 
