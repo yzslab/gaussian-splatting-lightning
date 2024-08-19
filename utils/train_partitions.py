@@ -49,7 +49,7 @@ class PartitionTraining:
         return get_task_list(n_processors=n_processes, current_processor_id=process_id, all_tasks=all_trainable_partition_indices)
 
     def get_partition_trained_step_filename(self, partition_idx: int):
-        return "{}_trained".format(self.get_partition_id_str(partition_idx))
+        return "{}-trained".format(self.get_partition_id_str(partition_idx))
 
     def train_partitions(
             self,
