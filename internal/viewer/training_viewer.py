@@ -148,7 +148,10 @@ class TrainingViewer(viewer.Viewer):
 
     def start(self):
         super().start(False, server_config_fun=self.setup_training_panel, enable_renderer_options=False)
-        self.max_res_when_static.value = self.max_res_when_moving.value  # avoid keeping wasting GPU to render a higher resolution one
+        # avoid keeping wasting GPU to render a higher resolution one
+        self.max_res_when_static.value = self.max_res_when_moving.value
+        self.jpeg_quality_when_static.value = 100
+        self.jpeg_quality_when_moving.value = 100
 
     def process_all_render_requests(self, gaussian_model, renderer, background_color):
         device = gaussian_model.get_xyz.device

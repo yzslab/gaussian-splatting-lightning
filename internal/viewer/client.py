@@ -134,7 +134,7 @@ class ClientThread(threading.Thread):
                 if self.state == "low":
                     self.state = "high"  # switch to high resolution mode
                     # skip rendering if resolution not higher
-                    if self.viewer.max_res_when_moving.value >= self.viewer.max_res_when_static.value:
+                    if self.viewer.max_res_when_moving.value >= self.viewer.max_res_when_static.value and self.viewer.jpeg_quality_when_moving.value >= self.viewer.jpeg_quality_when_static.value:
                         continue
                 else:
                     continue  # skip if already in high resolution mode
