@@ -27,10 +27,6 @@ def parse_args():
     return parser.parse_args()
 
 
-def prune_gaussian_model(gaussian_model, mask):
-    gaussian_model.properties = {k: v[mask] for k, v in gaussian_model.properties.items()}
-
-
 def get_partition_gaussian_mask(
         means: torch.Tensor,
         partition_bounding_box: MinMaxBoundingBox,
@@ -116,7 +112,6 @@ def main():
           * Replace with merged Gaussians
         * Saving
     """
-
 
     MERGABLE_PROPERTY_NAMES = ["means", "shs_dc", "shs_rest", "scales", "rotations", "opacities"]
 
