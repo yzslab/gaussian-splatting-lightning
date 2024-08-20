@@ -37,6 +37,12 @@ class MinMaxBoundingBoxes:
     min: torch.Tensor  # [N, 2]
     max: torch.Tensor  # [N, 2]
 
+    def __getitem__(self, item):
+        return MinMaxBoundingBox(
+            min=self.min[item],
+            max=self.max[item],
+        )
+
     def to(self, *args, **kwargs):
         self.min = self.min.to(*args, **kwargs)
         self.max = self.max.to(*args, **kwargs)
@@ -271,8 +277,11 @@ class PartitionableScene:
                    self.camera_centers[visibility_based_assignment.numpy(), 1], s=0.2, c="red")
 
         ax.annotate(
-            text="#{} ({}, {})".format(partition_idx, self.partition_coordinates.id[partition_idx, 0].item(),
-                                   self.partition_coordinates.id[partition_idx, 1].item()),
+            text="#{} ({}, {})".format(
+                partition_idx,
+                self.partition_coordinates.id[partition_idx, 0].item(),
+                self.partition_coordinates.id[partition_idx, 1].item(),
+            ),
             xy=self.partition_coordinates.xy[partition_idx] + 0.05 * self.scene_config.partition_size,
             color="orange",
         )

@@ -34,7 +34,7 @@ def calculate_gaussian_scores(cameras, gaussian_model, device):
     opacity_score_list = []
     alpha_score_list = []
     all_visibility_score = torch.zeros((len(cameras), gaussian_model.get_xyz.shape[0]), dtype=torch.float, device=device)
-    for idx, camera in tqdm(enumerate(cameras), total=len(cameras)):
+    for idx, camera in tqdm(enumerate(cameras), total=len(cameras), leave=False, desc="Calculating gaussian visibilities"):
         hit_count, opacity_score, alpha_score, visibility_score = GSplatHitPixelCountRenderer.hit_pixel_count(
             means3D=gaussian_model.get_xyz,
             opacities=gaussian_model.get_opacity,
@@ -97,17 +97,12 @@ def average_color_fusing(
         camera_chunk_size: int,
         cameras: list,
         device: torch.device,
-        camera_index_to_appearance_id,
         visibility_score_pruned_sorted_indices: torch.Tensor,  # [N_gaussians, N_cameras]
         visibility_score_pruned_top_k_pdf: torch.Tensor,  # [N_gaussians, N_cameras]
 ):
     cuda_device = torch.device("cuda")
 
     n_chunk = (n_average_cameras + camera_chunk_size - 1) // camera_chunk_size
-
-    camera_index_to_camera_center = torch.stack(
-        [i.camera_center for i in cameras],
-    ).to(device=cuda_device)  # [N_cameras, 3]
 
     rgb_offset_for_each_camera = torch.ones((gaussian_model.n_gaussians, n_average_cameras, 3), dtype=torch.float, device=device) * -1024.
     for i in range(n_chunk):
@@ -121,6 +116,7 @@ def average_color_fusing(
         appearance_model_input_feature_list.append(appearance_features)
 
         # pick appearance id
+        camera_index_to_appearance_id = torch.tensor([i.appearance_id for i in cameras], dtype=torch.int, device=visibility_score_pruned_sorted_indices.device)
         appearance_ids = camera_index_to_appearance_id[visibility_score_pruned_sorted_indices[..., left:right].reshape(-1)]  # [N_gaussians * real_chunk_size]
         # pick appearance embeddings
         appearance_embeddings = renderer.model.embedding(appearance_ids).reshape((
@@ -131,6 +127,10 @@ def average_color_fusing(
         appearance_model_input_feature_list.append(appearance_embeddings)
 
         if renderer.model_config.is_view_dependent:
+            camera_index_to_camera_center = torch.stack(
+                [i.camera_center for i in cameras],
+            ).to(device=cuda_device)  # [N_cameras, 3]
+
             camera_centers = camera_index_to_camera_center[visibility_score_pruned_sorted_indices[..., left:right]]  # [N_gaussians, real_chunk_size, 3]
             view_directions = torch.nn.functional.normalize(gaussian_model.get_means().unsqueeze(1) - camera_centers, dim=-1)  # [N_gaussians, n_average_cameras, 3]
             encoded_view_directions = renderer.model.view_direction_encoding(view_directions)
@@ -155,7 +155,6 @@ def average_embedding_fusing(
         renderer,
         n_average_cameras: int,
         cameras: list,
-        camera_index_to_appearance_id,
         visibility_score_pruned_sorted_indices: torch.Tensor,  # [N_gaussians, N_cameras]
         visibility_score_pruned_top_k_pdf: torch.Tensor,  # [N_gaussians, N_cameras]
         view_dir_average_mode: str = Literal["camera_center", "view_direction"],
@@ -163,6 +162,7 @@ def average_embedding_fusing(
     cuda_device = torch.device("cuda")
 
     # pick appearance id
+    camera_index_to_appearance_id = torch.tensor([i.appearance_id for i in cameras], dtype=torch.int, device=visibility_score_pruned_sorted_indices.device)
     appearance_ids = camera_index_to_appearance_id[visibility_score_pruned_sorted_indices.reshape(-1)]  # [N_gaussians * n_average_cameras]
     # pick appearance embeddings
     appearance_embeddings = renderer.model.embedding(appearance_ids).reshape((
@@ -233,8 +233,6 @@ def fuse(
 
     # get cameras
     cameras = dataparser_outputs.train_set.cameras
-    # build appearance id, the order is the same as the list `cameras`
-    camera_index_to_appearance_id = torch.tensor([i.appearance_id for i in cameras], dtype=torch.int, device=cuda_device)
 
     # ===
 
@@ -266,7 +264,6 @@ def fuse(
             camera_chunk_size=camera_chunk_size,
             cameras=cameras,
             device=device,
-            camera_index_to_appearance_id=camera_index_to_appearance_id,
             visibility_score_pruned_sorted_indices=visibility_score_pruned_sorted_indices,
             visibility_score_pruned_top_k_pdf=visibility_score_pruned_top_k_pdf,
         )
@@ -276,7 +273,6 @@ def fuse(
             renderer,
             n_average_cameras=n_average_cameras,
             cameras=cameras,
-            camera_index_to_appearance_id=camera_index_to_appearance_id,
             visibility_score_pruned_sorted_indices=visibility_score_pruned_sorted_indices,
             visibility_score_pruned_top_k_pdf=visibility_score_pruned_top_k_pdf,
             view_dir_average_mode=embedding_view_dir_mode,
