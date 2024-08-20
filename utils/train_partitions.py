@@ -2,6 +2,7 @@ import add_pypath
 import os
 import torch
 import subprocess
+from tqdm.auto import tqdm
 from internal.utils.partitioning_utils import PartitionCoordinates
 from distibuted_tasks import get_task_list
 from auto_hyper_parameter import auto_hyper_parameter, to_command_args, SCALABEL_PARAMS, EXTRA_EPOCH_SCALABLE_STEP_PARAMS
@@ -69,62 +70,67 @@ class PartitionTraining:
 
         partition_image_numbers = self.get_image_numbers()
 
-        for partition_idx in self.get_trainable_partition_idx_list(
+        trainable_partition_idx_list = self.get_trainable_partition_idx_list(
                 min_images=min_images,
                 n_processes=n_processes,
                 process_id=process_id,
-        ):
-            partition_id_str = self.get_partition_id_str(partition_idx)
-            if partition_id_strs is not None and partition_id_str not in partition_id_strs:
-                continue
+        )
+        print([self.get_partition_id_str(i) for i in trainable_partition_idx_list])
 
-            # scale hyper parameters
-            max_steps, scaled_params, scale_up = auto_hyper_parameter(
-                partition_image_numbers[partition_idx].item(),
-                extra_epoch=extra_epoches,
-                scalable_params=scalable_params,
-                extra_epoch_scalable_params=extra_epoch_scalable_params,
-            )
+        with tqdm(trainable_partition_idx_list) as t:
+            for partition_idx in t:
+                partition_id_str = self.get_partition_id_str(partition_idx)
+                t.set_description(partition_id_str)
+                if partition_id_strs is not None and partition_id_str not in partition_id_strs:
+                    continue
 
-            # whether a trained partition
-            partition_trained_step_file_path = os.path.join(
-                project_output_dir,
-                self.get_partition_trained_step_filename(partition_idx)
-            )
+                # scale hyper parameters
+                max_steps, scaled_params, scale_up = auto_hyper_parameter(
+                    partition_image_numbers[partition_idx].item(),
+                    extra_epoch=extra_epoches,
+                    scalable_params=scalable_params,
+                    extra_epoch_scalable_params=extra_epoch_scalable_params,
+                )
 
-            try:
-                with open(partition_trained_step_file_path, "r") as f:
-                    trained_steps = int(f.read())
-                    if trained_steps >= max_steps:
-                        print("Skip trained partition '{}'".format(self.partition_coordinates.id[partition_idx].tolist()))
-                        continue
-            except:
-                pass
+                # whether a trained partition
+                partition_trained_step_file_path = os.path.join(
+                    project_output_dir,
+                    self.get_partition_trained_step_filename(partition_idx)
+                )
 
-            # build args
-            args = [
-                "python",
-                "main.py", "fit",
-                "--output", project_output_dir,
-                "--project", project_name,
-                "--logger", "wandb",
-                "-n={}".format(partition_id_str),
-                "--data.path", self.dataset_path,
-                "--data.parser", self.get_default_dataparser_name(),  # can be overridden by config file or later args
-            ]
-            if config_file is not None:
-                args.append("--config={}".format(config_file))
-            args += extra_training_args
-            args += self.get_dataset_specified_args(partition_idx)
-            args += to_command_args(max_steps, scaled_params)
+                try:
+                    with open(partition_trained_step_file_path, "r") as f:
+                        trained_steps = int(f.read())
+                        if trained_steps >= max_steps:
+                            print("Skip trained partition '{}'".format(self.partition_coordinates.id[partition_idx].tolist()))
+                            continue
+                except:
+                    pass
 
-            if dry_run:
-                print(args)
-            else:
-                ret_code = subprocess.call(args)
-                if ret_code == 0:
-                    with open(partition_trained_step_file_path, "w") as f:
-                        f.write("{}".format(max_steps))
+                # build args
+                args = [
+                    "python",
+                    "main.py", "fit",
+                    "--output", project_output_dir,
+                    "--project", project_name,
+                    "--logger", "wandb",
+                    "-n={}".format(partition_id_str),
+                    "--data.path", self.dataset_path,
+                    "--data.parser", self.get_default_dataparser_name(),  # can be overridden by config file or later args
+                ]
+                if config_file is not None:
+                    args.append("--config={}".format(config_file))
+                args += extra_training_args
+                args += self.get_dataset_specified_args(partition_idx)
+                args += to_command_args(max_steps, scaled_params)
+
+                if dry_run:
+                    print(" ".join(args))
+                else:
+                    ret_code = subprocess.call(args)
+                    if ret_code == 0:
+                        with open(partition_trained_step_file_path, "w") as f:
+                            f.write("{}".format(max_steps))
 
     @staticmethod
     def configure_argparser(parser):
