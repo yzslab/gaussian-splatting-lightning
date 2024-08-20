@@ -91,6 +91,7 @@ class MatrixCityDataParser(DataParser):
             for frame in transforms["frames"]:
                 # TODO: load fov provided by frame
                 frame_id = frame["frame_index"]
+                # TODO: fix incorrect image names
                 image_names.append("{:04d}".format(frame_id))
                 base_dir = os.path.dirname(path)
                 if "path" in frame:
