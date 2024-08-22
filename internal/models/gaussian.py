@@ -4,29 +4,7 @@ import torch
 from torch import nn
 
 from internal.configs.instantiate_config import InstantiatableConfig
-
-
-class FreezableParameterDict(nn.ParameterDict):
-    def __init__(self, parameters: Any = None, new_requires_grad: Optional[bool] = None) -> None:
-        self.new_requires_grad = new_requires_grad
-        super().__init__(parameters)
-
-    def __setitem__(self, key: str, value: Any) -> None:
-        # get existing parameter's `requires_grad` state
-        current_value = self.get(key, None)
-        if current_value is None:
-            # if key not exists, use `self.new_requires_grad`
-            requires_grad = self.new_requires_grad
-            # if `self.new_requires_grad` is None, get from `value`
-            if requires_grad is None:
-                requires_grad = value.requires_grad
-        else:
-            requires_grad = current_value.requires_grad
-
-        super().__setitem__(key, value)
-
-        # update `requires_grad` state in-place
-        self[key].requires_grad_(requires_grad)
+from internal.utils.gaussian_containers import FreezableParameterDict
 
 
 class GaussianModel(nn.Module, ABC):

@@ -1,9 +1,9 @@
 import unittest
 import torch
-from internal.models.gaussian import FreezableParameterDict
+from internal.utils.gaussian_containers import FreezableParameterDict, TensorDict
 
 
-class FreezableParameterDictTestCase(unittest.TestCase):
+class GaussianContainersTestCase(unittest.TestCase):
     def test_freezable_parameter_dict(self):
         tensors = {
             str(i): torch.rand((3, 3))
@@ -68,6 +68,10 @@ class FreezableParameterDictTestCase(unittest.TestCase):
         self.assertTrue(optimizable_parameter_dict["optimizable_new"].requires_grad)
 
         test_replace_existing_tensor(optimizable_parameter_dict)
+
+    def test_tensor_dict(self):
+        tensor_dict = TensorDict({"a": torch.arange(9).view(3, 3)})
+        self.assertFalse(isinstance(tensor_dict["a"], torch.nn.Parameter))
 
 
 if __name__ == '__main__':
