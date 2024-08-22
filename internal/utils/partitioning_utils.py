@@ -116,6 +116,7 @@ class PartitionableScene:
     def build_partition_coordinates(self):
         self.partition_coordinates = Partitioning.build_partition_coordinates(
             self.scene_bounding_box,
+            self.scene_config.origin,
             self.scene_config.partition_size,
         )
         return self.partition_coordinates
@@ -338,7 +339,7 @@ class Partitioning:
         )
 
     @staticmethod
-    def build_partition_coordinates(scene_bounding_box: SceneBoundingBox, size: float):
+    def build_partition_coordinates(scene_bounding_box: SceneBoundingBox, origin: torch.Tensor, size: float):
         partition_count = scene_bounding_box.n_partitions
         origin_partition_offset = scene_bounding_box.origin_partition_offset
         grid_x, grid_y = torch.meshgrid(
@@ -348,7 +349,7 @@ class Partitioning:
         )
 
         partition_id = torch.dstack([grid_x, grid_y])
-        partition_xy = partition_id * size
+        partition_xy = partition_id * size + origin
 
         return PartitionCoordinates(
             id=partition_id.reshape(torch.prod(partition_count), 2),
