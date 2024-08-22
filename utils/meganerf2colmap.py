@@ -65,7 +65,7 @@ def main():
     def select_image(image_name: str):
         cur = colmap_db.cursor()
         try:
-            return cur.execute("SELECT * FROM images WHERE name = ?", [image_name]).fetchone()
+            return cur.execute("SELECT image_id, camera_id FROM images WHERE name = ?", [image_name]).fetchone()
         finally:
             cur.close()
 
@@ -98,7 +98,7 @@ def main():
     ], dtype=torch.float)
     for _, metadata_path, image_name in image_metadata_pairs:
         metadata = torch.load(metadata_path, map_location="cpu")
-        image_id, _, camera_id = select_image(image_name)
+        image_id, camera_id = select_image(image_name)
         update_camera_params(camera_id, metadata["intrinsics"].to(torch.float64).numpy())
 
         c2w = torch.eye(4)
