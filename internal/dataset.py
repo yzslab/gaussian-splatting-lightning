@@ -397,6 +397,11 @@ class DataModule(LightningDataModule):
                     'rotation': [x.tolist() for x in camera_to_world[idx, :3, :3]],
                     'fy': float(camera.fy),
                     'fx': float(camera.fx),
+                    'cx': camera.cx.item(),
+                    'cy': camera.cy.item(),
+                    'time': camera.time.item() if camera.time is not None else None,
+                    'appearance_id': camera.appearance_id.item() if camera.appearance_id is not None else None,
+                    'normalized_appearance_id': camera.normalized_appearance_id.item() if camera.normalized_appearance_id is not None else None,
                 })
             with open(os.path.join(output_path, "cameras.json"), "w") as f:
                 json.dump(cameras, f, indent=4, ensure_ascii=False)
