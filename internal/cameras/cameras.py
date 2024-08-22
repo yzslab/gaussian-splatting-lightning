@@ -179,3 +179,7 @@ class Cameras:
             full_projection=self.full_projection[index],
             camera_center=self.camera_center[index],
         )
+
+    def __iter__(self):
+        for i in range(len(self)):
+            yield self[i]
