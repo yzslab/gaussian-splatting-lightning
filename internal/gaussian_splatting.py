@@ -57,6 +57,7 @@ class GaussianSplatting(LightningModule):
 
         # setup models
         self.gaussian_model = gaussian.instantiate()
+        self.frozen_gaussians = None
 
         self.light_gaussian_hparams = light_gaussian
 
@@ -175,8 +176,12 @@ class GaussianSplatting(LightningModule):
     def on_load_checkpoint(self, checkpoint) -> None:
         # reinitialize parameters based on the gaussian number in the checkpoint
         self.gaussian_model.setup_from_number(checkpoint["state_dict"]["gaussian_model.gaussians.means"].shape[0])
-
-        # TODO: convert previous version checkpoints
+        if "frozen_gaussians.means" in checkpoint["state_dict"]:
+            from internal.utils.gaussian_containers import TensorDict
+            self.frozen_gaussians = TensorDict({
+                k: torch.empty_like(checkpoint["state_dict"]["frozen_gaussians.{}".format(k)])
+                for k in self.gaussian_model.property_names
+            })
 
         # get epoch and global_step, which used in the output path of the validation and test images
         self.restored_epoch = checkpoint["epoch"]
@@ -642,6 +647,10 @@ class GaussianSplatting(LightningModule):
         if isinstance(self.gaussian_optimizers, list) is False:
             self.gaussian_optimizers = [self.gaussian_optimizers]
         add_optimizers_and_schedulers(gaussian_optimizers, gaussian_schedulers)
+        # add frozen Gaussians
+        if self.frozen_gaussians is not None:
+            from internal.utils.gaussian_containers import HasExtraParameters
+            self.gaussian_model.gaussians = HasExtraParameters(self.frozen_gaussians, self.gaussian_model.gaussians)
 
         # renderer optimizer and scheduler setup
         renderer_optimizer, renderer_scheduler = self.renderer.training_setup(self)
