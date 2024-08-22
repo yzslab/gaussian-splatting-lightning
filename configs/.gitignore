@@ -30,10 +30,13 @@
 !gsplat-absgrad-experiment.yaml
 !vanilla_2dgs.yaml
 !segany_splatting.yaml
+!appearance_embedding_renderer
 !appearance_embedding_renderer/view_dependent.yaml
 !appearance_embedding_renderer/view_independent.yaml
 !appearance_embedding_renderer/view_dependent-distributed.yaml
 !appearance_embedding_renderer/view_independent-distributed.yaml
+!appearance_embedding_renderer/sh_view_dependent.yaml
+!appearance_embedding_renderer/sh_view_dependent-estimated_depth_reg-hard_depth.yaml
 !random_background.yaml
 !mcmc.yaml
 !gsplat-mcmc.yaml
