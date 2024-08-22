@@ -6,60 +6,40 @@ import json
 import argparse
 import torch
 from tqdm.auto import tqdm
+from trained_partition_utils import get_trained_partitions, split_partition_gaussians
 from internal.cameras.cameras import Camera
 from internal.dataparsers.colmap_dataparser import Colmap
-from internal.models.vanilla_gaussian import VanillaGaussian, VanillaGaussianModel
+from internal.models.vanilla_gaussian import VanillaGaussian
 from internal.models.appearance_feature_gaussian import AppearanceFeatureGaussianModel
 from internal.renderers.vanilla_renderer import VanillaRenderer
 from internal.renderers.gsplat_renderer import GSPlatRenderer
 from internal.density_controllers.vanilla_density_controller import VanillaDensityController
 from internal.utils.gaussian_model_loader import GaussianModelLoader
-from internal.utils.partitioning_utils import MinMaxBoundingBox
-from train_partitions import PartitionTraining
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("partition_dir")
-    parser.add_argument("--project_dir", "-p", type=str, required=True, help="Directory storing trained partition models")
-    parser.add_argument("--output_path", "-o", type=str, required=True)
+    parser.add_argument("--project", "-p", type=str, required=False,
+                        help="Project Name")
+    parser.add_argument("--project_dir", type=str, required=False, help="Directory storing trained partition models")
+    parser.add_argument("--output_path", "-o", type=str, required=False)
     parser.add_argument("--min-images", type=int, default=32)
-    return parser.parse_args()
+    args = parser.parse_args()
 
+    if args.project_dir is None:
+        if args.project is None:
+            raise ValueError("'--project' or '-project_dir' can not be empty at the same time")
+        args.project_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "outputs", args.project)
 
-def get_partition_gaussian_mask(
-        means: torch.Tensor,
-        partition_bounding_box: MinMaxBoundingBox,
-        orientation_transform: torch.Tensor = None,
-):
-    if orientation_transform is not None:
-        means = means @ orientation_transform[:3, :3].T
+    if args.output_path is None:
+        args.output_path = os.path.join(args.project_dir, "merged.ckpt")
+    elif not args.output_path.endswith(".ckpt"):
+        args.output_path += ".ckpt"
 
-    # include min bound, exclude max bound
-    is_ge_min = torch.prod(torch.ge(means[..., :2], partition_bounding_box.min), dim=-1)
-    is_lt_max = torch.prod(torch.lt(means[..., :2], partition_bounding_box.max), dim=-1)
-    is_in_bounding_box = torch.logical_and(is_ge_min, is_lt_max)
+    assert os.path.exists(args.output_path) is False, "output file '{}' already exists".format(args.output_path)
 
-    return is_in_bounding_box
-
-
-def split_partition_gaussians(ckpt: dict, partition_bounding_box: MinMaxBoundingBox, orientation_transform: torch.Tensor = None) -> tuple[
-    VanillaGaussianModel,
-    dict[str, torch.Tensor],
-    torch.Tensor,
-]:
-    model = GaussianModelLoader.initialize_model_from_checkpoint(ckpt, "cpu")
-    is_in_partition = get_partition_gaussian_mask(model.get_means(), partition_bounding_box, orientation_transform=orientation_transform)
-
-    inside_part = {}
-    outside_part = {}
-    for k, v in model.properties.items():
-        inside_part[k] = v[is_in_partition]
-        outside_part[k] = v[~is_in_partition]
-
-    model.properties = inside_part
-
-    return model, outside_part, is_in_partition
+    return args
 
 
 def fuse_appearance_features(ckpt: dict, gaussian_model, cameras_json: list[dict], image_name_to_camera: dict[str, Camera]):
@@ -116,45 +96,28 @@ def main():
     MERGABLE_PROPERTY_NAMES = ["means", "shs_dc", "shs_rest", "scales", "rotations", "opacities"]
 
     args = parse_args()
-    partition_training = PartitionTraining(args.partition_dir)
-    trainable_partition_idx_list = partition_training.get_trainable_partition_idx_list(
-        min_images=args.min_images,
-        n_processes=1,
-        process_id=1,
-    )
 
     torch.autograd.set_grad_enabled(False)
 
-    # ensure that all required partitions exist
-    mergable_partitions = []
-    for partition_idx in tqdm(trainable_partition_idx_list, desc="Searching checkpoints"):
-        partition_id_str = partition_training.get_partition_id_str(partition_idx)
-        model_dir = os.path.join(args.project_dir, partition_id_str)
-        ckpt_file = GaussianModelLoader.search_load_file(model_dir)
-        assert ckpt_file.endswith(".ckpt"), "checkpoint not found for partition #{} ({})".format(partition_idx, partition_id_str)
-        mergable_partitions.append((
-            partition_idx,
-            partition_id_str,
-            ckpt_file,
-        ))
-
-    # load partition info
-    partition_bounding_boxes = partition_training.partition_coordinates.get_bounding_boxes(partition_training.scene["scene_config"]["partition_size"])
-    orientation_transformation = partition_training.scene["extra_data"]["rotation_transform"] if partition_training.scene["extra_data"] is not None else None
+    partition_training, mergable_partitions, orientation_transformation = get_trained_partitions(
+        partition_dir=args.partition_dir,
+        project_dir=args.project_dir,
+        min_images=args.min_images,
+    )
 
     image_name_to_camera = None
 
     gaussians_to_merge = {}
 
-    with tqdm(mergable_partitions, desc="Merging") as t:
-        for partition_idx, partition_id_str, ckpt_file in t:
-            t.set_postfix_str("Loading '{}'...".format(ckpt_file))
+    with tqdm(mergable_partitions, desc="Pre-processing") as t:
+        for partition_idx, partition_id_str, ckpt_file, bounding_box in t:
+            t.set_postfix_str("Loading checkpoint...")
             ckpt = torch.load(ckpt_file, map_location="cpu")
 
             t.set_postfix_str("Splitting...")
             gaussian_model, _, _ = split_partition_gaussians(
                 ckpt,
-                partition_bounding_boxes[partition_idx],
+                bounding_box,
                 orientation_transformation,
             )
 
@@ -165,7 +128,8 @@ def main():
                 ), "r") as f:
                     cameras_json = json.load(f)
 
-                if image_name_to_camera is None and isinstance(ckpt["datamodule_hyper_parameters"]["parser"], Colmap):
+                # the dataset will only be loaded once
+                if image_name_to_camera is None:
                     t.set_postfix_str("Loading colmap model...")
 
                     dataparser_config = Colmap(
@@ -248,13 +212,19 @@ def main():
     torch.save(ckpt, args.output_path)
     print("Saved to '{}'".format(args.output_path))
 
+    viewer_args = ["python", "viewer.py", args.output_path]
+    if orientation_transformation is not None:
+        viewer_args += ["--up"]
+        viewer_args += ["{:.4f}".format(i) for i in (-1. * partition_training.scene["extra_data"]["up"]).tolist()]
+    print("The command to start web viewer:"
+          " {}".format(" ".join(viewer_args)))
+
 
 def test_main():
     sys.argv = [
         __file__,
         os.path.expanduser("~/dataset/JNUCar_undistorted/colmap/drone/dense_max_2048/0/partitions-size_3.0-enlarge_0.1-visibility_0.9_0.1"),
-        "-p", os.path.join("..", "outputs", "JNUAerial-0820"),
-        "-o", os.path.join("..", "outputs", "JNUAerial-0820", "merged.ckpt"),
+        "-p", "JNUAerial-0820",
     ]
     main()
 
