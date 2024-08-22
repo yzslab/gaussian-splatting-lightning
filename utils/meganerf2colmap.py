@@ -20,7 +20,7 @@ def parse_args():
                         default=os.path.expanduser("~/.cache/colmap/vocab_tree_flickr100K_words256K.bin"))
     args = parser.parse_args()
 
-    assert os.path.exists(args.vocab_tree_path)
+    assert os.path.exists(args.vocab_tree_path), "Vocabulary Tree not found, please download it from 'https://demuc.de/colmap/vocab_tree_flickr100K_words256K.bin', and provide it path via option '-v'"
 
     return args
 
