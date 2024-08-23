@@ -47,13 +47,14 @@ def main():
                 i.path,
                 os.path.join(args.path, split, "metadata", "{}.pt".format(name_without_ext)),
                 i.name,
+                split,
             ))
 
     image_dir = os.path.join(colmap_dir, "images")
     os.makedirs(image_dir, exist_ok=True)
-    for i, _, image_name in image_metadata_pairs:
+    for i, _, image_name, split in image_metadata_pairs:
         try:
-            os.symlink(os.path.realpath(i), os.path.join(image_dir, image_name))
+            os.symlink(os.path.join("..", "..", split, "rgbs", image_name), os.path.join(image_dir, image_name))
         except FileExistsError:
             pass
 
@@ -120,7 +121,7 @@ def main():
         [0, 0, -1, 0],
         [0, 0, 0, 1],
     ], dtype=torch.float)
-    for _, metadata_path, image_name in image_metadata_pairs:
+    for _, metadata_path, image_name, _ in image_metadata_pairs:
         metadata = torch.load(metadata_path, map_location="cpu")
         image_id, camera_id = select_image(image_name)
 
