@@ -299,7 +299,7 @@ def update_ckpt(gaussian_model, ckpt):
     ckpt["optimizer_states"] = []
 
     # replace `AppearanceFeatureGaussian` with `VanillaGaussian`
-    from internal.models.vanilla_gaussian_model import VanillaGaussian
+    from internal.models.vanilla_gaussian import VanillaGaussian
     ckpt["hyper_parameters"]["gaussian"] = VanillaGaussian(sh_degree=gaussian_model.max_sh_degree)
 
     # remove existing Gaussians from ckpt

@@ -178,6 +178,7 @@ class GaussianPlyUtils:
             rotations=torch.tensor(self.rotations, dtype=torch.float),
         )
 
+    @torch.no_grad()
     def to_ply_format(self):
         assert isinstance(self.xyz, torch.Tensor) is True
         return GaussianPlyUtils(
