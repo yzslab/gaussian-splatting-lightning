@@ -171,7 +171,7 @@ def main():
             checkpoint_save_dir = os.path.join(os.path.dirname(os.path.dirname(ckpt_file)), "pruned_checkpoints")
             os.makedirs(checkpoint_save_dir, exist_ok=True)
             checkpoint_save_path = os.path.join(checkpoint_save_dir, f"latest-opacity_pruned-{args.prune_percent}.ckpt")
-            t.set_postfix_str("Saving to '{}'...".format(checkpoint_save_path))
+            t.set_postfix_str("Saving...")
             torch.save(ckpt, checkpoint_save_path)
 
             del ckpt
