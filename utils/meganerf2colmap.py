@@ -217,7 +217,7 @@ def main():
             "--input_path", sparse_dir,
             "--output_path", dense_dir,
             "--max_image_size", "1600",
-        ])
+        ]) == 0
         print("Saved to '{}', use this as your dataset path".format(dense_dir))
     else:
         os.rename(sparse_dir_triangulated, os.path.join(colmap_dir, "sparse"))
