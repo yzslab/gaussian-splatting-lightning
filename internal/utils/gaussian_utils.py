@@ -178,16 +178,17 @@ class GaussianPlyUtils:
             rotations=torch.tensor(self.rotations, dtype=torch.float),
         )
 
+    @torch.no_grad()
     def to_ply_format(self):
         assert isinstance(self.xyz, torch.Tensor) is True
         return GaussianPlyUtils(
             sh_degrees=self.sh_degrees,
-            xyz=self.xyz.detach().cpu().numpy(),
-            opacities=self.opacities.detach().cpu().numpy(),
-            features_dc=self.features_dc.transpose(1, 2).detach().cpu().numpy(),
-            features_rest=self.features_rest.transpose(1, 2).detach().cpu().numpy(),
-            scales=self.scales.detach().cpu().numpy(),
-            rotations=self.rotations.detach().cpu().numpy(),
+            xyz=self.xyz.cpu().numpy(),
+            opacities=self.opacities.cpu().numpy(),
+            features_dc=self.features_dc.transpose(1, 2).cpu().numpy(),
+            features_rest=self.features_rest.transpose(1, 2).cpu().numpy(),
+            scales=self.scales.cpu().numpy(),
+            rotations=self.rotations.cpu().numpy(),
         )
 
     def save_to_ply(self, path: str, with_colors: bool = False):
