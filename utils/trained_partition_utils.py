@@ -29,7 +29,7 @@ def get_trained_partitions(
         partition_id_str = partition_training.get_partition_id_str(partition_idx)
         model_dir = os.path.join(project_dir, partition_id_str)
         ckpt_file = GaussianModelLoader.search_load_file(model_dir)
-        assert ckpt_file.endswith(".ckpt"), "checkpoint not found for partition #{} ({})".format(partition_idx, partition_id_str)
+        assert ckpt_file.endswith(".ckpt"), "checkpoint of partition #{} ({}) can not be found in {}".format(partition_idx, partition_id_str, project_dir)
         trained_partitions.append((
             partition_idx,
             partition_id_str,
