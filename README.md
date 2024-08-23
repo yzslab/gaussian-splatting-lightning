@@ -314,15 +314,15 @@ python main.py fit \
 
 There is no single script to finish the whole pipeline. Please refer to below contents about how to reconstruct a large scale scene.
 * Partitioning
-  * MatrixCity: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/matrix_city_aerial_split.ipynb">notebooks/matrix_city_aerial_split.ipynb</a> (Refer to <a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/configs/matrixcity/README.md">MatrixCity.md</a> about preparing MatrixCity dataset)
-  * Colmap: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/colmap_aerial_split.ipynb">notebooks/colmap_aerial_split.ipynb</a>
+  * MatrixCity: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/matrix_city_split.ipynb">notebooks/matrix_city_split.ipynb</a> (Refer to <a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/configs/matrixcity/README.md">MatrixCity.md</a> about preparing MatrixCity dataset)
+  * Colmap: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/colmap_split_v2.ipynb">notebooks/colmap_split_v2.ipynb</a>
 * Training
-  * MatrixCity: Included in its partitioning notebook
-  * Colmap: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/utils/train_colmap_partitions.py">utils/train_colmap_partitions.py</a>
+  * MatrixCity: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/utils/train_matrix_city_partitions_v2.py">utils/train_matrix_city_partitions_v2.py</a>
+  * Colmap: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/utils/train_colmap_partitions_v2.py">utils/train_colmap_partitions_v2.py</a>
 * Optional LightGaussian pruning
-  * Pruning: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/partition_light_gaussian_pruning.ipynb">notebooks/partition_light_gaussian_pruning.ipynb</a>
-  * Finetune after pruning: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/utils/finetune_partition.py">utils/finetune_partition.py</a>
-* Merging: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/merge_partitions.ipynb">notebooks/merge_partitions.ipynb</a>
+  * Pruning: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/utils/prune_partitions_v2.py">utils/prune_partitions_v2.py</a>
+  * Finetune after pruning: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/utils/finetune_pruned_partitions_v2.py">utils/finetune_pruned_partitions_v2.py</a>
+* Merging: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/utils/merge_partitions_v2.py">utils/merge_partitions_v2.py</a>
 
 
 ### 2.12. Appearance Model
