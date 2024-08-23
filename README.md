@@ -417,7 +417,7 @@ An example pipeline for the <a href="https://storage.cmusatyalab.org/mega-nerf-d
     ```
     It will load trained model from `outputs/${PROJECT_NAME}`, and the finetuned outputs will be saved to `outputs/${PRUNED_PROJECT_NAME}`.
 
-  * Merge pruned outputs
+  * Merge finetuned outputs
     ```bash
     python utils/merge_partitions_v2.py \
         ${PARTITION_DATA_PATH} \
