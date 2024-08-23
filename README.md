@@ -340,7 +340,8 @@ Example pipeline for the <a href="https://storage.cmusatyalab.org/mega-nerf-data
   popd
   
   # 2. create a colmap sparse model from provided camera poses
-  python utils/meganerf2colmap.py data/MegaNeRF/rubble-pixsfm
+  wget -O vocab_tree_flickr100K_words256K.bin https://demuc.de/colmap/vocab_tree_flickr100K_words256K.bin
+  python utils/meganerf2colmap.py data/MegaNeRF/rubble-pixsfm -v vocab_tree_flickr100K_words256K.bin
   
   # 3. down sample images
   python utils/image_downsample.py data/MegaNeRF/rubble-pixsfm/colmap/images --factor 3
