@@ -327,7 +327,7 @@ There is no single script to finish the whole pipeline. Please refer to below co
 <details>
 
 <summary>
-Example pipeline for the <a href="https://storage.cmusatyalab.org/mega-nerf-data/rubble-pixsfm.tgz">Rubble</a> dataset from <a href="https://meganerf.cmusatyalab.org/">MegaNeRF</a>
+An example pipeline for the <a href="https://storage.cmusatyalab.org/mega-nerf-data/rubble-pixsfm.tgz">Rubble</a> dataset from <a href="https://meganerf.cmusatyalab.org/">MegaNeRF</a>
 </summary>
 
 * First prepare the dataset
@@ -425,6 +425,41 @@ Example pipeline for the <a href="https://storage.cmusatyalab.org/mega-nerf-data
     ```
 </details>
 
+<details>
+
+<summary>Utilize multiple GPUs</summary>
+
+* Train/prune/finetune multiple partitions in parallel
+  
+  The options `--n-processes` and `--process-id` are designed for the parallel purpose. `--n-processes` is the total number of GPUs you want to use, which has the same meaning as world size. `--process-id` is the unique process id, just like the global rank, but ranging from 1 to the value of `--n-processes` here.  Please <b>note</b> that both of the options should be placed before `--`.
+
+  Assuming you have 2 machines, and both of them are equipped with 2 GPUs.
+
+  * On the first machine
+  
+    First run:
+    ```bash
+    CUDA_VISIBLE_DEVICES=0 python utils/train_colmap_partitions_v2.py \
+        ... \
+        --n-processes 4 \
+        --process-id 1 \
+        -- \
+        ...
+    ```
+    
+    Then run this in another terminal: `CUDA_VISIBLE_DEVICES=1 python ... --n-processes 4 --process-id 2`
+  
+  * On the second machine
+    
+    First: `CUDA_VISIBLE_DEVICES=0 python ... --n-processes 4 --process-id 3`
+    
+    Then another terminal:`CUDA_VISIBLE_DEVICES=1 python ... --n-processes 4 --process-id 4`
+
+* Train/finetune a partition with multiple GPUs
+  * Training only works with the <a href="#216-new-multiple-gpu-training-strategy">strategy introduced in 2.16.</a>
+  * Finetune only works with <a href="#24-multi-gpu-training-ddp">DDP</a>
+
+</details>
 
 ### 2.12. Appearance Model
 With appearance model, the reconstruction quality can be improved when your images have various appearance, such as different exposure, white balance, contrast and even day and night.
