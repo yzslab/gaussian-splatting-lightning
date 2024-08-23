@@ -14,7 +14,7 @@ from distibuted_tasks import configure_arg_parser_v2
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("partition_dir")
-    parser.add_argument("--project_dir", "-p", type=str, required=True, help="Directory storing trained partition models")
+    parser.add_argument("--project_name", "-p", type=str, required=True, help="Project name")
     parser.add_argument("--min-images", type=int, default=32)
     parser.add_argument("--prune-percent", type=float, default=0.6)
     configure_arg_parser_v2(parser)
@@ -71,7 +71,7 @@ def main():
 
     _, trained_partitions, orientation_transformation = get_trained_partitions(
         partition_dir=args.partition_dir,
-        project_dir=args.project_dir,
+        project_dir=os.path.join(os.path.dirname(os.path.dirname(__file__)), "outputs", args.project_name),
         min_images=args.min_images,
         n_processes=args.n_processes,
         process_id=args.process_id,
