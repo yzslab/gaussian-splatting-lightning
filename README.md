@@ -324,6 +324,105 @@ There is no single script to finish the whole pipeline. Please refer to below co
   * Finetune after pruning: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/utils/finetune_pruned_partitions_v2.py">utils/finetune_pruned_partitions_v2.py</a>
 * Merging: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/utils/merge_partitions_v2.py">utils/merge_partitions_v2.py</a>
 
+<details>
+
+<summary>
+Example pipeline for the <a href="https://storage.cmusatyalab.org/mega-nerf-data/rubble-pixsfm.tgz">Rubble</a> dataset from <a href="https://meganerf.cmusatyalab.org/">MegaNeRF</a>
+</summary>
+
+* First prepare the dataset
+  ```bash
+  # 1. download the dataset
+  mkdir -p data/MegaNeRF
+  pushd data/MegaNeRF
+  wget -O rubble-pixsfm.tgz https://storage.cmusatyalab.org/mega-nerf-data/rubble-pixsfm.tgz
+  tar -zxf rubble-pixsfm.tgz
+  popd
+  
+  # 2. create a colmap sparse model from provided camera poses
+  python utils/meganerf2colmap.py data/MegaNeRF/rubble-pixsfm
+  
+  # 3. down sample images
+  python utils/image_downsample.py data/MegaNeRF/rubble-pixsfm/colmap/images --factor 3
+  ```
+  The intrinsics and extrinsics provided in the `Rubble` dataset seem not optimal and will produce a slightly blurry result. Add an option `--refine` to `utils/meganerf2colmap.py` if you want to avoid it, but it will take a lot of time.
+
+* Generate appearance groups
+
+  The Rubble dataset contains images in various lighting conditions. Enabling the appearance model can improve the quality, but it requires generating appearance groups first.
+  ```bash
+  python utils/generate_image_apperance_groups.py \
+      data/MegaNeRF/rubble-pixsfm/colmap \
+      --image \
+      --name appearance_image_dedicated
+  ```
+
+* Partitioning: simply use <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/meganerf_rubble_split.ipynb">notebooks/meganerf_rubble_split.ipynb</a>, and remember to change the value of `dataset_path` in this notebook
+
+* Training
+  ```bash
+  PARTITION_DATA_PATH="data/MegaNeRF/rubble-pixsfm/colmap/partitions-size_60.0-enlarge_0.1-visibility_0.9_0.25"
+  PROJECT_NAME="MegaNeRF-rubble"
+  
+  python utils/train_colmap_partitions_v2.py \
+      ${PARTITION_DATA_PATH} \
+      -p ${PROJECT_NAME} \
+      --scalable-config utils/scalable_param_configs/appearance.yaml \
+      --config configs/appearance_embedding_renderer/sh_view_dependent.yaml \
+      -- \
+      --data.parser.appearance_groups appearance_image_dedicated \
+      --model.gaussian.optimization.spatial_lr_scale 15 \
+      --data.parser.down_sample_factor 3
+  ```
+  
+  Parameter Explanations
+  * `utils/train_colmap_partitions_v2.py`
+    * The first is the path of the directory containing the partition data, it is the value of `output_path` in the partitioning notebook
+    * `-p`: the project name, all the trained partition models will be stored in `outputs/PROJECT_NAME`
+    * `--scalable-config`: the path of the yaml file specifying the hyperparameters that will be adjusted according to the image number
+    * `--config`: the config file used for training
+    * `--`: all the parameters after this will be passed to `main.py` as-is
+  * `main.py`
+    * `--data.parser.appearance_groups`: the name of the generated appearance groups
+    * `--model.gaussian.optimization.spatial_lr_scale`: the LR of the 3D means of Gaussians will be multiplied by this value
+    
+      By default, this value will be calculated automatically according to the camera poses if it is omitted, but this will lead to suboptimal results for large-scale scenes. Therefore you had better provide it manually.
+    
+      Please note that this is a scene-specific hyperparameter. You should not use the same value for another scene. And the value `15` is not the optimal one for the dataset Rubble.
+    * `--data.parser.down_sample_factor`: down sample factor of the images
+
+* Merging
+  ```bash
+  python utils/merge_partitions_v2.py \
+      ${PARTITION_DATA_PATH} \
+      -p ${PROJECT_NAME}
+  ```
+
+* Optional prune and finetune
+  * Prune
+    ```bash
+    python utils/prune_partitions_v2.py \
+        ${PARTITION_DATA_PATH} \
+        -p ${PROJECT_NAME}
+    ```
+  * Finetune
+    ```bash
+    PRUNED_PROJECT_NAME="${PROJECT_NAME}-pruned"
+    python utils/finetune_pruned_partitions_v2.py \
+        ${PARTITION_DATA_PATH} \
+        -p ${PRUNED_PROJECT_NAME} \
+        -t ${PROJECT_NAME}
+    ```
+    It will load trained model from `outputs/${PROJECT_NAME}`, and the finetuned outputs will be saved to `outputs/${PRUNED_PROJECT_NAME}`.
+
+  * Merge pruned outputs
+    ```bash
+    python utils/merge_partitions_v2.py \
+        ${PARTITION_DATA_PATH} \
+        -p ${PRUNED_PROJECT_NAME}
+    ```
+</details>
+
 
 ### 2.12. Appearance Model
 With appearance model, the reconstruction quality can be improved when your images have various appearance, such as different exposure, white balance, contrast and even day and night.
