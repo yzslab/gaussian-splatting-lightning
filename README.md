@@ -346,7 +346,7 @@ An example pipeline for the <a href="https://storage.cmusatyalab.org/mega-nerf-d
   # 3. down sample images
   python utils/image_downsample.py data/MegaNeRF/rubble-pixsfm/colmap/images --factor 3
   ```
-  The intrinsics and extrinsics provided in the `Rubble` dataset seem not optimal and will produce a slightly blurry result. Add an option `--refine` to `utils/meganerf2colmap.py` if you want to avoid it, but it will take a lot of time.
+  The intrinsics and extrinsics provided in the `Rubble` dataset seem not optimal and will produce a slightly blurry result. Run a sparse reconstruction from scratch if you want to avoid it.
 
 * Generate appearance groups
 
@@ -385,11 +385,11 @@ An example pipeline for the <a href="https://storage.cmusatyalab.org/mega-nerf-d
     * `--`: all the parameters after this will be passed to `main.py` as-is
   * `main.py`
     * `--data.parser.appearance_groups`: the name of the generated appearance groups
-    * `--model.gaussian.optimization.spatial_lr_scale`: the LR of the 3D means of Gaussians will be multiplied by this value
+    * `--model.gaussian.optimization.spatial_lr_scale`: the LR of the 3D means of Gaussians will be multiplied by this value, which determines how finely the structure can be modeled
     
       By default, this value will be calculated automatically according to the camera poses if it is omitted, but this will lead to suboptimal results for large-scale scenes. Therefore you had better provide it manually.
     
-      Please note that this is a scene-specific hyperparameter. You should not use the same value for another scene. And the value `15` is not the optimal one for the dataset Rubble.
+      Please note that this is a scene-specific hyperparameter. You should not use the same value for another scene, or even when you run a colmap sparse reconstruction a second time. Additionally, the value `15` is not the optimal one for the dataset Rubble.
     * `--data.parser.down_sample_factor`: down sample factor of the images
 
 * Merging
