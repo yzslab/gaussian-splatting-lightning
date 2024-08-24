@@ -350,7 +350,7 @@ An example pipeline for the <a href="https://storage.cmusatyalab.org/mega-nerf-d
 
 * Generate appearance groups
 
-  The Rubble dataset contains images in various lighting conditions. Enabling the appearance model can improve the quality, but it requires generating appearance groups first.
+  The Rubble dataset contains images in various lighting conditions. Enabling the appearance model can improve the quality. In order to do so, appearance groups must be generated first.
   ```bash
   python utils/generate_image_apperance_groups.py \
       data/MegaNeRF/rubble-pixsfm/colmap \
