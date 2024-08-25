@@ -324,11 +324,7 @@ There is no single script to finish the whole pipeline. Please refer to below co
   * Finetune after pruning: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/utils/finetune_pruned_partitions_v2.py">utils/finetune_pruned_partitions_v2.py</a>
 * Merging: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/utils/merge_partitions_v2.py">utils/merge_partitions_v2.py</a>
 
-<details>
-
-<summary>
-An example pipeline for the <a href="https://storage.cmusatyalab.org/mega-nerf-data/rubble-pixsfm.tgz">Rubble</a> dataset from <a href="https://meganerf.cmusatyalab.org/">MegaNeRF</a>
-</summary>
+#### (1) An example pipeline for the <a href="https://storage.cmusatyalab.org/mega-nerf-data/rubble-pixsfm.tgz">Rubble</a> dataset from <a href="https://meganerf.cmusatyalab.org/">MegaNeRF</a>
 
 * First prepare the dataset
   ```bash
@@ -423,11 +419,8 @@ An example pipeline for the <a href="https://storage.cmusatyalab.org/mega-nerf-d
         ${PARTITION_DATA_PATH} \
         -p ${PRUNED_PROJECT_NAME}
     ```
-</details>
 
-<details>
-
-<summary>Utilize multiple GPUs</summary>
+#### (2) Utilize multiple GPUs
 
 * Train/prune/finetune multiple partitions in parallel
   
@@ -459,7 +452,6 @@ An example pipeline for the <a href="https://storage.cmusatyalab.org/mega-nerf-d
   * Training only works with the <a href="#216-new-multiple-gpu-training-strategy">strategy introduced in 2.16.</a>
   * Finetune only works with <a href="#24-multi-gpu-training-ddp">DDP</a>
 
-</details>
 
 ### 2.12. Appearance Model
 With appearance model, the reconstruction quality can be improved when your images have various appearance, such as different exposure, white balance, contrast and even day and night.
@@ -475,23 +467,35 @@ Please refer to <a href="https://github.com/yzslab/gaussian-splatting-lightning/
 | <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/3a990247-b57b-4ba8-8e9d-7346a3bd41e3"></video> | <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/afeea69f-ed74-4c50-843a-e5d480eb66ef"></video> |
 |  | <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/ab89e4cf-80c0-4e99-88bc-3ec5ca047e19"></video> |
 * First generate appearance groups (Colmap or PhotoTourism dataset only)
-```bash
-python utils/generate_image_apperance_groups.py PATH_TO_DATASET_DIR \
-    --image \
-    --name appearance_image_dedicated  # the name will be used later
-```
-The images in a group will share a common appearance embedding. The command above will assign each image a group, which means that will not share any appearance embedding between images.
+  ```bash
+  python utils/generate_image_apperance_groups.py PATH_TO_DATASET_DIR \
+      --image \
+      --name appearance_image_dedicated  # the name will be used later
+  ```
+  The images in a group will share a common appearance embedding. The command above will assign each image a group, which means that will not share any appearance embedding between images.
 
 * Then start training
-```bash
-python main.py fit \
-    --config configs/appearance_embedding_renderer/view_dependent.yaml \
-    --data.path PATH_TO_DATASET_DIR \
-    --data.parser Colmap \
-    --data.parser.appearance_groups appearance_image_dedicated  # value here should be the same as the one provided to `--name` above
-```
-If you are using PhotoTourism dataset, please replace `--data.parser Colmap` with `--data.parser PhotoTourism`.
+  ```bash
+  python main.py fit \
+      --config configs/appearance_embedding_renderer/view_dependent.yaml \
+      --data.path PATH_TO_DATASET_DIR \
+      --data.parser Colmap \
+      --data.parser.appearance_groups appearance_image_dedicated  # value here should be the same as the one provided to `--name` above
+  ```
+  If you are using PhotoTourism dataset, please replace `--data.parser Colmap` with `--data.parser PhotoTourism`.
 
+* <a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/configs/appearance_embedding_renderer">Other avialbe configs</a>
+  * `view_independent.yaml`: turn off view dependent effects
+  * `sh_view_dependent.yaml`: represent view dependent effects using spherical harmonics
+  * `*-distributed.yaml`: multiple GPUs
+  * `*-estimated_depth_reg.yaml` / `*-estimated_depth_reg-hard_depth.yaml`: with depth regularization
+
+* Remove the dependence on MLP when rendering
+
+  It is recommended to use `view_independent-*` or `sh_view_dependent-*` configs if you want to do so.
+  
+  By running `python utils/fuse_appearance_embeddings_into_shs_dc.py TRAINED_MODEL_DIR`, you can get a fixed appearance checkpoint without requiring a MLP.
+  
 ### 2.13. <a href="https://ubc-vision.github.io/3dgs-mcmc/">3DGS-MCMC</a>
 * Install `submodules/mcmc_relocation` first
 
