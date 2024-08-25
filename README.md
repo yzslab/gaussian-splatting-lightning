@@ -484,7 +484,7 @@ Please refer to <a href="https://github.com/yzslab/gaussian-splatting-lightning/
   ```
   If you are using PhotoTourism dataset, please replace `--data.parser Colmap` with `--data.parser PhotoTourism`.
 
-* <a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/configs/appearance_embedding_renderer">Other avialbe configs</a>
+* <a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/configs/appearance_embedding_renderer">Other available configs</a>
   * `view_independent.yaml`: turn off view dependent effects
   * `sh_view_dependent.yaml`: represent view dependent effects using spherical harmonics
   * `*-distributed.yaml`: multiple GPUs
