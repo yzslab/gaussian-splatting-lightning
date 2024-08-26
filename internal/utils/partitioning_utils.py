@@ -195,7 +195,7 @@ class PartitionableScene:
         ))
         self.set_plot_ax_limit(ax)
 
-    def plot_partitions(self, ax=None, annotate_font_size: int = 5, annotate_position: float = 0.125):
+    def plot_partitions(self, ax=None, annotate_font_size: int = 5, annotate_position_x: float = 0.125, annotate_position_y: float = 0.25):
         self.set_plot_ax_limit(ax)
         ax.set_aspect('equal', adjustable='box')
 
@@ -214,10 +214,10 @@ class PartitionableScene:
                 color=next(color_iter),
             ))
             ax.annotate(
-                "#{} ({}, {})".format(idx, partition_id[0], partition_id[1]),
+                "#{}\n({}, {})".format(idx, partition_id[0], partition_id[1]),
                 xy=(
-                    partition_xy[0] + annotate_position * self.scene_config.partition_size,
-                    partition_xy[1] + annotate_position * self.scene_config.partition_size,
+                    partition_xy[0] + annotate_position_x * self.scene_config.partition_size,
+                    partition_xy[1] + annotate_position_y * self.scene_config.partition_size,
                 ),
                 fontsize=annotate_font_size,
             )
@@ -294,6 +294,12 @@ class PartitionableScene:
         fig, ax = plt.subplots()
         func(ax, *args, **kwargs)
         plt.show(fig)
+
+    def save_plot(self, func: Callable, path: str, *args, **kwargs):
+        plt.close()
+        fig, ax = plt.subplots()
+        func(ax, *args, **kwargs)
+        plt.savefig(path, dpi=600)
 
 
 class Partitioning:
