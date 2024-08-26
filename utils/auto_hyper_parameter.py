@@ -1,3 +1,5 @@
+import math
+from typing import Literal
 import argparse
 
 SCALABEL_PARAMS = {
@@ -19,8 +21,16 @@ def auto_hyper_parameter(
         extra_epoch: int = 0,
         scalable_params: dict[str, int] = SCALABEL_PARAMS,
         extra_epoch_scalable_params: list[str] = EXTRA_EPOCH_SCALABLE_STEP_PARAMS,
+        scale_mode: Literal["linear", "sqrt", "none"] = "linear",
 ):
-    scale_up = max(n / base, 1)
+    if scale_mode == "linear":
+        scale_up = max(n / base, 1)
+    elif scale_mode == "sqrt":
+        scale_up = max(math.sqrt(n / base), 1)
+    elif scale_mode == "none":
+        scale_up = 1
+    else:
+        raise ValueError("Unknown scale mode '{}'".format(scale_mode))
 
     extra_steps = 0
     if extra_epoch > 0:
