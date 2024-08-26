@@ -36,7 +36,11 @@
 !appearance_embedding_renderer/view_dependent-distributed.yaml
 !appearance_embedding_renderer/view_independent-distributed.yaml
 !appearance_embedding_renderer/sh_view_dependent.yaml
+!appearance_embedding_renderer/sh_view_dependent-128_dims-lr_0.005-with_scheduler.yaml
+!appearance_embedding_renderer/sh_view_dependent-lr_0.005-with_scheduler.yaml
 !appearance_embedding_renderer/sh_view_dependent-estimated_depth_reg-hard_depth.yaml
+!appearance_embedding_renderer/sh_view_dependent-128_dims-lr_0.005-with_scheduler-estimated_depth_reg-hard_depth.yaml
+!appearance_embedding_renderer/sh_view_dependent-lr_0.005-with_scheduler-estimated_depth_reg-hard_depth.yaml
 !random_background.yaml
 !mcmc.yaml
 !gsplat-mcmc.yaml
