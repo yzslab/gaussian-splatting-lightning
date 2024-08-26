@@ -30,16 +30,9 @@ class GaussianPlyUtils:
     rotations: Union[np.ndarray, torch.Tensor]  # [n, 4]
 
     @staticmethod
-    def detect_sh_degree_from_shs_rest(shs_rest):
-        sh_degrees = -1
-        features_rest_dims = shs_rest.shape[-1]
-        for i in range(4):
-            if features_rest_dims == (i + 1) ** 2 - 1:
-                sh_degrees = i
-                break
-        assert sh_degrees >= 0, f"invalid sh_degrees={sh_degrees}"
-
-        return sh_degrees
+    def detect_sh_degree_from_shs_rest(shs_rest: torch.Tensor):
+        assert isinstance(shs_rest, torch.Tensor)
+        return SHS_REST_DIM_TO_DEGREE[shs_rest.shape[-2]]
 
     @staticmethod
     def load_array_from_plyelement(plyelement, name_prefix: str, required: bool = True):
