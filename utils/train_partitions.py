@@ -1,199 +1,47 @@
 import add_pypath
+from typing import Union, Optional, Literal, List, Tuple, Dict, Any
 import os
 import traceback
 import yaml
 import torch
 import subprocess
+from dataclasses import dataclass, field
 from tqdm.auto import tqdm
+from concurrent.futures import ThreadPoolExecutor
 from internal.utils.partitioning_utils import PartitionCoordinates
 from distibuted_tasks import get_task_list
 from auto_hyper_parameter import auto_hyper_parameter, to_command_args, SCALABEL_PARAMS, EXTRA_EPOCH_SCALABLE_STEP_PARAMS
-from argparser_utils import parser_stoppable_args
+from argparser_utils import split_stoppable_args, parser_stoppable_args
 from distibuted_tasks import configure_arg_parser_v2
 
 
-class PartitionTraining:
-    def __init__(self, path: str, name: str = "partitions.pt"):
-        self.path = path
-        self.scene = torch.load(os.path.join(path, name), map_location="cpu")
-        self.scene["partition_coordinates"] = PartitionCoordinates(**self.scene["partition_coordinates"])
-        self.dataset_path = os.path.dirname(path.rstrip("/"))
+@dataclass
+class PartitionTrainingConfig:
+    partition_dir: str
+    project_name: str
+    min_images: int
+    n_processes: int
+    process_id: int
+    dry_run: bool
+    extra_epoches: int
+    # name_suffix: str
+    scalable_params: Optional[Dict[str, int]] = None
+    extra_epoch_scalable_params: Optional[List[str]] = None
+    scale_param_mode: Literal["linear", "sqrt", "none"] = "linear"
+    partition_id_strs: Optional[List[str]] = None
+    training_args: Union[Tuple, List] = None
+    config_file: Optional[str] = None
+    srun_args: List[str] = field(default_factory=lambda: [])
 
-    @property
-    def partition_coordinates(self) -> PartitionCoordinates:
-        return self.scene["partition_coordinates"]
+    def __post_init__(self):
+        if self.scalable_params is None:
+            self.scalable_params = {}
+        if self.extra_epoch_scalable_params is None:
+            self.extra_epoch_scalable_params = []
+        if self.training_args is None:
+            self.training_args = []
 
-    def get_default_dataparser_name(self) -> str:
-        raise NotImplementedError()
-
-    def get_dataset_specified_args(self, partition_idx: int) -> list[str]:
-        raise NotImplementedError()
-
-    def get_location_based_assignment_numbers(self) -> torch.Tensor:
-        return self.scene["location_based_assignments"].sum(-1)
-
-    def get_partition_id_str(self, idx: int) -> str:
-        return self.partition_coordinates.get_str_id(idx)
-
-    def get_image_numbers(self) -> torch.Tensor:
-        return torch.logical_or(
-            self.scene["location_based_assignments"],
-            self.scene["visibility_based_assignments"],
-        ).sum(-1)
-
-    def get_trainable_partition_idx_list(
-            self,
-            min_images: int,
-            n_processes: int,
-            process_id: int,
-    ) -> list[int]:
-        location_based_numbers = self.get_location_based_assignment_numbers()
-        all_trainable_partition_indices = torch.ge(location_based_numbers, min_images).nonzero().squeeze(-1).tolist()
-        return get_task_list(n_processors=n_processes, current_processor_id=process_id, all_tasks=all_trainable_partition_indices)
-
-    def get_partition_trained_step_filename(self, partition_idx: int):
-        return "{}-trained".format(self.get_partition_id_str(partition_idx))
-
-    def train_a_partition(
-            self,
-            partition_image_number: int,
-            extra_epoches: int,
-            scalable_params: dict[str, int],
-            extra_epoch_scalable_params: list[str],
-            project_output_dir: str,
-            partition_idx: int,
-            project_name: str,
-            partition_id_str: str,
-            config_file: str,
-            extra_training_args: tuple,
-            dry_run: bool,
-    ):
-        # scale hyper parameters
-        max_steps, scaled_params, scale_up = auto_hyper_parameter(
-            partition_image_number,
-            extra_epoch=extra_epoches,
-            scalable_params=scalable_params,
-            extra_epoch_scalable_params=extra_epoch_scalable_params,
-        )
-
-        # whether a trained partition
-        partition_trained_step_file_path = os.path.join(
-            project_output_dir,
-            self.get_partition_trained_step_filename(partition_idx)
-        )
-
-        try:
-            with open(partition_trained_step_file_path, "r") as f:
-                trained_steps = int(f.read())
-                if trained_steps >= max_steps:
-                    print("Skip trained partition '{}'".format(self.partition_coordinates.id[partition_idx].tolist()))
-                    return
-        except:
-            pass
-
-        # build args
-        # basic
-        args = [
-            "python",
-            "main.py", "fit",
-        ]
-        # dataparser
-        try:
-            args += ["--data.parser", self.get_default_dataparser_name()]  # can be overridden by config file or the args later
-        except NotImplementedError:
-            pass
-
-        # config file
-        if config_file is not None:
-            args.append("--config={}".format(config_file))
-
-        # extra
-        args += extra_training_args
-
-        # dataset specified
-        try:
-            args += self.get_dataset_specified_args(partition_idx)
-        except NotImplementedError:
-            pass
-
-        # scalable
-        args += to_command_args(max_steps, scaled_params)
-
-        args += [
-            "-n={}".format(partition_id_str),
-            "--data.path", self.dataset_path,
-            "--project", project_name,
-            "--output", project_output_dir,
-            "--logger", "wandb",
-        ]
-
-        if dry_run:
-            print(" ".join(args))
-        else:
-            try:
-                print(args)
-                ret_code = subprocess.call(args)
-                if ret_code == 0:
-                    with open(partition_trained_step_file_path, "w") as f:
-                        f.write("{}".format(max_steps))
-            except KeyboardInterrupt as e:
-                raise e
-            except:
-                traceback.print_exc()
-
-    def train_partitions(
-            self,
-            project_name: str,
-            min_images: int = 32,
-            n_processes: int = 1,
-            process_id: int = 1,
-            dry_run: bool = False,
-            extra_epoches: int = 0,
-            scalable_params=None,
-            extra_epoch_scalable_params=None,
-            partition_id_strs: list[str] = None,
-            config_file: str = None,
-            extra_training_args=None,
-    ):
-        if scalable_params is None:
-            scalable_params = {}
-        if extra_epoch_scalable_params is None:
-            extra_epoch_scalable_params = []
-        if extra_training_args is None:
-            extra_training_args = []
-        extra_training_args = tuple(extra_training_args)
-
-        project_output_dir = os.path.join("outputs", project_name)
-
-        partition_image_numbers = self.get_image_numbers()
-
-        trainable_partition_idx_list = self.get_trainable_partition_idx_list(
-            min_images=min_images,
-            n_processes=n_processes,
-            process_id=process_id,
-        )
-        print([self.get_partition_id_str(i) for i in trainable_partition_idx_list])
-
-        with tqdm(trainable_partition_idx_list) as t:
-            for partition_idx in t:
-                partition_id_str = self.get_partition_id_str(partition_idx)
-                t.set_description(partition_id_str)
-                if partition_id_strs is not None and partition_id_str not in partition_id_strs:
-                    continue
-
-                self.train_a_partition(
-                    partition_image_number=partition_image_numbers[partition_idx].item(),
-                    extra_epoches=extra_epoches,
-                    scalable_params=scalable_params,
-                    extra_epoch_scalable_params=extra_epoch_scalable_params,
-                    project_output_dir=project_output_dir,
-                    partition_idx=partition_idx,
-                    project_name=project_name,
-                    partition_id_str=partition_id_str,
-                    config_file=config_file,
-                    extra_training_args=extra_training_args,
-                    dry_run=dry_run,
-                )
+        self.training_args = tuple(self.training_args)
 
     @staticmethod
     def configure_argparser(parser, extra_epoches: int = 0):
@@ -209,12 +57,14 @@ class PartitionTraining:
                             help="Load scalable params from a yaml file")
         parser.add_argument("--scalable-params", type=str, default=[], nargs="*", action="extend")
         parser.add_argument("--extra-epoch-scalable-params", type=str, default=[], nargs="*", action="extend")
+        parser.add_argument("--scale-param-mode", type=str, default="linear")
         parser.add_argument("--no-default-scalable", action="store_true")
         parser.add_argument("--dry-run", action="store_true")
+        # parser.add_argument("--name-suffix", type=str, default="")
         configure_arg_parser_v2(parser)
 
-    @classmethod
-    def parse_scalable_params(cls, args):
+    @staticmethod
+    def parse_scalable_params(args):
         # parse scalable params
         scalable_params = SCALABEL_PARAMS
         extra_epoch_scalable_params = EXTRA_EPOCH_SCALABLE_STEP_PARAMS
@@ -246,31 +96,246 @@ class PartitionTraining:
         return scalable_params, extra_epoch_scalable_params
 
     @classmethod
-    def instantiate_with_args(cls, args):
-        return cls(
-            args.partition_dir,
-        )
+    def get_extra_init_kwargs(cls, args) -> Dict[str, Any]:
+        return {}
 
     @classmethod
-    def start_with_configured_argparser(cls, parser):
-        args, training_args = parser_stoppable_args(parser)
-
-        partition_training = cls.instantiate_with_args(args)
-
-        # parse scalable params
+    def instantiate_with_args(cls, args, training_args, srun_args):
         scalable_params, extra_epoch_scalable_params = cls.parse_scalable_params(args)
 
-        # start training
-        partition_training.train_partitions(
+        return cls(
+            partition_dir=args.partition_dir,
             project_name=args.project,
             min_images=args.min_images,
             n_processes=args.n_processes,
             process_id=args.process_id,
             dry_run=args.dry_run,
             extra_epoches=args.extra_epoches,
+            # name_suffix=args.name_suffix,
             scalable_params=scalable_params,
             extra_epoch_scalable_params=extra_epoch_scalable_params,
+            scale_param_mode=args.scale_param_mode,
             partition_id_strs=args.parts,
             config_file=args.config,
-            extra_training_args=training_args,
+            training_args=training_args,
+            srun_args=srun_args,
+            **cls.get_extra_init_kwargs(args),
         )
+
+    @classmethod
+    def instantiate_with_parser(cls, parser):
+        args, training_and_srun_args = parser_stoppable_args(parser)
+        training_args, srun_args = split_stoppable_args(training_and_srun_args)
+        return cls.instantiate_with_args(args, training_args, srun_args), args
+
+
+class PartitionTraining:
+    def __init__(
+            self,
+            config: PartitionTrainingConfig,
+            name: str = "partitions.pt",
+    ):
+        self.path = config.partition_dir
+        self.config = config
+        self.scene = torch.load(os.path.join(self.path, name), map_location="cpu")
+        self.scene["partition_coordinates"] = PartitionCoordinates(**self.scene["partition_coordinates"])
+        self.dataset_path = os.path.dirname(self.path.rstrip("/"))
+
+    @property
+    def partition_coordinates(self) -> PartitionCoordinates:
+        return self.scene["partition_coordinates"]
+
+    @staticmethod
+    def get_project_output_dir_by_name(project_name: str) -> str:
+        return os.path.join(os.path.join(os.path.dirname(os.path.dirname(__file__))), "outputs", project_name)
+
+    @property
+    def project_output_dir(self) -> str:
+        return self.get_project_output_dir_by_name(self.config.project_name)
+
+    @property
+    def srun_output_dir(self) -> str:
+        return os.path.join(self.project_output_dir, "srun-outputs")
+
+    def get_default_dataparser_name(self) -> str:
+        raise NotImplementedError()
+
+    def get_dataset_specific_args(self, partition_idx: int) -> list[str]:
+        return []
+
+    def get_overridable_partition_specific_args(self, partition_idx: int) -> list[str]:
+        return []
+
+    def get_partition_specific_args(self, partition_idx: int) -> list[str]:
+        return []
+
+    def get_location_based_assignment_numbers(self) -> torch.Tensor:
+        return self.scene["location_based_assignments"].sum(-1)
+
+    def get_partition_id_str(self, idx: int) -> str:
+        return self.partition_coordinates.get_str_id(idx)
+
+    def get_image_numbers(self) -> torch.Tensor:
+        return torch.logical_or(
+            self.scene["location_based_assignments"],
+            self.scene["visibility_based_assignments"],
+        ).sum(-1)
+
+    def get_trainable_partition_idx_list(
+            self,
+            min_images: int,
+            n_processes: int,
+            process_id: int,
+    ) -> list[int]:
+        location_based_numbers = self.get_location_based_assignment_numbers()
+        all_trainable_partition_indices = torch.ge(location_based_numbers, min_images).nonzero().squeeze(-1).tolist()
+        return get_task_list(n_processors=n_processes, current_processor_id=process_id, all_tasks=all_trainable_partition_indices)
+
+    def get_partition_trained_step_filename(self, partition_idx: int):
+        return "{}-trained".format(self.get_partition_id_str(partition_idx))
+
+    def get_partition_image_number(self, partition_idx: int) -> int:
+        return torch.logical_or(
+            self.scene["location_based_assignments"][partition_idx],
+            self.scene["visibility_based_assignments"][partition_idx],
+        ).sum(-1).item()
+
+    def train_a_partition(
+            self,
+            partition_idx: int,
+    ):
+        partition_image_number = self.get_partition_image_number(partition_idx)
+        extra_epoches = self.config.extra_epoches
+        scalable_params = self.config.scalable_params
+        extra_epoch_scalable_params = self.config.extra_epoch_scalable_params
+        project_output_dir = self.project_output_dir
+        config_file = self.config.config_file
+        extra_training_args = self.config.training_args
+        partition_id_str = self.get_partition_id_str(partition_idx)
+        project_name = self.config.project_name
+        dry_run = self.config.dry_run
+
+        # scale hyper parameters
+        max_steps, scaled_params, scale_up = auto_hyper_parameter(
+            partition_image_number,
+            extra_epoch=extra_epoches,
+            scalable_params=scalable_params,
+            extra_epoch_scalable_params=extra_epoch_scalable_params,
+            scale_mode=self.config.scale_param_mode,
+        )
+
+        # whether a trained partition
+        partition_trained_step_file_path = os.path.join(
+            project_output_dir,
+            self.get_partition_trained_step_filename(partition_idx)
+        )
+
+        try:
+            with open(partition_trained_step_file_path, "r") as f:
+                trained_steps = int(f.read())
+                if trained_steps >= max_steps:
+                    print("Skip trained partition '{}'".format(self.partition_coordinates.id[partition_idx].tolist()))
+                    return
+        except:
+            pass
+
+        # build args
+        # basic
+        args = [
+            "python",
+            "main.py", "fit",
+        ]
+        # dataparser; finetune does not require setting `--data.parser`
+        try:
+            args += ["--data.parser", self.get_default_dataparser_name()]  # can be overridden by config file or the args later
+        except NotImplementedError:
+            pass
+
+        # config file
+        if config_file is not None:
+            args.append("--config={}".format(config_file))
+
+        args += self.get_overridable_partition_specific_args(partition_idx)
+
+        # extra
+        args += extra_training_args
+
+        # dataset specified
+        args += self.get_dataset_specific_args(partition_idx)
+
+        # scalable
+        args += to_command_args(max_steps, scaled_params)
+
+        args += [
+            "-n={}".format(partition_id_str),
+            "--data.path", self.dataset_path,
+            "--project", project_name,
+            "--output", project_output_dir,
+            "--logger", "wandb",
+        ]
+
+        args += self.get_partition_specific_args(partition_idx)
+
+        if len(self.config.srun_args) > 0:
+            output_filename = os.path.join(self.srun_output_dir, "{}.txt".format(partition_id_str))
+            args = [
+                       "srun",
+                       "--output={}".format(output_filename),
+                       "--job-name={}-{}".format(self.config.project_name, partition_id_str),
+                   ] + self.config.srun_args + args
+
+        if dry_run:
+            print(" ".join(args))
+        else:
+            try:
+                print(args)
+                ret_code = subprocess.call(args)
+                if ret_code == 0:
+                    with open(partition_trained_step_file_path, "w") as f:
+                        f.write("{}".format(max_steps))
+            except KeyboardInterrupt as e:
+                raise e
+            except:
+                traceback.print_exc()
+
+    def train_partitions(
+            self,
+    ):
+        raw_trainable_partition_idx_list = self.get_trainable_partition_idx_list(
+            min_images=self.config.min_images,
+            n_processes=self.config.n_processes,
+            process_id=self.config.process_id,
+        )
+        print([self.get_partition_id_str(i) for i in raw_trainable_partition_idx_list])
+
+        trainable_partition_idx_list = []
+        for partition_idx in raw_trainable_partition_idx_list:
+            partition_id_str = self.get_partition_id_str(partition_idx)
+            if self.config.partition_id_strs is not None and partition_id_str not in self.config.partition_id_strs:
+                continue
+            trainable_partition_idx_list.append(partition_idx)
+
+        if len(self.config.srun_args) == 0:
+            with tqdm(trainable_partition_idx_list) as t:
+                for partition_idx in t:
+                    self.train_a_partition(partition_idx=partition_idx)
+        else:
+            print("SLURM mode enabled")
+            os.makedirs(self.srun_output_dir, exist_ok=True)
+            print("Running outputs will be saved to '{}'".format(self.srun_output_dir))
+            with ThreadPoolExecutor(max_workers=65535) as tpe:
+                with tqdm(tpe.map(
+                        self.train_a_partition,
+                        trainable_partition_idx_list,
+                ), total=len(trainable_partition_idx_list)) as t:
+                    for _ in t:
+                        pass
+
+    @classmethod
+    def start_with_configured_argparser(cls, parser, config_cls=PartitionTrainingConfig):
+        config, args = config_cls.instantiate_with_parser(parser)
+
+        partition_training = cls(config)
+
+        # start training
+        partition_training.train_partitions()

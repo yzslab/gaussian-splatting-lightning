@@ -1,5 +1,5 @@
 import os
-from train_partitions import PartitionTraining
+from train_partitions import PartitionTrainingConfig, PartitionTraining
 import argparse
 
 
@@ -7,7 +7,7 @@ class ColmapPartitionTraining(PartitionTraining):
     def get_default_dataparser_name(self) -> str:
         return "Colmap"
 
-    def get_dataset_specified_args(self, partition_idx: int) -> list[str]:
+    def get_dataset_specific_args(self, partition_idx: int) -> list[str]:
         return [
             "--data.parser.image_list={}".format(os.path.join(
                 self.path,
@@ -20,7 +20,7 @@ class ColmapPartitionTraining(PartitionTraining):
 
 def main():
     parser = argparse.ArgumentParser()
-    ColmapPartitionTraining.configure_argparser(parser)
+    PartitionTrainingConfig.configure_argparser(parser)
     ColmapPartitionTraining.start_with_configured_argparser(parser)
 
 

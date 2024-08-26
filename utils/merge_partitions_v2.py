@@ -22,18 +22,13 @@ def parse_args():
     parser.add_argument("partition_dir")
     parser.add_argument("--project", "-p", type=str, required=False,
                         help="Project Name")
-    parser.add_argument("--project_dir", type=str, required=False, help="Directory storing trained partition models")
     parser.add_argument("--output_path", "-o", type=str, required=False)
     parser.add_argument("--min-images", type=int, default=32)
     args = parser.parse_args()
 
-    if args.project_dir is None:
-        if args.project is None:
-            raise ValueError("'--project' or '-project_dir' can not be empty at the same time")
-        args.project_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "outputs", args.project)
-
     if args.output_path is None:
-        args.output_path = os.path.join(args.project_dir, "merged.ckpt")
+        args.output_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "outputs", args.project, "merged.ckpt")
+        os.makedirs(os.path.dirname(args.output_path), exist_ok=True)
     elif not args.output_path.endswith(".ckpt"):
         args.output_path += ".ckpt"
 
@@ -101,7 +96,7 @@ def main():
 
     partition_training, mergable_partitions, orientation_transformation = get_trained_partitions(
         partition_dir=args.partition_dir,
-        project_dir=args.project_dir,
+        project_name=args.project,
         min_images=args.min_images,
     )
 

@@ -71,7 +71,7 @@ def main():
 
     _, trained_partitions, orientation_transformation = get_trained_partitions(
         partition_dir=args.partition_dir,
-        project_dir=os.path.join(os.path.dirname(os.path.dirname(__file__)), "outputs", args.project_name),
+        project_name=args.project_name,
         min_images=args.min_images,
         n_processes=args.n_processes,
         process_id=args.process_id,
