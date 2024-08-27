@@ -1,10 +1,14 @@
+import concurrent.futures
+
 import add_pypath
 from typing import Union, Optional, Literal, List, Tuple, Dict, Any
 import os
+import time
 import traceback
 import yaml
 import torch
 import subprocess
+import selectors
 from dataclasses import dataclass, field
 from tqdm.auto import tqdm
 from concurrent.futures import ThreadPoolExecutor
@@ -24,7 +28,7 @@ class PartitionTrainingConfig:
     process_id: int
     dry_run: bool
     extra_epoches: int
-    # name_suffix: str
+    name_suffix: str
     scalable_params: Optional[Dict[str, int]] = None
     extra_epoch_scalable_params: Optional[List[str]] = None
     scale_param_mode: Literal["linear", "sqrt", "none"] = "linear"
@@ -45,6 +49,7 @@ class PartitionTrainingConfig:
 
     @staticmethod
     def configure_argparser(parser, extra_epoches: int = 0):
+        # TODO: replace with jsonargparse
         parser.add_argument("partition_dir")
         parser.add_argument("--project", "-p", type=str, required=True,
                             help="Project name")
@@ -60,7 +65,7 @@ class PartitionTrainingConfig:
         parser.add_argument("--scale-param-mode", type=str, default="linear")
         parser.add_argument("--no-default-scalable", action="store_true")
         parser.add_argument("--dry-run", action="store_true")
-        # parser.add_argument("--name-suffix", type=str, default="")
+        parser.add_argument("--name-suffix", type=str, default="")
         configure_arg_parser_v2(parser)
 
     @staticmethod
@@ -111,7 +116,7 @@ class PartitionTrainingConfig:
             process_id=args.process_id,
             dry_run=args.dry_run,
             extra_epoches=args.extra_epoches,
-            # name_suffix=args.name_suffix,
+            name_suffix=args.name_suffix,
             scalable_params=scalable_params,
             extra_epoch_scalable_params=extra_epoch_scalable_params,
             scale_param_mode=args.scale_param_mode,
@@ -157,6 +162,27 @@ class PartitionTraining:
     def srun_output_dir(self) -> str:
         return os.path.join(self.project_output_dir, "srun-outputs")
 
+    def run_subprocess(self, args, output_redirect) -> int:
+        sel = selectors.DefaultSelector()
+
+        with subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as p:
+            sel.register(p.stdout, selectors.EVENT_READ)
+            sel.register(p.stderr, selectors.EVENT_READ)
+
+            while True:
+                if len(sel.get_map()) == 0:
+                    break
+
+                events = sel.select()
+                for key, mask in events:
+                    line = key.fileobj.readline()
+                    if len(line) == 0:
+                        sel.unregister(key.fileobj)
+                        continue
+                    output_redirect(line.decode("utf-8").rstrip("\n"))
+            p.wait()
+            return p.returncode
+
     def get_default_dataparser_name(self) -> str:
         raise NotImplementedError()
 
@@ -192,13 +218,16 @@ class PartitionTraining:
         return get_task_list(n_processors=n_processes, current_processor_id=process_id, all_tasks=all_trainable_partition_indices)
 
     def get_partition_trained_step_filename(self, partition_idx: int):
-        return "{}-trained".format(self.get_partition_id_str(partition_idx))
+        return "{}-trained".format(self.get_experiment_name(partition_idx))
 
     def get_partition_image_number(self, partition_idx: int) -> int:
         return torch.logical_or(
             self.scene["location_based_assignments"][partition_idx],
             self.scene["visibility_based_assignments"][partition_idx],
         ).sum(-1).item()
+
+    def get_experiment_name(self, partition_idx: int) -> str:
+        return "{}{}".format(self.get_partition_id_str(partition_idx), self.config.name_suffix)
 
     def train_a_partition(
             self,
@@ -211,7 +240,6 @@ class PartitionTraining:
         project_output_dir = self.project_output_dir
         config_file = self.config.config_file
         extra_training_args = self.config.training_args
-        partition_id_str = self.get_partition_id_str(partition_idx)
         project_name = self.config.project_name
         dry_run = self.config.dry_run
 
@@ -235,7 +263,7 @@ class PartitionTraining:
                 trained_steps = int(f.read())
                 if trained_steps >= max_steps:
                     print("Skip trained partition '{}'".format(self.partition_coordinates.id[partition_idx].tolist()))
-                    return
+                    return partition_idx, 0
         except:
             pass
 
@@ -266,8 +294,9 @@ class PartitionTraining:
         # scalable
         args += to_command_args(max_steps, scaled_params)
 
+        experiment_name = self.get_experiment_name(partition_idx)
         args += [
-            "-n={}".format(partition_id_str),
+            "-n={}".format(experiment_name),
             "--data.path", self.dataset_path,
             "--project", project_name,
             "--output", project_output_dir,
@@ -277,19 +306,29 @@ class PartitionTraining:
         args += self.get_partition_specific_args(partition_idx)
 
         if len(self.config.srun_args) > 0:
-            output_filename = os.path.join(self.srun_output_dir, "{}.txt".format(partition_id_str))
+            output_filename = os.path.join(self.srun_output_dir, "{}.txt".format(experiment_name))
             args = [
                        "srun",
                        "--output={}".format(output_filename),
-                       "--job-name={}-{}".format(self.config.project_name, partition_id_str),
+                       "--job-name={}-{}".format(self.config.project_name, experiment_name),
                    ] + self.config.srun_args + args
 
+        ret_code = -1
         if dry_run:
             print(" ".join(args))
         else:
             try:
-                print(args)
-                ret_code = subprocess.call(args)
+                tqdm.write(str(args))
+
+                def tqdm_write(i):
+                    tqdm.write("[{}] #{}({}): {}".format(
+                        time.strftime('%Y-%m-%d %H:%M:%S'),
+                        partition_idx,
+                        self.get_partition_id_str(partition_idx),
+                        i,
+                    ))
+
+                ret_code = self.run_subprocess(args, tqdm_write)
                 if ret_code == 0:
                     with open(partition_trained_step_file_path, "w") as f:
                         f.write("{}".format(max_steps))
@@ -297,6 +336,8 @@ class PartitionTraining:
                 raise e
             except:
                 traceback.print_exc()
+
+        return partition_idx, ret_code
 
     def train_partitions(
             self,
@@ -323,13 +364,39 @@ class PartitionTraining:
             print("SLURM mode enabled")
             os.makedirs(self.srun_output_dir, exist_ok=True)
             print("Running outputs will be saved to '{}'".format(self.srun_output_dir))
-            with ThreadPoolExecutor(max_workers=65535) as tpe:
-                with tqdm(tpe.map(
-                        self.train_a_partition,
-                        trainable_partition_idx_list,
-                ), total=len(trainable_partition_idx_list)) as t:
-                    for _ in t:
-                        pass
+            total_trainable_partitions = len(trainable_partition_idx_list)
+
+            with ThreadPoolExecutor(max_workers=total_trainable_partitions) as tpe:
+                # iterating on ThreadPoolExecutor.map() does not return immediately sometimes, not sure why, so replace with `concurrent.futures.as_completed()` here
+                futures = [tpe.submit(
+                    self.train_a_partition,
+                    i,
+                ) for i in trainable_partition_idx_list]
+                finished_count = 0
+                with tqdm(
+                        concurrent.futures.as_completed(futures),
+                        total=total_trainable_partitions,
+                        miniters=1,
+                        mininterval=0,  # keep progress bar updating
+                        maxinterval=0,
+                ) as t:
+                    for future in t:
+                        finished_count += 1
+                        try:
+                            finished_idx, ret_code = future.result()
+                        except KeyboardInterrupt as e:
+                            raise e
+                        except:
+                            traceback.print_exc()
+                            continue
+                        tqdm.write("[{}] #{}({}) exited with code {} | {}/{}".format(
+                            time.strftime('%Y-%m-%d %H:%M:%S'),
+                            finished_idx,
+                            self.get_partition_id_str(finished_idx),
+                            ret_code,
+                            finished_count,
+                            total_trainable_partitions,
+                        ))
 
     @classmethod
     def start_with_configured_argparser(cls, parser, config_cls=PartitionTrainingConfig):
