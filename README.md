@@ -426,7 +426,7 @@ There is no single script to finish the whole pipeline. Please refer to below co
   
   The options `--n-processes` and `--process-id` are designed for the parallel purpose. `--n-processes` is the total number of GPUs you want to use, which has the same meaning as world size. `--process-id` is the unique process id, just like the global rank, but ranging from 1 to the value of `--n-processes` here.  Please <b>note</b> that both of the options should be placed before `--`.
 
-  Assuming you have 2 machines, and both of them are equipped with 2 GPUs.
+  Assuming you have 2 machines, and both of them are equipped with 2 GPUs:
 
   * On the first machine
   
@@ -447,6 +447,19 @@ There is no single script to finish the whole pipeline. Please refer to below co
     First: `CUDA_VISIBLE_DEVICES=0 python ... --n-processes 4 --process-id 3`
     
     Then another terminal:`CUDA_VISIBLE_DEVICES=1 python ... --n-processes 4 --process-id 4`
+  
+  Or submit partition training jobs to Slurm:
+  ```bash
+  # Adding params after the 2nd `--` means submitting jobs to Slurm,
+  #   and those params belong to `srun`.
+  # Do not add `--n-processes` and `--process-id` here.
+  python utils/train_colmap_partitions_v2.py \
+     ... \
+     -- \
+     ... \
+     -- \
+     --gres=gpu:1  # one gpu per-partition training job
+  ```
 
 * Train/finetune a partition with multiple GPUs
   * Training only works with the <a href="#216-new-multiple-gpu-training-strategy">strategy introduced in 2.16.</a>
