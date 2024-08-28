@@ -305,7 +305,23 @@ class PartitionTraining:
 
         args += self.get_partition_specific_args(partition_idx)
 
+        print_func = print
+        run_func = subprocess.call
         if len(self.config.srun_args) > 0:
+            def tqdm_write(i):
+                tqdm.write("[{}] #{}({}): {}".format(
+                    time.strftime('%Y-%m-%d %H:%M:%S'),
+                    partition_idx,
+                    self.get_partition_id_str(partition_idx),
+                    i,
+                ))
+
+            def run_with_tqdm_write(args):
+                return self.run_subprocess(args, tqdm_write)
+
+            run_func = run_with_tqdm_write
+            print_func = tqdm_write
+
             output_filename = os.path.join(self.srun_output_dir, "{}.txt".format(experiment_name))
             args = [
                        "srun",
@@ -318,17 +334,8 @@ class PartitionTraining:
             print(" ".join(args))
         else:
             try:
-                tqdm.write(str(args))
-
-                def tqdm_write(i):
-                    tqdm.write("[{}] #{}({}): {}".format(
-                        time.strftime('%Y-%m-%d %H:%M:%S'),
-                        partition_idx,
-                        self.get_partition_id_str(partition_idx),
-                        i,
-                    ))
-
-                ret_code = self.run_subprocess(args, tqdm_write)
+                print_func(str(args))
+                ret_code = run_func(args)
                 if ret_code == 0:
                     with open(partition_trained_step_file_path, "w") as f:
                         f.write("{}".format(max_steps))
