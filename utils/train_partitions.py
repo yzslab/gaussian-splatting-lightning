@@ -367,7 +367,6 @@ class PartitionTraining:
             total_trainable_partitions = len(trainable_partition_idx_list)
 
             with ThreadPoolExecutor(max_workers=total_trainable_partitions) as tpe:
-                # iterating on ThreadPoolExecutor.map() does not return immediately sometimes, not sure why, so replace with `concurrent.futures.as_completed()` here
                 futures = [tpe.submit(
                     self.train_a_partition,
                     i,
