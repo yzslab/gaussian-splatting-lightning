@@ -151,7 +151,7 @@ class MatrixCityDataParser(DataParser):
             cy=torch.concat(cy_tensor_list, dim=0),
             width=width,
             height=torch.concat(height_tensor_list, dim=0),
-            appearance_id=torch.zeros_like(width),
+            appearance_id=torch.zeros_like(width, dtype=torch.int),
             normalized_appearance_id=torch.zeros_like(width),
             distortion_params=None,
             camera_type=torch.zeros_like(width),
