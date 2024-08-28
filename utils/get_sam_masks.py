@@ -58,11 +58,12 @@ for e in args.ext:
     for i in glob(os.path.join(image_path, f"**/*.{e}"), recursive=True):
         image_name_set[i] = True
 image_list = list(image_name_set.keys())
-assert len(image_list) > 0, "Not a image can be found"
-print(f"{len(image_list)} images found")
+n_found_images = len(image_list)
+assert n_found_images > 0, "Not a image can be found"
 image_list.sort()
 
 image_list = get_task_list_with_args(args, image_list)
+print("extract masks from {} of {} images".format(len(image_list), n_found_images))
 
 image_reader = AsyncImageReader(image_list)
 image_saver = AsyncImageSaver()

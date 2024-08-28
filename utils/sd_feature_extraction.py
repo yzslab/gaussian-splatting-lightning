@@ -306,10 +306,11 @@ def main():
         for ext in args.extensions:
             image_list += list(glob(os.path.join(args.image_dir, "**/*.{}".format(ext)), recursive=True))
         image_list.sort()
-    print("{} images found".format(len(image_list)))
+    n_found_images = len(image_list)
 
     # get an image list slice
     image_list = distibuted_tasks.get_task_list_with_args(args, image_list)
+    print("extract features from {} of {} images".format(len(image_list), n_found_images))
 
     dift = SDFeaturizer()
 
