@@ -32,6 +32,9 @@ def auto_hyper_parameter(
     else:
         raise ValueError("Unknown scale mode '{}'".format(scale_mode))
 
+    # make results more beautiful
+    scale_up = math.ceil(scale_up * 100) / 100.
+
     extra_steps = 0
     if extra_epoch > 0:
         extra_steps = extra_epoch * max(n, base)
@@ -66,7 +69,8 @@ if __name__ == "__main__":
     parser.add_argument("n", type=int)
     parser.add_argument("--base", "-b", type=int, default=300)
     parser.add_argument("--extra-epoch", "-e", type=int, default=0)
+    parser.add_argument("--mode", type=str, default="linear")
     args = parser.parse_args()
 
-    max_steps, scaled_params, _ = auto_hyper_parameter(args.n, args.base, args.extra_epoch)
+    max_steps, scaled_params, _ = auto_hyper_parameter(args.n, args.base, args.extra_epoch, scale_mode=args.mode)
     print(" ".join(to_command_args(max_steps, scaled_params)))
