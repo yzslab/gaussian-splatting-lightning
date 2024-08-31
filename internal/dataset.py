@@ -265,6 +265,7 @@ class DataModule(LightningDataModule):
             background_sphere_distance: float = 2.2,
             background_sphere_points: int = 204_800,
             background_sphere_color: Literal["random", "white"] = "random",
+            background_sphere_min_altitude: float = -math.inf,
             camera_on_cpu: bool = False,
             image_on_cpu: bool = True,
     ) -> None:
@@ -354,10 +355,13 @@ class DataModule(LightningDataModule):
             unit_sphere_points = np.concatenate([x[:, None], y[:, None], z[:, None]], axis=1)
             # build background sphere
             background_sphere_point_xyz = (unit_sphere_points * scene_radius * self.hparams["background_sphere_distance"]) + scene_center
+            # simply delete those under min altitude
+            # TODO: custom up direction
+            background_sphere_point_xyz = background_sphere_point_xyz[background_sphere_point_xyz[:, -1] >= self.hparams["background_sphere_min_altitude"]]
             if self.hparams["background_sphere_color"] == "random":
                 background_sphere_point_rgb = np.asarray(np.random.random(background_sphere_point_xyz.shape) * 255, dtype=np.uint8)
             else:
-                background_sphere_point_rgb = np.ones((n_points, 3), dtype=np.uint8) * 255
+                background_sphere_point_rgb = np.ones(background_sphere_point_xyz.shape, dtype=np.uint8) * 255
             # add background sphere to scene
             self.dataparser_outputs.point_cloud.xyz = np.concatenate([self.dataparser_outputs.point_cloud.xyz, background_sphere_point_xyz], axis=0)
             self.dataparser_outputs.point_cloud.rgb = np.concatenate([self.dataparser_outputs.point_cloud.rgb, background_sphere_point_rgb], axis=0)
@@ -365,7 +369,7 @@ class DataModule(LightningDataModule):
             # TODO: resize scene_extent without changing lr
             self.prune_extent = scene_radius * self.hparams["background_sphere_distance"] * 1.0001
 
-            print("added {} background sphere points, scene_center={}, scene_radius={}, rescale prune extent from {} to {}".format(n_points, scene_center.tolist(), scene_radius, self.dataparser_outputs.camera_extent, self.prune_extent))
+            print("added {} background sphere points, scene_center={}, scene_radius={}, rescale prune extent from {} to {}".format(background_sphere_point_xyz.shape, scene_center.tolist(), scene_radius, self.dataparser_outputs.camera_extent, self.prune_extent))
 
         # convert point cloud
         self.point_cloud = self.dataparser_outputs.point_cloud
