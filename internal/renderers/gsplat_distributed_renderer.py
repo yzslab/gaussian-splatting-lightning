@@ -1,5 +1,4 @@
 import traceback
-from dataclasses import dataclass
 from gsplat import project_gaussians
 from gsplat.rasterize import rasterize_gaussians
 from gsplat.sh import spherical_harmonics
@@ -10,30 +9,6 @@ import torch.distributed.nn.functional
 
 DEFAULT_BLOCK_SIZE: int = 16
 DEFAULT_ANTI_ALIASED_STATUS: bool = True
-
-
-@dataclass
-class MemberData:
-    # camera
-
-    width: int
-    height: int
-
-    fx: float
-    fy: float
-    cx: float
-    cy: float
-
-    camera_center: torch.Tensor
-
-    w2c: torch.Tensor
-
-    appearance_id: torch.Tensor
-
-    normalized_appearance_id: torch.Tensor
-
-    # gaussians
-    n_gaussians: int
 
 
 @dataclass
@@ -115,6 +90,11 @@ class GSplatDistributedRendererImpl(Renderer):
 
         print(f"rank={self.global_rank}, l={l}, r={r}")
 
+        def get_trainer():
+            return module.trainer
+
+        self.get_trainer = get_trainer
+
         return None, None
 
     @staticmethod
@@ -124,60 +104,20 @@ class GSplatDistributedRendererImpl(Renderer):
             optimizers,
         )
 
-    def gather_member_data(self, viewpoint_camera: Camera, n_gaussians: int, device) -> List[MemberData]:
-        # gather data from group members
-        ## create local float tensor
-        float_tensor = torch.tensor([
-            viewpoint_camera.fx,
-            viewpoint_camera.fy,
-            viewpoint_camera.cx,
-            viewpoint_camera.cy,
-            viewpoint_camera.normalized_appearance_id,
-        ], dtype=torch.float, device=device)
-        float_tensor = torch.concat([float_tensor, viewpoint_camera.camera_center, viewpoint_camera.world_to_camera.reshape((-1))], dim=-1)
-        ## perform float tensor gathering
-        gathered_float_tensors = torch.distributed.nn.functional.all_gather(float_tensor)
-
-        ## create local int tensor
-        int_tensor = torch.tensor([
-            viewpoint_camera.width.int(),
-            viewpoint_camera.height.int(),
-            n_gaussians,
-            viewpoint_camera.appearance_id,
-        ], dtype=torch.int, device=device)
-        ## perform int tensor gathering
-        gathered_int_tensors = torch.distributed.nn.functional.all_gather(int_tensor)
-
-        # reformat gathered data
-        member_data_list = []
-        for i in range(len(gathered_float_tensors)):
-            float_tensor = gathered_float_tensors[i]
-            int_tensor = gathered_int_tensors[i]
-            member_data_list.append(MemberData(
-                width=int_tensor[0].item(),
-                height=int_tensor[1].item(),
-                fx=float_tensor[0].item(),
-                fy=float_tensor[1].item(),
-                cx=float_tensor[2].item(),
-                cy=float_tensor[3].item(),
-                camera_center=float_tensor[5:8],
-                w2c=float_tensor[8:].reshape((4, 4)),
-                appearance_id=int_tensor[3],
-                normalized_appearance_id=float_tensor[4],
-                n_gaussians=int_tensor[2].item(),
-            ))
-
-        return member_data_list
-
     def rasterizer_required_data_all2all(
             self,
             projection_result_list: List[Tuple],
             rgb_list: List[torch.Tensor],
             opacities: torch.Tensor,
-            member_data_list: List[MemberData],
             device,
-    ) -> Tuple[List, torch.Tensor, torch.Tensor]:
-        # TODO: transfer visible Gaussians only
+    ) -> Tuple[List, torch.Tensor, torch.Tensor, List]:
+        # gather numbers of visible Gaussian
+        visible_mask_list = [(i[2] > 0) for i in projection_result_list]
+        gathered_n_visible = [torch.tensor(-1, dtype=torch.int, device=device) for _ in range(torch.distributed.get_world_size())]
+        torch.distributed.all_to_all(
+            gathered_n_visible,
+            input_tensor_list=[i.sum().to(torch.int) for i in visible_mask_list],
+        )
 
         output_float_tensor_list = []
         input_float_tensor_list = []
@@ -190,7 +130,7 @@ class GSplatDistributedRendererImpl(Renderer):
             xys: [N, 2]
             depths: [N], int
             radii: [N], int
-            conics: [#, 3]
+            conics: [N, 3]
             comp: [N]
             num_tile_hit: [N], int
             cov3d: [N, 6]
@@ -198,6 +138,8 @@ class GSplatDistributedRendererImpl(Renderer):
             opacities: [N, 1]
             rgb: [N, 3]
             """
+
+            visible_mask = visible_mask_list[i]
 
             # build float tensor sent to other members
             float_tensor = torch.concat([
@@ -208,24 +150,24 @@ class GSplatDistributedRendererImpl(Renderer):
                 # cov3d,  # this is not required by rasterization
                 opacities,
                 rgb_list[i],
-            ], dim=-1)
+            ], dim=-1)[visible_mask]
             # build int tensor
             int_tensor = torch.concat([
                 radii.unsqueeze(-1),
                 num_tiles_hit.unsqueeze(-1),
-            ], dim=-1)
+            ], dim=-1)[visible_mask]
             # append to input list
             input_float_tensor_list.append(float_tensor)
             input_int_tensor_list.append(int_tensor)
 
             # create output tensors and append to correspond lists
             output_float_tensor_list.append(torch.empty(
-                (member_data_list[i].n_gaussians, float_tensor.shape[-1]),
+                (gathered_n_visible[i], float_tensor.shape[-1]),
                 dtype=torch.float,
                 device=device,
             ))
             output_int_tensor_list.append(torch.empty(
-                (member_data_list[i].n_gaussians, int_tensor.shape[-1]),
+                (gathered_n_visible[i], int_tensor.shape[-1]),
                 dtype=torch.int,
                 device=device,
             ))
@@ -257,22 +199,22 @@ class GSplatDistributedRendererImpl(Renderer):
 
         return [
             xys, depths.squeeze(-1), radii.squeeze(-1), conics, comp.squeeze(-1), num_tiles_hit.squeeze(-1),
-        ], opacities, rgbs
+        ], opacities, rgbs, visible_mask_list
 
-    def project(self, member_data: MemberData, pc: GaussianModel, scaling_modifier):
+    def project(self, camera: Camera, pc: GaussianModel, scaling_modifier):
         results = project_gaussians(
             means3d=pc.get_xyz,
             scales=pc.get_scaling,
             glob_scale=scaling_modifier,
             quats=pc.get_rotation,
-            viewmat=member_data.w2c.T,
+            viewmat=camera.world_to_camera.T,
             # projmat=viewpoint_camera.full_projection.T,
-            fx=member_data.fx,
-            fy=member_data.fy,
-            cx=member_data.cx,
-            cy=member_data.cy,
-            img_height=member_data.height,
-            img_width=member_data.width,
+            fx=camera.fx.item(),
+            fy=camera.fy.item(),
+            cx=camera.cx.item(),
+            cy=camera.cy.item(),
+            img_height=camera.height.item(),
+            img_width=camera.width.item(),
             block_width=self.block_size,
         )
 
@@ -280,29 +222,43 @@ class GSplatDistributedRendererImpl(Renderer):
 
     def forward(self, viewpoint_camera: Camera, pc: GaussianModel, bg_color: torch.Tensor, scaling_modifier=1.0, render_types: list = None, **kwargs):
         with self.profiler.profile(f"{self.profile_prefix}forward"):
-            with self.profiler.profile(f"{self.profile_prefix}gather_member_data"):
-                # gather camera and number of gaussian from group members
-                # assert all members have different camera (this is the default behavior for training set)
-                member_data_list = self.gather_member_data(viewpoint_camera, pc.get_xyz.shape[0], bg_color.device)
+            with self.profiler.profile(f"{self.profile_prefix}gather_cameras"):
+                # gather camera ids
+                gathered_camera_ids = torch.empty(torch.distributed.get_world_size(), dtype=torch.int, device=viewpoint_camera.device)
+                torch.distributed.all_gather_into_tensor(
+                    gathered_camera_ids,
+                    viewpoint_camera.idx,
+                )
+
+                if self.training:
+                    camera_set = self.get_trainer().train_dataloader.dataset.image_cameras
+                else:
+                    camera_set = self.get_trainer().val_dataloaders.dataset.image_cameras
+
+                gathered_cameras = []
+                for i in gathered_camera_ids:
+                    camera = camera_set[i]
+                    if camera.device != viewpoint_camera.device:
+                        camera.to_device(viewpoint_camera.device)
+                    gathered_cameras.append(camera)
 
             with self.profiler.profile(f"{self.profile_prefix}project"):
                 # perform the projection and SH for each member's camera
                 projection_results_list = []
                 rgb_list = []
-                for member_data in member_data_list:
+                for camera in gathered_cameras:
                     # store projection results to list
-                    project_results = self.project(member_data, pc, scaling_modifier)
+                    project_results = self.project(camera, pc, scaling_modifier)
                     projection_results_list.append(project_results)
 
-                    rgb_list.append(self.get_rgbs(pc, member_data, project_results))
+                    rgb_list.append(self.get_rgbs(pc, camera, project_results))
 
             with self.profiler.profile(f"{self.profile_prefix}rasterizer_required_data_all2all"):
                 # perform All-to-All operation
-                projection_results, opacities, rgbs = self.rasterizer_required_data_all2all(
+                projection_results, opacities, rgbs, visible_mask_list = self.rasterizer_required_data_all2all(
                     projection_result_list=projection_results_list,
                     rgb_list=rgb_list,
                     opacities=pc.get_opacity,
-                    member_data_list=member_data_list,
                     device=bg_color.device,
                 )
 
@@ -313,7 +269,7 @@ class GSplatDistributedRendererImpl(Renderer):
             if self.anti_aliased is True:
                 opacities = opacities * comp[:, None]
 
-            local_camera_data = member_data_list[self.global_rank]
+            local_camera_data = gathered_cameras[self.global_rank]
             img_height = local_camera_data.height
             img_width = local_camera_data.width
 
@@ -337,14 +293,15 @@ class GSplatDistributedRendererImpl(Renderer):
         # a little difference below, since the densification needs projection results from all cameras
         return {
             "render": rgb,
-            "member_data_list": member_data_list,
+            "cameras": gathered_cameras,
             "projection_results_list": projection_results_list,
+            "visible_mask_list": visible_mask_list,
             "xys_grad_scale_required": True,
         }
 
-    def get_rgbs(self, pc, member_data: MemberData, project_results) -> torch.Tensor:
+    def get_rgbs(self, pc, camera: Camera, project_results) -> torch.Tensor:
         # store SH results to list
-        viewdirs = pc.get_xyz.detach() - member_data.camera_center  # (N, 3)
+        viewdirs = pc.get_xyz.detach() - camera.camera_center  # (N, 3)
         rgbs = spherical_harmonics(pc.active_sh_degree, viewdirs, pc.get_features)
         rgbs = torch.clamp(rgbs + 0.5, min=0.0)  # type: ignore
         return rgbs

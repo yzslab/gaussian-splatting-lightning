@@ -21,19 +21,20 @@ class DistributedVanillaDensityControllerImpl(VanillaDensityControllerImpl):
             i[0].retain_grad()
 
     def update_states(self, outputs):
-        member_data_list = outputs["member_data_list"]
+        cameras = outputs["cameras"]
         projection_results_list = outputs["projection_results_list"]
+        visible_mask_list = outputs["visible_mask_list"]
         # processing for each projection results
         for i in range(len(projection_results_list)):
             # retrieve data
-            member_data = member_data_list[i]
+            camera = cameras[i]
             xys, _, radii, _, _, _, _ = projection_results_list[i]
 
             viewspace_point_tensor = xys
-            visibility_filter = radii > 0
+            visibility_filter = visible_mask_list[i]
             viewspace_points_grad_scale = torch.ones((2,), dtype=torch.float, device=xys.device)
             if outputs["xys_grad_scale_required"] is True:
-                viewspace_points_grad_scale = 0.5 * torch.tensor([[member_data.width, member_data.height]], dtype=torch.float, device=xys.device)
+                viewspace_points_grad_scale = 0.5 * torch.tensor([[camera.width, camera.height]], dtype=torch.float, device=xys.device)
 
             # update states
             self.max_radii2D[visibility_filter] = torch.max(

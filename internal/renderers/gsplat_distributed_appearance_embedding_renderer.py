@@ -5,8 +5,9 @@ import lightning
 import torch
 from torch.nn.parallel import DistributedDataParallel as DDP
 from gsplat.sh import spherical_harmonics
+from internal.cameras import Camera
 from . import Renderer
-from .gsplat_distributed_renderer import GSplatDistributedRenderer, GSplatDistributedRendererImpl, MemberData
+from .gsplat_distributed_renderer import GSplatDistributedRenderer, GSplatDistributedRendererImpl
 from .gsplat_appearance_embedding_renderer import Model as AppearanceEmbeddingModel, ModelConfig, OptimizationConfig, GSplatAppearanceEmbeddingRendererModule as GSplatAppearanceEmbeddingRenderer
 
 
@@ -64,15 +65,15 @@ class GSplatDistributedAppearanceEmbeddingRendererImpl(GSplatDistributedRenderer
 
         return [embedding_optimizer, network_optimizer], [embedding_scheduler, network_scheduler]
 
-    def get_rgbs(self, pc, member_data: MemberData, projection_results) -> torch.Tensor:
+    def get_rgbs(self, pc, camera: Camera, projection_results) -> torch.Tensor:
         radii = projection_results[2]
         is_gaussian_visible = radii > 0
 
         detached_xyz = pc.get_xyz.detach()
-        view_directions = detached_xyz[is_gaussian_visible] - member_data.camera_center  # (N, 3)
+        view_directions = detached_xyz[is_gaussian_visible] - camera.camera_center  # (N, 3)
         view_directions = view_directions / view_directions.norm(dim=-1, keepdim=True)
         base_rgb = spherical_harmonics(pc.active_sh_degree, view_directions, pc.get_features[is_gaussian_visible]) + 0.5
-        rgb_offset = self.appearance_model(pc.get_appearance_features()[is_gaussian_visible], member_data.appearance_id, view_directions) * 2 - 1.
+        rgb_offset = self.appearance_model(pc.get_appearance_features()[is_gaussian_visible], camera.appearance_id, view_directions) * 2 - 1.
         rgbs = torch.zeros((radii.shape[0], 3), dtype=projection_results[0].dtype, device=radii.device)
         rgbs[is_gaussian_visible] = torch.clamp(base_rgb + rgb_offset, min=0., max=1.)
 
