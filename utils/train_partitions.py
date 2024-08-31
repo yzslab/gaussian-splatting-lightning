@@ -28,7 +28,7 @@ class PartitionTrainingConfig:
     process_id: int
     dry_run: bool
     extra_epoches: int
-    name_suffix: str
+    name_suffix: str = ""
     scalable_params: Optional[Dict[str, int]] = None
     extra_epoch_scalable_params: Optional[List[str]] = None
     scale_param_mode: Literal["linear", "sqrt", "none"] = "linear"
