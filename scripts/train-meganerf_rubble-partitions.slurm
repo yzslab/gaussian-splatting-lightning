@@ -10,6 +10,9 @@ PROJECT_NAME=MegaNeRF-rubble-view_independent-hard_depth
 #   * --nodes=1
 #   * --ntasks=1
 #   * --exclusive
+#
+# submitting: sbatch --gpus=6 --cpus-per-gpu=32 scripts/train-meganerf_rubble-partitions.slurm
+#  remember to specify the value of `--cpus-per-gpu=`, or only one cpu core will be assigned to each process even with the `DefCpuPerGPU` set
 python3 utils/train_colmap_partitions_v2.py \
   ${PARTITION_DATA_PATH} \
   -p ${PROJECT_NAME} \
