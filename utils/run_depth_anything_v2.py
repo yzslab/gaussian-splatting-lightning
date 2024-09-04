@@ -56,7 +56,7 @@ try:
     with torch.no_grad(), tqdm(range(len(images))) as t:
         for _ in t:
             image_path, raw_image = image_reader.get()
-            image_name = image_path[len(args.image_dir):].lstrip("/")
+            image_name = image_path[len(args.image_dir):].lstrip(os.path.sep)
 
             depth = depth_anything.infer_image(raw_image, args.input_size)
             normalized_depth = (depth - depth.min()) / (depth.max() - depth.min())
