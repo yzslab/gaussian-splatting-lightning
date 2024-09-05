@@ -97,6 +97,14 @@ class PartitionLoDRendererModule(Renderer):
             lods.append(models)
         self.lods = lods
 
+        # retain trainable partitions only
+        trainable_partition_idx = torch.tensor(trainable_partition_idx_list)
+        self.partition_coordinates.id = self.partition_coordinates.id[trainable_partition_idx]
+        self.partition_coordinates.xy = self.partition_coordinates.xy[trainable_partition_idx]
+        self.partition_bounding_boxes.min = self.partition_bounding_boxes.min[trainable_partition_idx]
+        self.partition_bounding_boxes.max = self.partition_bounding_boxes.max[trainable_partition_idx]
+
+
         # set default LoD distance thresholds
         self.lod_thresholds = (torch.arange(1, len(self.lods)) * 0.25 * partition_size).to(device=device)  # [N_lods - 1]
 
