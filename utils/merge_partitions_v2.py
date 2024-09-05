@@ -24,6 +24,7 @@ def parse_args():
                         help="Project Name")
     parser.add_argument("--output_path", "-o", type=str, required=False)
     parser.add_argument("--min-images", type=int, default=32)
+    parser.add_argument("--preprocess", action="store_true")
     args = parser.parse_args()
 
     if args.output_path is None:
@@ -32,7 +33,8 @@ def parse_args():
     elif not args.output_path.endswith(".ckpt"):
         args.output_path += ".ckpt"
 
-    assert os.path.exists(args.output_path) is False, "output file '{}' already exists".format(args.output_path)
+    if not args.preprocess:
+        assert os.path.exists(args.output_path) is False, "output file '{}' already exists".format(args.output_path)
 
     return args
 
@@ -67,6 +69,43 @@ def fuse_appearance_features(ckpt: dict, gaussian_model, cameras_json: list[dict
     sh_offset = RGB2SH(rgb_offset)
     gaussian_model.shs_dc = gaussian_model.shs_dc + sh_offset.unsqueeze(1).to(device=gaussian_model.shs_dc.device)
     gaussian_model.to(device=gaussian_device)
+
+
+def update_ckpt(ckpt, merged_gaussians, max_sh_degree):
+    # replace `AppearanceFeatureGaussian` with `VanillaGaussian`
+    ckpt["hyper_parameters"]["gaussian"] = VanillaGaussian(sh_degree=max_sh_degree)
+
+    # remove `GSplatAppearanceEmbeddingRenderer`'s states from ckpt
+    state_dict_key_to_delete = []
+    for i in ckpt["state_dict"]:
+        if i.startswith("renderer."):
+            state_dict_key_to_delete.append(i)
+    for i in state_dict_key_to_delete:
+        del ckpt["state_dict"][i]
+
+    # replace `GSplatAppearanceEmbeddingRenderer` with `GSPlatRenderer`
+    anti_aliased = True
+    if isinstance(ckpt["hyper_parameters"]["renderer"], VanillaRenderer):
+        anti_aliased = False
+    ckpt["hyper_parameters"]["renderer"] = GSPlatRenderer(anti_aliased=anti_aliased)
+
+    # remove existing Gaussians from ckpt
+    for i in list(ckpt["state_dict"].keys()):
+        if i.startswith("gaussian_model.gaussians.") or i.startswith("frozen_gaussians."):
+            del ckpt["state_dict"][i]
+
+    # remove optimizer states
+    ckpt["optimizer_states"] = []
+
+    # reinitialize density controller states
+    if isinstance(ckpt["hyper_parameters"]["density"], VanillaDensityController):
+        for k in list(ckpt["state_dict"].keys()):
+            if k.startswith("density_controller."):
+                ckpt["state_dict"][k] = torch.zeros((merged_gaussians["means"].shape[0], *ckpt["state_dict"][k].shape[1:]), dtype=ckpt["state_dict"][k].dtype)
+
+    # add merged gaussians to ckpt
+    for k, v in merged_gaussians.items():
+        ckpt["state_dict"]["gaussian_model.gaussians.{}".format(k)] = v
 
 
 def main():
@@ -154,8 +193,18 @@ def main():
                     image_name_to_camera=image_name_to_camera,
                 )
 
-            for i in MERGABLE_PROPERTY_NAMES:
-                gaussians_to_merge.setdefault(i, []).append(gaussian_model.get_property(i))
+            if args.preprocess:
+                update_ckpt(ckpt, {k: gaussian_model.get_property(k) for k in MERGABLE_PROPERTY_NAMES}, gaussian_model.max_sh_degree)
+                torch.save(ckpt, os.path.join(
+                    os.path.dirname(os.path.dirname(ckpt_file)),
+                    "preprocessed.ckpt",
+                ))
+            else:
+                for i in MERGABLE_PROPERTY_NAMES:
+                    gaussians_to_merge.setdefault(i, []).append(gaussian_model.get_property(i))
+
+    if args.preprocess:
+        return
 
     # merge
     print("Merging...")
@@ -167,40 +216,7 @@ def main():
         gc.collect()
         torch.cuda.empty_cache()
 
-    # replace `AppearanceFeatureGaussian` with `VanillaGaussian`
-    ckpt["hyper_parameters"]["gaussian"] = VanillaGaussian(sh_degree=gaussian_model.max_sh_degree)
-
-    # remove `GSplatAppearanceEmbeddingRenderer`'s states from ckpt
-    state_dict_key_to_delete = []
-    for i in ckpt["state_dict"]:
-        if i.startswith("renderer."):
-            state_dict_key_to_delete.append(i)
-    for i in state_dict_key_to_delete:
-        del ckpt["state_dict"][i]
-
-    # replace `GSplatAppearanceEmbeddingRenderer` with `GSPlatRenderer`
-    anti_aliased = True
-    if isinstance(ckpt["hyper_parameters"]["renderer"], VanillaRenderer):
-        anti_aliased = False
-    ckpt["hyper_parameters"]["renderer"] = GSPlatRenderer(anti_aliased=anti_aliased)
-
-    # remove existing Gaussians from ckpt
-    for i in list(ckpt["state_dict"].keys()):
-        if i.startswith("gaussian_model.gaussians."):
-            del ckpt["state_dict"][i]
-
-    # remove optimizer states
-    ckpt["optimizer_states"] = []
-
-    # reinitialize density controller states
-    if isinstance(ckpt["hyper_parameters"]["density"], VanillaDensityController):
-        for k in list(ckpt["state_dict"].keys()):
-            if k.startswith("density_controller."):
-                ckpt["state_dict"][k] = torch.zeros((merged_gaussians["means"].shape[0], *ckpt["state_dict"][k].shape[1:]), dtype=ckpt["state_dict"][k].dtype)
-
-    # add merged gaussians to ckpt
-    for k, v in merged_gaussians.items():
-        ckpt["state_dict"]["gaussian_model.gaussians.{}".format(k)] = v
+    update_ckpt(ckpt, merged_gaussians, gaussian_model.max_sh_degree)
 
     # save
     print("Saving...")

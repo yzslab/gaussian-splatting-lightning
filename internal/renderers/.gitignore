@@ -21,3 +21,4 @@
 !gsplat_distributed_renderer.py
 !gsplat_distributed_appearance_embedding_renderer.py
 !periodic_vibration_gaussian_renderer.py
+!partition_lod_renderer.py

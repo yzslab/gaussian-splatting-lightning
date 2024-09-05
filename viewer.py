@@ -11,6 +11,8 @@ import numpy as np
 import viser
 import viser.transforms as vtf
 import torch
+import yaml
+
 from internal.renderers import VanillaRenderer
 from internal.utils.gaussian_model_loader import GaussianModelLoader
 from internal.utils.gaussian_model_editor import MultipleGaussianModelEditor
@@ -93,6 +95,21 @@ class Viewer:
             self.checkpoint = None
             dataset_type = "kitti"
             turn_off_edit_and_video_render_panel()
+        elif model_paths[0].endswith(".yaml"):
+            self.show_edit_panel = False
+            self.enable_transform = False
+            from internal.models.vanilla_gaussian import VanillaGaussian
+            model = VanillaGaussian().instantiate()
+            model.setup_from_number(0)
+            model.pre_activate_all_properties()
+            model.eval()
+            from internal.renderers.partition_lod_renderer import PartitionLoDRenderer
+            with open(model_paths[0], "r") as f:
+                lod_config = yaml.safe_load(f)
+            renderer = PartitionLoDRenderer(**lod_config).instantiate()
+            renderer.setup("validation")
+            training_output_base_dir = os.getcwd()
+            dataset_type = "Colmap"
         else:
             load_from = self._search_load_file(model_paths[0])
 
