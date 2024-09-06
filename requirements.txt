@@ -9,5 +9,5 @@ viser==0.2.3
 opencv-python==4.10.*
 matplotlib
 mediapy==1.2.2
-./submodules/diff-gaussian-rasterization
-./submodules/simple-knn
+-e ./submodules/diff-gaussian-rasterization
+-e ./submodules/simple-knn
