@@ -9,15 +9,19 @@ with open("README.md", "r") as fh:
 
 def split_requirements(requirements):
     install_requires = []
+    dependency_links = []
     for requirement in requirements:
-        if not requirement.startswith("-e"):
+        if requirement.startswith("git+"):
+            dependency_links.append(requirement)
+        else:
             install_requires.append(requirement)
-    return install_requires
+
+    return install_requires, dependency_links
 
 with open("./requirements.txt", "r") as f:
     requirements = f.read().splitlines()
 
-install_requires = split_requirements(requirements)
+install_requires, dependency_links = split_requirements(requirements)
 
 setup(
     name = "gaussian-splatting-lightning",
@@ -26,5 +30,7 @@ setup(
     description="A 3D Gaussian Splatting framework with various derived algorithms and an interactive web viewer",
     long_description=README,
     long_description_content_type="text/markdown",
-    install_requires=install_requires
+    install_requires=install_requires,
+    dependency_links=dependency_links,
+    python_requires=">=3.7",
 )
