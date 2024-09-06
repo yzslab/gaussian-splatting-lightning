@@ -450,7 +450,7 @@ There is no single script to finish the whole pipeline. Please refer to below co
      ```yaml
      # `data` is the path to your partition data
      data: data/MegaNeRF/rubble-pixsfm/colmap/partitions-size_60.0-enlarge_0.1-visibility_0.9_0.25
-     # `name` is a list of project names, where order represents their detail levels, ranging from fine to coarse
+     # `names` is a list of project names, where order represents their detail levels, ranging from fine to coarse
      names:
        - MegaNeRF-rubble  # without pruning
        - MegaNeRF-rubble-pruned  # pruned
