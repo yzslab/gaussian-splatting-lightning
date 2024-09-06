@@ -21,10 +21,10 @@ def split_requirements(requirements):
 with open("./requirements.txt", "r") as f:
     requirements = f.read().splitlines()
 
-install_requires, dependency_links = split_requirements(requirements)
+install_requires, _ = split_requirements(requirements)
 
 setup(
-    name = "gsplat_lightning",
+    name = "gaussian-splatting-lightning",
     packages=find_packages(where="internal"),
     package_dir={'': 'internal'},
     description=long_description,
