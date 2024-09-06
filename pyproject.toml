@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["internal*"]
+
+[project]
+name = "gaussian-splatting-lightning"
+version = "0.1.0"
+description = "A 3D Gaussian Splatting framework with various derived algorithms and an interactive web viewer"
+
+authors = [
+    { name = "Your Name", email = "your.email@example.com" }
+]
+license = { text = "MIT" }
+keywords = ["3D", "Gaussian Splatting", "Interactive", "Web Viewer"]
+dependencies = [
+    "lightning[pytorch-extra]==2.0.9.post0",
+    "pytorch-lightning==2.3.*",
+    "splines==0.3.0",
+    "plyfile==0.8.1",
+    "tensorboard",
+    "wandb",
+    "tqdm",
+    "viser==0.2.3",
+    "opencv-python==4.10.*",
+    "matplotlib",
+    "mediapy==1.2.2",
+    "diff-gaussian-rasterization @ git+https://github.com/graphdeco-inria/diff-gaussian-rasterization.git@59f5f77e3ddbac3ed9db93ec2cfe99ed6c5d121d",
+    "simple-knn @ git+https://gitlab.inria.fr/bkerbl/simple-knn@86710c2d4b46680c02301765dd79e465819c8f19",
+]
