@@ -10,7 +10,8 @@ with open("README.md", "r") as fh:
 def split_requirements(requirements):
     install_requires = []
     for requirement in requirements:
-        install_requires.append(requirement)
+        if not requirement.startswith("-e"):
+            install_requires.append(requirement)
     return install_requires
 
 with open("./requirements.txt", "r") as f:
