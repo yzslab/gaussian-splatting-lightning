@@ -32,7 +32,7 @@
   * <a href="#28-absgs--efficientgs">AbsGS / EfficientGS (2.8.)</a>
   * <a href="#29-2d-gaussian-splatting">2D Gaussian Splatting (2.9.)</a>
   * <a href="#210-segment-any-3d-gaussians">Segment Any 3D Gaussians (2.10.)</a>
-  * Reconstruct a large scale scene with the partitioning strategy like <a href="https://vastgaussian.github.io/">VastGaussian</a> (see <a href="#211-reconstruct-a-large-scale-scene-with-the-partitioning-strategy-like-vastgaussian">2.11.</a> below)
+  * Large-scale scene reconstruction with partitioning and LoD <a href="#211-large-scale-scene-reconstruction-with-partitioning-and-lod"> (2.11.)</a>
   * <a href="#212-appearance-model">New Appearance Model (2.12.)</a>: improve the quality when images have various appearances
   * <a href="#213-3dgs-mcmc">3D Gaussian Splatting as Markov Chain Monte Carlo (2.13.)</a>
   * <a href="#214-feature-distillation">Feature distillation (2.14.)</a>
@@ -306,11 +306,13 @@ python main.py fit \
   ```
   <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/0b98a8ed-77d7-436d-b9f8-c5b51af5ba52"></video>
 
-### 2.11. Reconstruct a large scale scene with the partitioning strategy like <a href="https://vastgaussian.github.io/">VastGaussian</a>
+### 2.11. Large-scale scene reconstruction with partitioning and LoD
 | Baseline | Partitioning |
 | --- | --- |
 | ![image](https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/d3cb7d1a-f319-4315-bfa3-b56e3a98b19e) | ![image](https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/12f930ee-eb5d-41c6-9fb7-6d043122a91c) |
 | ![image](https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/cec1bb13-15c0-4c6b-8d33-83bc21f2160e) | ![image](https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/6bfd0130-29be-401f-ac9f-ce07dffe9fdd) |
+
+The implementation here references <a href="https://waymo.com/research/block-nerf/">Block-NeRF</a>, <a href="https://vastgaussian.github.io/">VastGaussian</a> and <a href="https://dekuliutesla.github.io/citygs/">CityGaussians</a>.
 
 There is no single script to finish the whole pipeline. Please refer to below contents about how to reconstruct a large scale scene.
 * Partitioning
@@ -323,6 +325,7 @@ There is no single script to finish the whole pipeline. Please refer to below co
   * Pruning: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/utils/prune_partitions_v2.py">utils/prune_partitions_v2.py</a>
   * Finetune after pruning: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/utils/finetune_pruned_partitions_v2.py">utils/finetune_pruned_partitions_v2.py</a>
 * Merging: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/utils/merge_partitions_v2.py">utils/merge_partitions_v2.py</a>
+* LoD: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/internal/renderers/partition_lod_renderer.py">internal/renderers/partition_lod_renderer.py</a>
 
 #### (1) An example pipeline for the <a href="https://storage.cmusatyalab.org/mega-nerf-data/rubble-pixsfm.tgz">Rubble</a> dataset from <a href="https://meganerf.cmusatyalab.org/">MegaNeRF</a>
 
@@ -395,6 +398,8 @@ There is no single script to finish the whole pipeline. Please refer to below co
       -p ${PROJECT_NAME}
   ```
 
+  Then you can start the web viewer with the merged checkpoint file.
+
 * Optional prune and finetune
   * Prune
     ```bash
@@ -419,6 +424,42 @@ There is no single script to finish the whole pipeline. Please refer to below co
         ${PARTITION_DATA_PATH} \
         -p ${PRUNED_PROJECT_NAME}
     ```
+ * LoD Rendering
+   
+   With LoD, the renderer will select the finer models for partitions close to the camera, and coarser models for those far away.
+   
+   * (a) Preprocess partitions' checkpoints
+     
+     This is done by simply add an option `--preprocess` when running `utils/merge_partitions_v2.py`. You need to run it for every level.
+     
+     ```bash
+     # First for the original models
+     python utils/merge_partitions_v2.py \
+         --preprocess \
+         ${PARTITION_DATA_PATH} \
+         -p ${PROJECT_NAME}
+
+     # Then for the pruned models
+     python utils/merge_partitions_v2.py \
+         --preprocess \
+         ${PARTITION_DATA_PATH} \
+         -p ${PRUNED_PROJECT_NAME}
+      ```
+
+   * (b) Create a LoD config file
+     ```yaml
+     # `data` is the path to your partition data
+     data: data/MegaNeRF/rubble-pixsfm/colmap/partitions-size_60.0-enlarge_0.1-visibility_0.9_0.25
+     # `name` is a list of project names, where order represents their detail levels, ranging from fine to coarse
+     names:
+       - MegaNeRF-rubble  # without pruning
+       - MegaNeRF-rubble-pruned  # pruned
+       # - MegaNeRF-rubble-pruned_again  # add more lines if you have
+     ```
+   * (c) Start the viewer
+     ```bash
+     python viewer YOU_LOD_CONFIG_FILE_PATH
+     ```
 
 #### (2) Utilize multiple GPUs
 
