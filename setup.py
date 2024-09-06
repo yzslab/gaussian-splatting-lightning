@@ -11,17 +11,15 @@ def split_requirements(requirements):
     install_requires = []
     dependency_links = []
     for requirement in requirements:
-        if requirement.startswith("git+"):
-            dependency_links.append(requirement)
-        else:
             install_requires.append(requirement)
 
     return install_requires, dependency_links
 
-with open("./requirements.txt", "r") as f:
-    requirements = f.read().splitlines()
+def load_requirements(filename):
+    with open(filename, "r") as f:
+        return [line.strip() for line in f if line.strip() and not line.startswith("#")]
 
-install_requires, dependency_links = split_requirements(requirements)
+install_requires = load_requirements("requirements.txt")
 
 setup(
     name = "gaussian-splatting-lightning",
@@ -31,6 +29,5 @@ setup(
     long_description=README,
     long_description_content_type="text/markdown",
     install_requires=install_requires,
-    dependency_links=dependency_links,
     python_requires=">=3.7",
 )
