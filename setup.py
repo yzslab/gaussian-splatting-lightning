@@ -22,7 +22,6 @@ setup(
     name = "gaussian-splatting-lightning",
     packages=find_packages(where="internal"),
     package_dir={'': 'internal'},
-    description=long_description,
     description="A 3D Gaussian Splatting framework with various derived algorithms and an interactive web viewer",
     long_description=README,
     long_description_content_type="text/markdown",
