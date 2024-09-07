@@ -45,16 +45,9 @@
 
 ```bash
 # clone repository
-git clone --recursive https://github.com/yzslab/gaussian-splatting-lightning.git
+git clone https://github.com/yzslab/gaussian-splatting-lightning.git
 cd gaussian-splatting-lightning
 ```
-
-* If you forgot the `--recursive` options, you can run below git commands after cloning:
-
-  ```bash
-   git submodule sync --recursive
-   git submodule update --init --recursive --force
-  ```
 
 ### 1.2. Create virtual environment
 
