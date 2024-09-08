@@ -319,6 +319,9 @@ There is no single script to finish the whole pipeline. Please refer to below co
   * MatrixCity: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/matrix_city_split.ipynb">notebooks/matrix_city_split.ipynb</a> (Refer to <a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/configs/matrixcity/README.md">MatrixCity.md</a> about preparing MatrixCity dataset)
   * Colmap: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/notebooks/colmap_split_v2.ipynb">notebooks/colmap_split_v2.ipynb</a>
 * Training
+  
+  <b>[NOTE]</b> You must explicitly specify using a  `gsplat`-based renderer (e.g., `configs/gsplat.yaml`, `configs/appearance_embedding_renderer`, `configs/mip_splatting_gsplat.yaml`, etc) because some parts of the pipeline make assumptions about this. If you do not, it will use `diff-gaussian-rasterization` by default, which will cause a drop in the final quality.
+  
   * MatrixCity: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/utils/train_matrix_city_partitions_v2.py">utils/train_matrix_city_partitions_v2.py</a>
   * Colmap: <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/utils/train_colmap_partitions_v2.py">utils/train_colmap_partitions_v2.py</a>
 * Optional LightGaussian pruning
@@ -446,7 +449,7 @@ There is no single script to finish the whole pipeline. Please refer to below co
          -p ${PRUNED_PROJECT_NAME}
       ```
 
-   * (b) Create a LoD config file
+   * (b) Create a LoD config file in YAML
      ```yaml
      # `data` is the path to your partition data
      data: data/MegaNeRF/rubble-pixsfm/colmap/partitions-size_60.0-enlarge_0.1-visibility_0.9_0.25
@@ -458,7 +461,7 @@ There is no single script to finish the whole pipeline. Please refer to below co
      ```
    * (c) Start the viewer
      ```bash
-     python viewer YOU_LOD_CONFIG_FILE_PATH
+     python viewer YOU_LOD_CONFIG_FILE_PATH.yaml
      ```
 
 #### (2) Utilize multiple GPUs
