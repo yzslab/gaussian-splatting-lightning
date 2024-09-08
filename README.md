@@ -103,7 +103,8 @@ python main.py fit \
     --data.path DATASET_PATH \
     -n EXPERIMENT_NAME
 ```
-It can detect some dataset type automatically. You can also specify type with option `--data.parser`. Possible values are: `Colmap`, `Blender`, `NSVF`, `Nerfies`, `MatrixCity`, `PhotoTourism`, `SegAnyColmap`, `Feature3DGSColmap`.
+It can detect some dataset type automatically. You can also specify type with option `--data.parser`. Possible values are: `Colmap`, `Blender`, `NSVF`, `Nerfies`, `MatrixCity`, `PhotoTourism`, `SegAnyColmap`, `Feature3DGSColmap`. `NGP`. 
+Here `NGP` can also be used for `NerfStudio` data.
 
 <b>[NOTE]</b> By default, only checkpoint files will be produced on training end. If you need ply file in vanilla 3DGS's format (can be loaded by SIBR_viewer or some WebGL/GPU based viewer):
   * [Option 1]: Convert checkpoint file to ply: `python utils/ckpt2ply.py TRAINING_OUTPUT_PATH`, e.g.:

@@ -5,6 +5,7 @@ from .colmap_dataparser import Colmap
 from .blender_dataparser import Blender
 from .nsvf_dataparser import NSVF
 from .nerfies_dataparser import Nerfies
+from .ngp_dataparser import NGP
 from .matrix_city_dataparser import MatrixCity
 from .phototourism_dataparser import PhotoTourism
 from .segany_colmap_dataparser import SegAnyColmap
