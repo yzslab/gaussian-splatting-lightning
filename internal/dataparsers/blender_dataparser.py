@@ -4,6 +4,7 @@ import os
 import cv2
 
 import torch
+from PIL import Image
 from typing import Literal
 from dataclasses import dataclass
 from .dataparser import ImageSet, PointCloud, DataParserConfig, DataParser, DataParserOutputs
@@ -65,10 +66,10 @@ class BlenderDataParser(DataParser):
 
         height, width = None, None
         for image_path in image_path_list:
-            img = cv2.imread(image_path)
+            img = Image.open(image_path)
             if img is None:
                 continue
-            height, width = img.shape[:2]
+            height, width = img.size
             break
 
         # parse focal length
@@ -76,13 +77,11 @@ class BlenderDataParser(DataParser):
             [fov2focal(fov=transforms["camera_angle_x"], pixels=width)],
             dtype=torch.float32,
         ).expand(R.shape[0])
-        fy = torch.tensor(
-            [fov2focal(fov=transforms["camera_angle_y"], pixels=height)],
-            dtype=torch.float32,
-        ).expand(R.shape[0])
+        # same focal length for x and y `camera_angle_y` missing in nerf synthetic data
+        fy = torch.clone(fx)
 
         width = torch.tensor([width], dtype=torch.int).expand(R.shape[0])
-        height = torch.tensor([height], dtype=torch.int).expand(R.shape[0])
+        height = torch.clone(width)
 
         return ImageSet(
             image_names=image_name_list,

@@ -165,7 +165,7 @@ class NGPDataParser(DataParser):
             pcd = fetch_ply_without_rgb_normalization(pcd_file_path)
             point_cloud = PointCloud(
                 xyz=pcd.points,
-                rgb=(pcd.colors * 255).astype(np.uint8),
+                rgb=(pcd.colors).astype(np.uint8),
             )
         else:
             print("Generate random pcd")
