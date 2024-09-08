@@ -1,14 +1,14 @@
 # main.py
-import lightning
 from internal.cli import CLI
 from jsonargparse import lazy_instance
+from lightning.pytorch.cli import ArgsType
 
 from internal.gaussian_splatting import GaussianSplatting
 from internal.dataset import DataModule
 from internal.callbacks import SaveGaussian, KeepRunningIfWebViewerEnabled, StopImageSavingThreads, ProgressBar, ValidateOnTrainEnd
 
 
-def cli_main():
+def cli_main(args: ArgsType = None):
     cli = CLI(
         GaussianSplatting,
         DataModule,
@@ -33,6 +33,7 @@ def cli_main():
             ],
         },
         save_config_kwargs={"overwrite": True},
+        args=args,
     )
     # note: don't call fit!!
 
