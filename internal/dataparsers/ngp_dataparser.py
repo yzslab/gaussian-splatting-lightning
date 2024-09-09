@@ -152,20 +152,17 @@ class NGPDataParser(DataParser):
 
         # point cloud
         pcd_file_path = os.path.join(self.path, self.config.pcd_file)
-        if "ply_file_path" in transforms:
-            pcd_file_path = os.path.join(self.path, transforms["ply_file_path"])
-
         is_pcd_file_exist = os.path.exists(pcd_file_path)
         if self.config.pcd_from == "file" and is_pcd_file_exist is False:
             raise ValueError(f"'{pcd_file_path}' not exists")
 
         if self.config.pcd_from == "file" or self.config.pcd_from == "auto" and is_pcd_file_exist is True:
             print(f"Load pcd from '{pcd_file_path}'")
-            from internal.utils.graphics_utils import fetch_ply_without_rgb_normalization
-            pcd = fetch_ply_without_rgb_normalization(pcd_file_path)
+            from internal.utils.graphics_utils import fetch_ply
+            pcd = fetch_ply(pcd_file_path)
             point_cloud = PointCloud(
                 xyz=pcd.points,
-                rgb=(pcd.colors).astype(np.uint8),
+                rgb=(pcd.colors * 255).astype(np.uint8),
             )
         else:
             print("Generate random pcd")

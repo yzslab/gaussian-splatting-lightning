@@ -103,8 +103,7 @@ python main.py fit \
     --data.path DATASET_PATH \
     -n EXPERIMENT_NAME
 ```
-It can detect some dataset type automatically. You can also specify type with option `--data.parser`. Possible values are: `Colmap`, `Blender`, `NSVF`, `Nerfies`, `MatrixCity`, `PhotoTourism`, `SegAnyColmap`, `Feature3DGSColmap`. `NGP`. 
-Here `NGP` can also be used for `NerfStudio` data.
+It can detect some dataset type automatically. You can also specify type with option `--data.parser`. Possible values are: `Colmap`, `Blender`, `NSVF`, `Nerfies`, `MatrixCity`, `PhotoTourism`, `SegAnyColmap`, `Feature3DGSColmap`.
 
 <b>[NOTE]</b> By default, only checkpoint files will be produced on training end. If you need ply file in vanilla 3DGS's format (can be loaded by SIBR_viewer or some WebGL/GPU based viewer):
   * [Option 1]: Convert checkpoint file to ply: `python utils/ckpt2ply.py TRAINING_OUTPUT_PATH`, e.g.:
@@ -156,6 +155,14 @@ Rounding mode is specified by `--data.parser.down_sample_rounding_mode`. Availab
   --data.train_max_num_images_to_cache 1024 \
   ...
 ```
+
+- Use in your code
+```python
+from main import cli_main
+
+cli_main(["fit", "--config", "/path/to/config.yaml", "--data.path", "/path/to/data", "args", ...])
+```
+
 ### 2.3. Use <a href="https://github.com/nerfstudio-project/gsplat">nerfstudio-project/gsplat</a>
 Make sure that command `which nvcc` can produce output, or gsplat will be disabled automatically.
 ```bash
@@ -948,4 +955,3 @@ Besides: You can also click the 'Reset up direction' button. Then the viewer wil
 <b>Q: </b> The web viewer is slow (or low fps, far from real-time).
 
 <b>A: </b> This is expected because of the overhead of the image transfer over network. You can get around 10fps in 1080P resolution, which is enough for you to view the reconstruction quality.
-
