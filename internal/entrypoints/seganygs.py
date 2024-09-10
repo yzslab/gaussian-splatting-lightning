@@ -43,7 +43,7 @@ def cli_fit():
     cli_with_subcommand("fit")
 
 
-def cli_validate():
+def cli_val():
     cli_with_subcommand("validate")
 
 
