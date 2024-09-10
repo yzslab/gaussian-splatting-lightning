@@ -3,14 +3,11 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["internal*"]
+include = ["internal", "utils"]
 
 [project]
 name = "gaussian-splatting-lightning"
-version = "0.9.0"
-description = "A 3D Gaussian Splatting framework with various derived algorithms and an interactive web viewer"
-license = { text = "MIT" }
-
+dynamic = ["version"]
 requires-python = ">=3.8"
 dependencies = [
     "lightning[pytorch-extra]==2.0.9.post0",
@@ -27,3 +24,16 @@ dependencies = [
     "diff-gaussian-rasterization @ git+https://github.com/graphdeco-inria/diff-gaussian-rasterization.git@59f5f77e3ddbac3ed9db93ec2cfe99ed6c5d121d",
     "simple-knn @ git+https://gitlab.inria.fr/bkerbl/simple-knn.git@44f764299fa305faf6ec5ebd99939e0508331503",
 ]
+
+[project.scripts]
+gs-fit = "internal.entrypoints.gspl:cli_fit"
+gs-val = "internal.entrypoints.gspl:cli_val"
+gs-test = "internal.entrypoints.gspl:cli_test"
+gs-predict = "internal.entrypoints.gspl:cli_predict"
+
+segany-fit = "internal.entrypoints.seganygs:cli_fit"
+segany-val = "internal.entrypoints.seganygs:cli_val"
+segany-test = "internal.entrypoints.seganygs:cli_test"
+segany-predict = "internal.entrypoints.seganygs:cli_predict"
+
+gs-viewer = "internal.entrypoints.viewer:cli"
