@@ -64,24 +64,24 @@ class BlenderDataParser(DataParser):
         R = world_to_camera[:, :3, :3]
         T = world_to_camera[:, :3, 3]
 
-        height, width = None, None
+        # TODO: allow different height
+        height_list = []
         for image_path in image_path_list:
             img = Image.open(image_path)
-            if img is None:
-                continue
-            height, width = img.size
-            break
+            try:
+                height, width = img.size
+                assert height == width, "height must be equal to width"
+                height_list.append(height)
+            finally:
+                img.close()
+
+        height = torch.tensor(height_list, dtype=torch.int)
+        width = torch.clone(height)
 
         # parse focal length
-        fx = torch.tensor(
-            [fov2focal(fov=transforms["camera_angle_x"], pixels=width)],
-            dtype=torch.float32,
-        ).expand(R.shape[0])
-        # same focal length for x and y `camera_angle_y` missing in nerf synthetic data
+        fx = fov2focal(fov=transforms["camera_angle_x"], pixels=width)
+        # TODO: allow different fy
         fy = torch.clone(fx)
-
-        width = torch.tensor([width], dtype=torch.int).expand(R.shape[0])
-        height = torch.clone(width)
 
         return ImageSet(
             image_names=image_name_list,
