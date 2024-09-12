@@ -5,10 +5,10 @@ import numpy as np
 import torch
 import viser
 
-import viewer
 import viser.transforms as vtf
 from queue import Queue
 
+from internal.viewer.viewer import Viewer
 from internal.cameras.cameras import Cameras
 
 
@@ -35,7 +35,7 @@ class TrainingViewerRenderer:
 
 
 # TODO: refactoring the the viewer
-class TrainingViewer(viewer.Viewer):
+class TrainingViewer(Viewer):
     def __init__(
             self,
             camera_names: list,

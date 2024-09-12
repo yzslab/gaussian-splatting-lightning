@@ -156,13 +156,6 @@ Rounding mode is specified by `--data.parser.down_sample_rounding_mode`. Availab
   ...
 ```
 
-- Use in your code
-```python
-from main import cli_main
-
-cli_main(["fit", "--config", "/path/to/config.yaml", "--data.path", "/path/to/data", "args", ...])
-```
-
 ### 2.3. Use <a href="https://github.com/nerfstudio-project/gsplat">nerfstudio-project/gsplat</a>
 Make sure that command `which nvcc` can produce output, or gsplat will be disabled automatically.
 ```bash
