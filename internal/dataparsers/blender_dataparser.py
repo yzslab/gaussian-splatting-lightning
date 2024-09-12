@@ -1,7 +1,6 @@
 import numpy as np
 import json
 import os
-import cv2
 
 import torch
 from PIL import Image
