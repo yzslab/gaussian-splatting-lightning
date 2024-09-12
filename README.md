@@ -948,3 +948,4 @@ Besides: You can also click the 'Reset up direction' button. Then the viewer wil
 <b>Q: </b> The web viewer is slow (or low fps, far from real-time).
 
 <b>A: </b> This is expected because of the overhead of the image transfer over network. You can get around 10fps in 1080P resolution, which is enough for you to view the reconstruction quality.
+
