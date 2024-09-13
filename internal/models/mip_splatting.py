@@ -152,14 +152,13 @@ class MipSplattingUtils:
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # apply 3D filter
         scales_square = torch.square(scales)
-        det1 = scales_square.prod(dim=1)
-
         scales_after_square = scales_square + torch.square(filter_3d)
-        det2 = scales_after_square.prod(dim=1)
-        coef = torch.sqrt(det1 / det2)
 
         new_opacities = opacities
         if opacity_compensation:
+            det1 = scales_square.prod(dim=1)
+            det2 = scales_after_square.prod(dim=1)
+            coef = torch.sqrt(det1 / det2)
             new_opacities = opacities * coef[..., None]
 
         return new_opacities, torch.sqrt(scales_after_square)
