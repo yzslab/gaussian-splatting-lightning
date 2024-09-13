@@ -14,3 +14,4 @@
 !appearance_feature_gaussian.py
 !gaussian_2d.py
 !periodic_vibration_gaussian.py
+!mip_splatting.py

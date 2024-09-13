@@ -20,6 +20,8 @@
 !pypreprocess_gsplat.yaml
 !swag_baseline.yaml
 !mip_splatting_gsplat.yaml
+!mip_splatting_gsplat_v2.yaml
+!mip_splatting_gsplat_v2-blender.yaml
 !light_gaussian
 !light_gaussian/prune_finetune.yaml
 !light_gaussian/prune_finetune-gsplat.yaml
