@@ -158,22 +158,24 @@ class GSplatAppearanceEmbeddingRendererModule(Renderer):
 
         return [embedding_optimizer, network_optimizer], [embedding_scheduler, network_scheduler]
 
-    def forward(self, viewpoint_camera: Camera, pc: GaussianModel, bg_color: torch.Tensor, scaling_modifier=1.0, render_types=None, **kwargs):
-        if render_types is None:
-            render_types = ["rgb"]
-
-        projection_results = GSPlatRenderer.project(
+    def preprocess(self, pc, viewpoint_camera, scaling_modifier):
+        return GSPlatRenderer.project(
             means3D=pc.get_xyz,
             scales=pc.get_scaling,
             rotations=pc.get_rotation,
             viewpoint_camera=viewpoint_camera,
             scaling_modifier=scaling_modifier,
-        )
+        ), pc.get_opacities()
+
+    def forward(self, viewpoint_camera: Camera, pc: GaussianModel, bg_color: torch.Tensor, scaling_modifier=1.0, render_types=None, **kwargs):
+        if render_types is None:
+            render_types = ["rgb"]
+
+        projection_results, opacities = self.preprocess(pc=pc, viewpoint_camera=viewpoint_camera, scaling_modifier=scaling_modifier)
 
         xys, depths, radii, conics, comp, num_tiles_hit, cov3d = projection_results
         is_gaussian_visible = radii > 0
 
-        opacities = pc.get_opacities()
         if self.anti_aliased:
             opacities = opacities * comp[:, None]
 
@@ -275,3 +277,37 @@ class GSplatAppearanceEmbeddingRendererModule(Renderer):
             "inverse_depth": RendererOutputInfo("inverse_depth", type=RendererOutputTypes.GRAY),
             "hard_inverse_depth": RendererOutputInfo("hard_inverse_depth", type=RendererOutputTypes.GRAY),
         }
+
+
+# With MipSplatting version
+
+@dataclass
+class GSplatAppearanceEmbeddingMipRenderer(GSplatAppearanceEmbeddingRenderer):
+    filter_2d_kernel_size: float = 0.1
+
+    def instantiate(self, *args, **kwargs) -> "GSplatAppearanceEmbeddingMipRendererModule":
+        return GSplatAppearanceEmbeddingMipRendererModule(
+            anti_aliased=self.anti_aliased,
+            model=self.model,
+            optimization=self.optimization,
+            filter_2d_kernel_size=self.filter_2d_kernel_size,
+        )
+
+
+class GSplatAppearanceEmbeddingMipRendererModule(GSplatAppearanceEmbeddingRendererModule):
+    def __init__(self, anti_aliased: bool, model: ModelConfig, optimization: OptimizationConfig, filter_2d_kernel_size: float):
+        super().__init__(anti_aliased, model, optimization)
+        self.filter_2d_kernel_size = filter_2d_kernel_size
+
+    def preprocess(self, pc, viewpoint_camera, scaling_modifier):
+        opacities, scales = pc.get_3d_filtered_scales_and_opacities()
+        return GSPlatRenderer.project(
+            means3D=pc.get_xyz,
+            scales=scales,
+            rotations=pc.get_rotation,
+            viewpoint_camera=viewpoint_camera,
+            scaling_modifier=scaling_modifier,
+            extra_projection_kwargs={
+                "filter_2d_kernel_size": self.filter_2d_kernel_size,
+            }
+        ), opacities
