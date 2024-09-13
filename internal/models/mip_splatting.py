@@ -6,7 +6,7 @@ from .vanilla_gaussian import VanillaGaussian, VanillaGaussianModel
 
 
 @dataclass
-class MipSplatting(VanillaGaussian):
+class MipSplattingConfigMixin:
     filter_3d_update_interval: int = 100
 
     opacity_compensation: bool = True
@@ -14,15 +14,12 @@ class MipSplatting(VanillaGaussian):
     https://github.com/autonomousvision/mip-splatting/issues/48
     """
 
-    def instantiate(self, *args, **kwargs) -> "MipSplattingModel":
-        return MipSplattingModel(self)
 
-
-class MipSplattingModel(VanillaGaussianModel):
+class MipSplattingModelMixin:
     _filter_3d_name: str = "filter_3d"
 
     def get_extra_property_names(self):
-        return [self._filter_3d_name]
+        return super().get_extra_property_names() + [self._filter_3d_name]
 
     def before_setup_set_properties_from_pcd(self, xyz: torch.Tensor, rgb: torch.Tensor, property_dict: Dict[str, torch.Tensor], *args, **kwargs):
         super().before_setup_set_properties_from_pcd(xyz, rgb, property_dict, *args, **kwargs)
@@ -72,6 +69,23 @@ class MipSplattingModel(VanillaGaussianModel):
 
     def get_3d_filter(self):
         return self.gaussians[self._filter_3d_name]
+
+
+@dataclass
+class MipSplatting(MipSplattingConfigMixin, VanillaGaussian):
+    filter_3d_update_interval: int = 100
+
+    opacity_compensation: bool = True
+    """
+    https://github.com/autonomousvision/mip-splatting/issues/48
+    """
+
+    def instantiate(self, *args, **kwargs) -> "MipSplattingModel":
+        return MipSplattingModel(self)
+
+
+class MipSplattingModel(MipSplattingModelMixin, VanillaGaussianModel):
+    pass
 
 
 class MipSplattingUtils:
