@@ -175,7 +175,7 @@ class MCMCDensityControllerImpl(DensityControllerImpl):
         properties = gaussian_model.properties
 
         # replace
-        new_parameters = Utils.replace_tensors_to_optimizers(properties, optimizers=optimizers, selector=inds)
+        new_parameters = Utils.replace_tensors_to_properties(properties, optimizers=optimizers, selector=inds)
 
         # update
         gaussian_model.properties = new_parameters
@@ -230,7 +230,7 @@ class MCMCDensityControllerImpl(DensityControllerImpl):
         gaussian_model.scales[add_idx] = new_params["scales"]
 
         # densification postfix for new part
-        gaussian_model.properties = Utils.cat_tensors_to_optimizers(new_params, optimizers)
+        gaussian_model.properties = Utils.cat_tensors_to_properties(new_params, gaussian_model, optimizers)
 
         # postfix for selected part
         self.replace_tensors_to_optimizers(gaussian_model, optimizers=optimizers, inds=add_idx)

@@ -99,7 +99,7 @@ class GSplatDistributedRendererImpl(Renderer):
 
     @staticmethod
     def replace_tensors_to_optimizer(tensors_dict, gaussian_model, optimizers):
-        gaussian_model.properties = DensityControllerUtils.replace_tensors_to_optimizers(
+        gaussian_model.properties = DensityControllerUtils.replace_tensors_to_properties(
             tensors_dict,
             optimizers,
         )

@@ -227,7 +227,7 @@ class VanillaDensityControllerImpl(DensityControllerImpl):
         self._prune_points(prune_filter, gaussian_model, optimizers)
 
     def _densification_postfix(self, new_properties: Dict, gaussian_model, optimizers):
-        new_parameters = self._cat_tensors_to_optimizers(new_properties, optimizers)
+        new_parameters = Utils.cat_tensors_to_properties(new_properties, gaussian_model, optimizers)
         gaussian_model.properties = new_parameters
 
         # re-init states
@@ -241,7 +241,7 @@ class VanillaDensityControllerImpl(DensityControllerImpl):
             optimizers
         """
         valid_points_mask = ~mask  # `True` to keep
-        new_parameters = self._prune_optimizers(valid_points_mask, optimizers)
+        new_parameters = Utils.prune_properties(valid_points_mask, gaussian_model, optimizers)
         gaussian_model.properties = new_parameters
 
         # prune states
@@ -254,25 +254,10 @@ class VanillaDensityControllerImpl(DensityControllerImpl):
             gaussian_model.get_opacities(),
             torch.ones_like(gaussian_model.get_opacities()) * 0.01,
         ))
-        new_parameters = self._replace_tensors_to_optimizers(tensors={
+        new_parameters = Utils.replace_tensors_to_properties(tensors={
             "opacities": opacities_new,
         }, optimizers=optimizers)
         gaussian_model.update_properties(new_parameters)
-
-    @staticmethod
-    def _cat_tensors_to_optimizers(new_properties: Dict[str, torch.Tensor], optimizers: List[torch.optim.Optimizer]) -> Dict[str, torch.Tensor]:
-        return Utils.cat_tensors_to_optimizers(
-            new_properties=new_properties,
-            optimizers=optimizers,
-        )
-
-    @staticmethod
-    def _prune_optimizers(mask, optimizers):
-        return Utils.prune_optimizers(mask, optimizers)
-
-    @staticmethod
-    def _replace_tensors_to_optimizers(tensors: Dict[str, torch.Tensor], optimizers):
-        return Utils.replace_tensors_to_optimizers(tensors, optimizers)
 
     def on_load_checkpoint(self, module, checkpoint):
         self._init_state(checkpoint["state_dict"]["density_controller.max_radii2D"].shape[0], module.device)

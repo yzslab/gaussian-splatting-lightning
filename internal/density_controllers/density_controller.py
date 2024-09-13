@@ -35,10 +35,16 @@ class DensityController(InstantiatableConfig):
 
 
 class Utils:
-    # TODO: update non-optimizable properties
+    """
+    Those method names end with "_optimizers_":
+        only process properties appear in optimizers.
+        the properties not in optimizers will be ignored silently.
+
+    Those names end with "_properties" will process all the properties, whatever they appear in optimizers or not.
+    """
 
     @staticmethod
-    def cat_tensors_to_optimizers(new_properties: Dict[str, torch.Tensor], optimizers: List[torch.optim.Optimizer]) -> Dict[str, torch.Tensor]:
+    def cat_tensors_to_optimizers_(new_properties: Dict[str, torch.Tensor], optimizers: List[torch.optim.Optimizer]) -> Dict[str, torch.Tensor]:
         new_parameters = {}
         for opt in optimizers:
             for group in opt.param_groups:
@@ -80,8 +86,24 @@ class Utils:
 
         return new_parameters
 
+    @classmethod
+    def cat_tensors_to_properties(cls, new_properties: Dict[str, torch.Tensor], model: "internal.models.gaussian.GaussianModel", optimizers: List[torch.optim.Optimizer]):
+        new_parameters = cls.cat_tensors_to_optimizers_(
+            new_properties=new_properties,
+            optimizers=optimizers,
+        )
+
+        if len(new_properties) != len(new_parameters):
+            # has non-optimizable parameters
+            for k, v in new_properties.items():
+                if k in new_parameters:
+                    continue
+                new_parameters[k] = torch.nn.Parameter(torch.concat([model.get_property(k), v], dim=0), requires_grad=False)
+
+        return new_parameters
+
     @staticmethod
-    def prune_optimizers(mask, optimizers):
+    def prune_optimizers_(mask, optimizers):
         """
 
         :param mask: The `False` indicating the ones to be pruned
@@ -110,9 +132,24 @@ class Utils:
 
         return new_parameters
 
+    @classmethod
+    def prune_properties(cls, mask: torch.Tensor, model: "internal.models.gaussian.GaussianModel", optimizers: List[torch.optim.Optimizer]):
+        new_parameters = cls.prune_optimizers_(mask=mask, optimizers=optimizers)
+
+        if len(model.property_names) != len(new_parameters):
+            for k in model.property_names:
+                if k in new_parameters:
+                    continue
+
+                new_parameters[k] = torch.nn.Parameter(model.get_property(k)[mask], requires_grad=False)
+
+        return new_parameters
+
     @staticmethod
-    def replace_tensors_to_optimizers(tensors: Dict[str, torch.Tensor], optimizers, selector=None):
+    def replace_tensors_to_optimizers_(tensors: Dict[str, torch.Tensor], optimizers, selector=None):
         """
+        This method allow partial replacement, e.g., reset opacities
+
         Args:
             tensors: to be the new parameters of optimizers
             optimizers: optimizer list
@@ -147,5 +184,26 @@ class Utils:
                     group["params"][0] = nn.Parameter(tensor.requires_grad_(True))
 
                 new_parameters[group["name"]] = group["params"][0]
+
+        return new_parameters
+
+    @classmethod
+    def replace_tensors_to_properties(cls, tensors: Dict[str, torch.Tensor], optimizers, selector=None):
+        """
+        This method allow partial replacement, e.g., reset opacities
+        """
+
+        new_parameters = cls.replace_tensors_to_optimizers_(
+            tensors,
+            optimizers,
+            selector,
+        )
+
+        if len(tensors) != len(new_parameters):
+            for k, v in tensors.items():
+                if k in new_parameters:
+                    continue
+
+                new_parameters[k] = torch.nn.Parameter(v, requires_grad=False)
 
         return new_parameters
