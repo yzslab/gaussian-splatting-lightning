@@ -68,7 +68,7 @@ class BlenderDataParser(DataParser):
         for image_path in image_path_list:
             img = Image.open(image_path)
             try:
-                height, width = img.size
+                width, height = img.size
                 assert height == width, "height must be equal to width"
                 height_list.append(height)
             finally:
