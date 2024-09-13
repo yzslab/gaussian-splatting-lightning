@@ -39,7 +39,11 @@ class MipSplattingModelMixin:
             torch.optim.lr_scheduler.LRScheduler,
         ]]
     ]:
-        self._train_cameras = module.trainer.datamodule.dataparser_outputs.train_set.cameras
+        device = self.get_means().device
+        self._train_camera_set = [
+            i.to_device(device)
+            for i in module.trainer.datamodule.dataparser_outputs.train_set.cameras
+        ]
         self.compute_3d_filter()
         return super().training_setup(module)
 
@@ -53,7 +57,7 @@ class MipSplattingModelMixin:
 
     def compute_3d_filter(self):
         self.gaussians[self._filter_3d_name] = MipSplattingUtils.compute_3d_filter(
-            tqdm(self._train_cameras, leave=False, desc="Computing 3D filter"),
+            tqdm(self._train_camera_set, leave=False, desc="Computing 3D filter"),
             self,
         )
 
@@ -68,7 +72,7 @@ class MipSplattingModelMixin:
         )
 
     def get_3d_filter(self):
-        return self.gaussians[self._filter_3d_name]
+        return self.gaussians[self._filter_3d_name].detach()
 
 
 @dataclass
