@@ -186,6 +186,8 @@ def main():
                         image_name_to_camera[image_name] = camera
 
                 t.set_postfix_str("Fusing...")
+                # TODO: fuse MipSplatting 3D filter
+                # TODO: add the 2D filter kernel size option to GSPlatRenderer
                 fuse_appearance_features(
                     ckpt,
                     gaussian_model,
