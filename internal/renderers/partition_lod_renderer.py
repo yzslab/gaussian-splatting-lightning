@@ -1,7 +1,9 @@
+import random
 from dataclasses import dataclass
 from typing import Any, Dict
 import os
 
+import numpy as np
 import torch
 from tqdm.auto import tqdm
 
@@ -17,6 +19,8 @@ class PartitionLoDRenderer(RendererConfig):
     data: str
     names: list[str]  # from finest to coarsest
     min_images: int = 32
+    visibility_filter: bool = False
+    freeze: bool = False
 
     def instantiate(self, *args, **kwargs) -> "PartitionLoDRendererModule":
         return PartitionLoDRendererModule(self)
@@ -104,6 +108,33 @@ class PartitionLoDRendererModule(Renderer):
         self.partition_bounding_boxes.min = self.partition_bounding_boxes.min[trainable_partition_idx]
         self.partition_bounding_boxes.max = self.partition_bounding_boxes.max[trainable_partition_idx]
 
+        # get partition 3D bounding boxes
+        partition_min_max_z = []
+        for partition_model in self.lods[0]:
+            partition_z_value = partition_model.get_means() @ self.orientation_transform[:, -1:]
+            partition_min_max_z.append(torch.stack([partition_z_value.min(), partition_z_value.max()]))
+        partition_min_max_z = torch.stack(partition_min_max_z)
+        # print(partition_min_max_z)
+        partition_full_2d_bounding_box = []
+        for partition_xy in self.partition_coordinates.xy:
+            partition_xy = partition_xy.to(device=device)
+            left_down = partition_xy
+            left_top = partition_xy + torch.tensor([0., partition_size], device=device)
+            right_down = partition_xy + torch.tensor([partition_size, 0.], device=device)
+            right_top = partition_xy + partition_size
+            partition_full_2d_bounding_box.append(torch.stack([
+                left_down,
+                left_top,
+                right_down,
+                right_top,
+            ]))
+        partition_full_2d_bounding_box = torch.stack(partition_full_2d_bounding_box)  # [N_partitions, 4, 2]
+        partition_min_max_z = partition_min_max_z[:, None, :].repeat(1, 4, 1)
+        self.partition_full_3d_bounding_box = torch.concat([
+            torch.concat([partition_full_2d_bounding_box, partition_min_max_z[..., 0:1]], dim=-1),
+            torch.concat([partition_full_2d_bounding_box, partition_min_max_z[..., 1:2]], dim=-1),
+        ], dim=1) @ self.orientation_transform.T  # [N_partitions, 8, 3], in world space
+        # print(self.partition_full_3d_bounding_box)
 
         # set default LoD distance thresholds
         self.lod_thresholds = (torch.arange(1, len(self.lods)) * 0.25 * partition_size).to(device=device)  # [N_lods - 1]
@@ -111,6 +142,7 @@ class PartitionLoDRendererModule(Renderer):
         # initialize partition lod states
         self.n_partitions = len(self.lods[0])
         self.partition_lods = torch.empty(self.n_partitions, dtype=torch.int8, device=device).fill_(127)  # [N_partitions]
+        self.is_partition_visible = torch.ones(self.n_partitions, dtype=torch.bool, device=device)
 
         # setup empty Gaussian Model
         self.gaussian_model = gaussian_model.config.instantiate()
@@ -147,12 +179,46 @@ class PartitionLoDRendererModule(Renderer):
         for i in range(len(self.lods) - 2, -1, -1):
             partition_lods[partition_distances < self.lod_thresholds[i]] = i
 
-        if not torch.all(torch.eq(partition_lods, self.partition_lods)):
+        # visibility
+        is_partition_visible = torch.ones_like(self.is_partition_visible)
+        if self.config.visibility_filter:
+            full_perspective_projection = viewpoint_camera.get_full_perspective_projection()
+            partition_corners_in_image_space_in_homogeneous = self.partition_full_3d_bounding_box @ full_perspective_projection[:3, :3] + full_perspective_projection[3, :3]
+            partition_corners_in_image_space = partition_corners_in_image_space_in_homogeneous[..., :2] / (partition_corners_in_image_space_in_homogeneous[..., 2:3] + 1e-6)  # [N_partitions, 8, 2]
+
+            min_pixel_coor = torch.tensor([0., 0.], dtype=torch.float, device=partition_corners_in_image_space.device)
+            max_pixel_coor = torch.tensor([viewpoint_camera.width, viewpoint_camera.height], dtype=torch.float, device=partition_corners_in_image_space.device)
+
+            is_behind_camera = partition_corners_in_image_space_in_homogeneous[..., -1:] <= 0.  # [N_partitions, 8, 1]
+
+            # move them into the image plane
+            # print("partition_corners_in_image_space[0]={}".format(partition_corners_in_image_space[0].cpu().numpy()))
+            partition_corners_in_image_space = torch.maximum(partition_corners_in_image_space, min_pixel_coor)
+            partition_corners_in_image_space = torch.minimum(partition_corners_in_image_space, max_pixel_coor)
+            # print("partition_corners_in_image_space[0]={}".format(partition_corners_in_image_space[0].cpu().numpy()))
+
+
+            # prevent selecting valid min and max values from corners behind camera by applying the `behind_camera_corner_xy_offset`
+            behind_camera_corner_xy_offset = is_behind_camera * max_pixel_coor.max()
+            partition_corners_min = torch.min(partition_corners_in_image_space + behind_camera_corner_xy_offset, dim=1).values  # [N_partitions, 2]
+            partition_corners_max = torch.max(partition_corners_in_image_space - behind_camera_corner_xy_offset, dim=1).values  # [N_partitions, 2]
+            # the results of (partition_corners_max - partition_corners_min) of corners behind camera will <= 0
+            partition_projection_area = torch.prod((partition_corners_max - partition_corners_min).clamp(min=0.), dim=-1)  # [N_partitions]
+            # print("partition_projection_area[0]={}".format(partition_projection_area[0].cpu().numpy()))
+
+            is_partition_visible = torch.gt(partition_projection_area, torch.tensor(0., device=partition_projection_area.device))
+            is_partition_visible[torch.argmin(partition_distances)] = True
+            # print("is_partition_visible[0]={}".format(is_partition_visible[0]))
+
+        if not self.config.freeze and (not torch.all(torch.eq(self.partition_lods, partition_lods)) or not torch.all(torch.eq(self.is_partition_visible, is_partition_visible))):
             # update stored lods
             self.partition_lods = partition_lods
+            self.is_partition_visible = is_partition_visible
             # update model
             properties = {}
             for partition_idx, lod in enumerate(partition_lods):
+                if not is_partition_visible[partition_idx]:
+                    continue
                 for k, v in self.lods[lod.item()][partition_idx].properties.items():
                     properties.setdefault(k, []).append(v)
 
@@ -167,7 +233,7 @@ class PartitionLoDRendererModule(Renderer):
         for i in self.on_render_hooks:
             i()
 
-        return self.gsplat_renderer(
+        outputs = self.gsplat_renderer(
             viewpoint_camera,
             self.gaussian_model,
             bg_color,
@@ -175,6 +241,16 @@ class PartitionLoDRendererModule(Renderer):
             render_types,
             **kwargs,
         )
+        # if self.config.visibility_filter:
+        #     for idx, corner in enumerate(partition_corners_in_image_space[0]):
+        #         # if partition_corners_in_image_space_in_homogeneous[0, idx, 2] <= 0.:
+        #         #     continue
+        #         box_min = torch.clamp(corner - 16, min=0).to(torch.int)
+        #         box_max = corner + 16
+        #         box_max = torch.minimum(box_max, max_pixel_coor).to(torch.int)
+        #         outputs["render"][1:3, box_min[1]:box_max[1], box_min[0]:box_max[0]] = 0.
+        #         outputs["render"][0, box_min[1]:box_max[1], box_min[0]:box_max[0]] = 1.
+        return outputs
 
     def get_available_outputs(self) -> Dict[str, RendererOutputInfo]:
         return self.gsplat_renderer.get_available_outputs()
@@ -202,6 +278,8 @@ class ViewerOptions:
         self.setup_labels()
         self.setup_settings_folder()
 
+        # self.draw_3d_boxes()
+
         self.renderer.on_model_updated_hooks.append(self.update_number_of_gaussians)
 
     def setup_status_folder(self):
@@ -222,6 +300,20 @@ class ViewerOptions:
                     lod_threshold_number = self.server.gui.add_number(label="LoD {}".format(idx), initial_value=i.item())
                     lod_threshold_number.on_update(get_lod_threshold_updater(idx))
                     self.viewer.rerender_for_all_client()
+
+            # visibility filter
+            visibility_filter_checkbox = self.server.gui.add_checkbox("Visibility Filter", initial_value=self.renderer.config.visibility_filter)
+
+            @visibility_filter_checkbox.on_update
+            def _(_):
+                self.renderer.config.visibility_filter = visibility_filter_checkbox.value
+
+            # visibility filter
+            freeze_checkbox = self.server.gui.add_checkbox("Freeze", initial_value=self.renderer.config.freeze)
+
+            @freeze_checkbox.on_update
+            def _(_):
+                self.renderer.config.freeze = freeze_checkbox.value
 
             # labels
             show_label_checkbox = self.server.gui.add_checkbox("Show Labels", initial_value=self.show_label)
@@ -246,7 +338,7 @@ class ViewerOptions:
                     return
                 label = self.server.scene.add_label(
                     name=name,
-                    text="{} - {:.2f} - {}".format(text, distance, lod),
+                    text="{}, {:.2f}, {}".format(text, distance, lod),
                     position=position,
                 )
 
@@ -255,11 +347,26 @@ class ViewerOptions:
         for idx, (id, xy) in enumerate(self.renderer.partition_coordinates):
             self.label_updaters.append(get_label_updater(
                 name="part/{}".format(idx),
-                text="({},{})".format(idx, *id.tolist()),
+                text="#{}({},{})".format(idx, *id.tolist()),
                 position=(torch.concat([xy + 0.5 * self.renderer.partition_size, torch.tensor([0.])]).cuda() @ self.renderer.orientation_transform.T).cpu().numpy(),
             ))
 
         self.renderer.on_render_hooks.append(self.update_labels)
+
+    def draw_3d_boxes(self):
+        from matplotlib.pyplot import cm
+        colors = list(iter(cm.rainbow(np.linspace(0, 1, self.renderer.partition_full_3d_bounding_box.shape[0]))))
+        random.shuffle(colors)
+
+        for idx, box in enumerate(self.renderer.partition_full_3d_bounding_box):
+            for cornerIdx, corner in enumerate(box):
+                self.server.scene.add_icosphere(
+                    name="box/{}-{}".format(idx, cornerIdx),
+                    radius=0.01 * self.renderer.partition_size,
+                    color=colors[idx][:3],
+                    position=corner.cpu().numpy(),
+                )
+            # break
 
     def update_number_of_gaussians(self):
         self.markdown.content = "Gaussians: {}".format(
