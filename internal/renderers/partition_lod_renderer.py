@@ -172,6 +172,7 @@ class PartitionLoDRendererModule(Renderer):
             **kwargs,
     ):
         partition_distances = self.get_partition_distances(viewpoint_camera.camera_center)
+        # print((partition_distances == 0.).nonzero())
         self.partition_distances = partition_distances
         partition_lods = torch.ones_like(self.partition_lods).fill_(-1)
 
@@ -180,16 +181,18 @@ class PartitionLoDRendererModule(Renderer):
             partition_lods[partition_distances < self.lod_thresholds[i]] = i
 
         # visibility
+        # TODO: optimize visibility based filter, it does correctly know whether a partition partly in front of the camera is invisible
         is_partition_visible = torch.ones_like(self.is_partition_visible)
         if self.config.visibility_filter:
             full_perspective_projection = viewpoint_camera.get_full_perspective_projection()
             partition_corners_in_image_space_in_homogeneous = self.partition_full_3d_bounding_box @ full_perspective_projection[:3, :3] + full_perspective_projection[3, :3]
-            partition_corners_in_image_space = partition_corners_in_image_space_in_homogeneous[..., :2] / (partition_corners_in_image_space_in_homogeneous[..., 2:3] + 1e-6)  # [N_partitions, 8, 2]
+            partition_corners_in_image_space = partition_corners_in_image_space_in_homogeneous[..., :2] / (torch.abs(partition_corners_in_image_space_in_homogeneous[..., 2:3]) + 1e-6)  # [N_partitions, 8, 2]
 
             min_pixel_coor = torch.tensor([0., 0.], dtype=torch.float, device=partition_corners_in_image_space.device)
             max_pixel_coor = torch.tensor([viewpoint_camera.width, viewpoint_camera.height], dtype=torch.float, device=partition_corners_in_image_space.device)
 
             is_behind_camera = partition_corners_in_image_space_in_homogeneous[..., -1:] <= 0.  # [N_partitions, 8, 1]
+            is_partition_behind_camera = torch.all(is_behind_camera.squeeze(-1), dim=1)  # [N_partition]
 
             # move them into the image plane
             # print("partition_corners_in_image_space[0]={}".format(partition_corners_in_image_space[0].cpu().numpy()))
@@ -199,7 +202,8 @@ class PartitionLoDRendererModule(Renderer):
 
 
             # prevent selecting valid min and max values from corners behind camera by applying the `behind_camera_corner_xy_offset`
-            behind_camera_corner_xy_offset = is_behind_camera * max_pixel_coor.max()
+            # behind_camera_corner_xy_offset = is_behind_camera * max_pixel_coor.max()
+            behind_camera_corner_xy_offset = 0.
             partition_corners_min = torch.min(partition_corners_in_image_space + behind_camera_corner_xy_offset, dim=1).values  # [N_partitions, 2]
             partition_corners_max = torch.max(partition_corners_in_image_space - behind_camera_corner_xy_offset, dim=1).values  # [N_partitions, 2]
             # the results of (partition_corners_max - partition_corners_min) of corners behind camera will <= 0
@@ -207,6 +211,7 @@ class PartitionLoDRendererModule(Renderer):
             # print("partition_projection_area[0]={}".format(partition_projection_area[0].cpu().numpy()))
 
             is_partition_visible = torch.gt(partition_projection_area, torch.tensor(0., device=partition_projection_area.device))
+            is_partition_visible = torch.logical_and(is_partition_visible, torch.logical_not(is_partition_behind_camera))
             is_partition_visible[torch.argmin(partition_distances)] = True
             # print("is_partition_visible[0]={}".format(is_partition_visible[0]))
 
@@ -243,13 +248,14 @@ class PartitionLoDRendererModule(Renderer):
         )
         # if self.config.visibility_filter:
         #     for idx, corner in enumerate(partition_corners_in_image_space[0]):
-        #         # if partition_corners_in_image_space_in_homogeneous[0, idx, 2] <= 0.:
-        #         #     continue
+        #         red_value = 1.
+        #         if partition_corners_in_image_space_in_homogeneous[0, idx, 2] <= 0.:
+        #             red_value = 0.
         #         box_min = torch.clamp(corner - 16, min=0).to(torch.int)
         #         box_max = corner + 16
         #         box_max = torch.minimum(box_max, max_pixel_coor).to(torch.int)
-        #         outputs["render"][1:3, box_min[1]:box_max[1], box_min[0]:box_max[0]] = 0.
-        #         outputs["render"][0, box_min[1]:box_max[1], box_min[0]:box_max[0]] = 1.
+        #         outputs["render"][1:3, box_min[1]:box_max[1], box_min[0]:box_max[0]] = (1 - red_value)
+        #         outputs["render"][0, box_min[1]:box_max[1], box_min[0]:box_max[0]] = red_value
         return outputs
 
     def get_available_outputs(self) -> Dict[str, RendererOutputInfo]:
