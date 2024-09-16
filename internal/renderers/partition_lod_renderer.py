@@ -181,7 +181,7 @@ class PartitionLoDRendererModule(Renderer):
             partition_lods[partition_distances < self.lod_thresholds[i]] = i
 
         # visibility
-        # TODO: optimize visibility based filter, it does correctly know whether a partition partly in front of the camera is invisible
+        # TODO: optimize visibility based filter, it does not correctly know whether a partition partly in front of the camera is invisible
         is_partition_visible = torch.ones_like(self.is_partition_visible)
         if self.config.visibility_filter:
             full_perspective_projection = viewpoint_camera.get_full_perspective_projection()
