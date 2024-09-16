@@ -198,7 +198,7 @@ class MCMCDensityControllerImpl(DensityControllerImpl):
 
         new_params = self._get_new_params(gaussian_model, reinit_idx, ratio=ratio)
         for attr_name in new_params:
-            getattr(gaussian_model, attr_name)[dead_indices] = new_params[attr_name]
+            gaussian_model.get_property(attr_name)[dead_indices] = new_params[attr_name]
 
         # update the opacities and scales of the sampled Gaussians too
         gaussian_model.opacities[reinit_idx] = gaussian_model.opacities[dead_indices]
