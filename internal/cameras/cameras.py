@@ -50,6 +50,22 @@ class Camera:
 
         return self
 
+    def get_K(self):
+        K = torch.eye(4, dtype=torch.float, device=self.device)
+        K[0, 0] = self.fx
+        K[1, 1] = self.fy
+        K[0, 2] = self.cx
+        K[1, 2] = self.cy
+
+        return K
+
+    def get_full_perspective_projection(self):
+        K = self.get_K()
+
+        # full.transpose() = (K[R T]).transpose() = [R T].transpose() K.transpose()
+
+        return self.world_to_camera @ K.T
+
     @property
     def device(self):
         return self.R.device
