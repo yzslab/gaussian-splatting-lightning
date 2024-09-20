@@ -269,7 +269,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("image_dir", type=str)
     parser.add_argument("--output", "-o", type=str, default=None)
-    parser.add_argument("--extensions", "-e", type=str, default=["jpg", "JPG", "jpeg", "JPEG"])
+    parser.add_argument("--extensions", "-e", nargs="+", type=str, default=["jpg", "JPG", "jpeg", "JPEG"])
     parser.add_argument("--image-size", "-s", type=int, default=800)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--image_list", "--image-list", type=str, default=None)
