@@ -3,6 +3,7 @@ import json
 import os
 
 import torch
+from PIL import Image
 from typing import Literal
 from dataclasses import dataclass
 from .dataparser import ImageSet, PointCloud, DataParserConfig, DataParser, DataParserOutputs
@@ -40,9 +41,6 @@ class BlenderDataParser(DataParser):
                 with open(os.path.join(self.path, "transforms_{}.json".format(i)), "r") as f:
                     transforms["frames"] += json.load(f)["frames"]
 
-        # TODO: auto detect image size
-        width = 800
-
         # parse extrinsic
         image_name_list = []
         image_path_list = []
@@ -65,17 +63,24 @@ class BlenderDataParser(DataParser):
         R = world_to_camera[:, :3, :3]
         T = world_to_camera[:, :3, 3]
 
+        # TODO: allow different height
+        height_list = []
+        for image_path in image_path_list:
+            img = Image.open(image_path)
+            try:
+                width, height = img.size
+                assert height == width, "height must be equal to width"
+                height_list.append(height)
+            finally:
+                img.close()
+
+        height = torch.tensor(height_list, dtype=torch.int)
+        width = torch.clone(height)
+
         # parse focal length
-        fx = torch.tensor(
-            [fov2focal(fov=transforms["camera_angle_x"], pixels=width)],
-            dtype=torch.float32,
-        ).expand(R.shape[0])
+        fx = fov2focal(fov=transforms["camera_angle_x"], pixels=width)
         # TODO: allow different fy
         fy = torch.clone(fx)
-
-        width = torch.tensor([width], dtype=torch.int).expand(R.shape[0])
-        # TODO: allow different height
-        height = torch.clone(width)
 
         return ImageSet(
             image_names=image_name_list,
