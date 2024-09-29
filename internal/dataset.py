@@ -27,7 +27,8 @@ class Dataset(torch.utils.data.Dataset):
             image_set: ImageSet,
             undistort_image: bool = True,
             camera_device: torch.device = None,
-            image_device: torch.device = None
+            image_device: torch.device = None,
+            image_uint8: bool = False,
     ) -> None:
         super().__init__()
         self.image_set = image_set
@@ -39,6 +40,7 @@ class Dataset(torch.utils.data.Dataset):
             image_device = torch.device("cpu")
         self.camera_device = camera_device
         self.image_device = image_device
+        self.image_uint8 = image_uint8
 
         self.image_cameras: list[Camera] = [i.to_device(camera_device) for i in image_set.cameras]  # store undistorted camera
 
@@ -51,10 +53,11 @@ class Dataset(torch.utils.data.Dataset):
 
         # TODO: resize
         pil_image = Image.open(self.image_set.image_paths[index])
-        numpy_image = np.array(pil_image, dtype="uint8")
+        numpy_image = np.array(pil_image, dtype=np.uint8)
 
         # undistort image
         if self.undistort_image is True:
+            assert self.image_uint8 == False
             # TODO: validate this undistortion implementation
             camera = self.image_set.cameras[index]  # get original camera
             distortion = camera.distortion_params
@@ -95,13 +98,18 @@ class Dataset(torch.utils.data.Dataset):
                     os.makedirs(os.path.dirname(image_save_path), exist_ok=True)
                     undistorted_pil_image.save(image_save_path, quality=100)
 
-        image = torch.from_numpy(numpy_image.astype(np.float64) / 255.0)
-        # remove alpha channel
-        if image.shape[2] == 4:
-            # TODO: sync background color with model.background_color
-            background_color = torch.tensor([0., 0., 0.])
-            image = image[:, :, :3] * image[:, :, 3:4] + background_color * (1 - image[:, :, 3:4])
-        image = image.to(torch.float)
+        if self.image_uint8:
+            image = torch.from_numpy(numpy_image)
+            assert image.dtype == torch.uint8
+            assert image.shape[2] == 3
+        else:
+            image = torch.from_numpy(numpy_image.astype(np.float64) / 255.0)
+            # remove alpha channel
+            if image.shape[2] == 4:
+                # TODO: sync background color with model.background_color
+                background_color = torch.tensor([0., 0., 0.])
+                image = image[:, :, :3] * image[:, :, 3:4] + background_color * (1 - image[:, :, 3:4])
+            image = image.to(torch.float)
 
         mask = None
         if self.image_set.mask_paths[index] is not None:
@@ -268,6 +276,7 @@ class DataModule(LightningDataModule):
             background_sphere_min_altitude: float = -math.inf,
             camera_on_cpu: bool = False,
             image_on_cpu: bool = True,
+            image_uint8: bool = False,
     ) -> None:
         r"""Load dataset
 
@@ -435,6 +444,7 @@ class DataModule(LightningDataModule):
                 undistort_image=self.hparams["undistort_image"],
                 camera_device=self.camera_device,
                 image_device=self.image_device,
+                image_uint8=self.hparams["image_uint8"],
             ),
             max_cache_num=self.hparams["train_max_num_images_to_cache"],
             shuffle=True,
@@ -478,3 +488,14 @@ class DataModule(LightningDataModule):
             shuffle=False,
             num_workers=self.hparams["num_workers"],
         )
+
+    def on_after_batch_transfer(self, batch: Any, dataloader_idx: int) -> Any:
+        if batch[1][1].dtype != torch.uint8:
+            return batch
+
+        camera, image_info, extra_data = batch
+        image_name, gt_image, masked_pixels = image_info
+
+        gt_image = gt_image.to(camera.R.dtype) / 255.
+
+        return camera, (image_name, gt_image, masked_pixels), extra_data
