@@ -38,11 +38,13 @@ class Colmap(DataParserConfig):
 
     split_mode: Literal["reconstruction", "experiment"] = "reconstruction"
 
-    eval_image_select_mode: Literal["step", "ratio"] = "step"
+    eval_image_select_mode: Literal["step", "ratio", "list", "list-optional"] = "step"
 
     eval_step: int = 8
 
     eval_ratio: float = 0.01
+
+    eval_list: str = None
 
     scene_scale: float = 1.
 
@@ -479,7 +481,38 @@ class ColmapDataParser(DataParser):
             appearance_group_ids=appearance_group_name_to_appearance_id,
         )
 
-    def build_split_indices(self, image_name_list) -> Tuple[list, list]:
+    def build_eval_list_split_indices(self, image_name_list) -> Tuple[list, list]:
+        assert self.params.eval_list is not None
+
+        eval_image_set = {}
+        with open(self.params.eval_list, "r") as f:
+            for row in f:
+                row = row.rstrip("\n")
+                eval_image_set[row] = True
+
+        train_set_indices = []
+        eval_set_indices = []
+
+        for idx, name in enumerate(image_name_list):
+            if name in eval_image_set:
+                eval_set_indices.append(idx)
+                del eval_image_set[name]
+                if self.params.split_mode == "experiment":
+                    continue
+            train_set_indices.append(idx)
+
+        if len(eval_image_set) != 0:
+            message = "Some images can not be found in colmap sparse model: {}".format(list(eval_image_set.keys()))
+            if self.params.split_mode == "list":
+                raise RuntimeError(message)
+            print("[WARNING]{}".format(message))
+
+        if len(eval_set_indices) == 0:
+            eval_set_indices = train_set_indices[:1]
+
+        return train_set_indices, eval_set_indices
+
+    def build_step_split_indices(self, image_name_list) -> Tuple[list, list]:
         assert self.params.eval_step > 1, "eval_step must > 1"
         eval_step = self.params.eval_step
         if self.params.eval_image_select_mode == "ratio":
@@ -501,3 +534,9 @@ class ColmapDataParser(DataParser):
             validation_set_indices = training_set_indices[::eval_step]
 
         return training_set_indices, validation_set_indices
+
+    def build_split_indices(self, image_name_list) -> Tuple[list, list]:
+        if self.params.eval_image_select_mode.startswith("list"):
+            return self.build_eval_list_split_indices(image_name_list)
+        assert self.params.eval_list is None, "eval_image_select_mode=='{}', but eval_list is not None".format(self.params.eval_image_select_mode)
+        return self.build_step_split_indices(image_name_list)
