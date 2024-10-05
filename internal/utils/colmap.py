@@ -298,8 +298,11 @@ def write_images_binary(images, path_to_model_file):
             write_next_bytes(fid, img.qvec.tolist(), "dddd")
             write_next_bytes(fid, img.tvec.tolist(), "ddd")
             write_next_bytes(fid, img.camera_id, "i")
-            for char in img.name:
-                write_next_bytes(fid, char.encode("utf-8"), "c")
+
+            img_name_encoded = img.name.encode("utf-8")
+            for char_idx in range(len(img_name_encoded)):
+                write_next_bytes(fid, img_name_encoded[char_idx:char_idx + 1], "c")
+
             write_next_bytes(fid, b"\x00", "c")
             write_next_bytes(fid, len(img.point3D_ids), "Q")
             for xy, p3d_id in zip(img.xys, img.point3D_ids):
