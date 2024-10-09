@@ -29,6 +29,7 @@
 #
 # Author: Johannes L. Schoenberger (jsch-at-demuc-dot-de)
 
+from dataclasses import dataclass
 import os
 import collections
 import numpy as np
@@ -42,9 +43,18 @@ Camera = collections.namedtuple(
     "Camera", ["id", "model", "width", "height", "params"])
 BaseImage = collections.namedtuple(
     "Image", ["id", "qvec", "tvec", "camera_id", "name", "xys", "point3D_ids"])
-Point3D = collections.namedtuple(
-    "Point3D", ["id", "xyz", "rgb", "error", "image_ids", "point2D_idxs"])
+# Point3D = collections.namedtuple(
+#     "Point3D", ["id", "xyz", "rgb", "error", "image_ids", "point2D_idxs"])
 
+
+@dataclass
+class Point3D:
+    id: int
+    xyz: np.ndarray
+    rgb: np.ndarray
+    error: np.ndarray
+    image_ids: np.ndarray
+    point2D_idxs: np.ndarray
 
 class Image(BaseImage):
     def qvec2rotmat(self):
