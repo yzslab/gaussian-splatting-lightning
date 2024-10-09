@@ -69,7 +69,7 @@ conda activate gspl
 ### 1.4. Install requirements
 
 ```bash
-pip install -e .
+pip install -r requirements.txt
 ```
 
 ### 1.5. Install optional packages
