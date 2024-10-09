@@ -216,12 +216,16 @@ def save(
     filter_out_image_comap_idx_set = {i: True for i in filter_out_image_comap_idx}
 
     # save
-    def do_save():
+    def do_save(update_3d_points: bool = True):
         # build new dicts
         new_colmap_images = {}
-        colmap_point_data = colmap.read_points3D_binary(os.path.join(colmap_images.path, "points3D.bin"))
+        colmap_point_data = None
+        if update_3d_points:
+            colmap_point_data = colmap.read_points3D_binary(os.path.join(colmap_images.path, "points3D.bin"))
         for i, image in tqdm(colmap_images.colmap_image_data.items(), leave=False):
             if i in filter_out_image_comap_idx_set:
+                if not update_3d_points:
+                    continue
                 # remove image from points' image_ids
                 points_ids = image.point3D_ids
                 for point_id in np.unique(points_ids):
@@ -248,9 +252,13 @@ def save(
 
         print("Saving `images.bin`...")
         colmap.write_images_binary(new_colmap_images, os.path.join(output_path, "images.bin"))
-        print("Saving `points3D.bin`...")
-        colmap.write_points3D_binary(colmap_point_data, os.path.join(output_path, "points3D.bin"))
-        print("Saving `cameras.bin`...")
+        if update_3d_points:
+            print("Saving `points3D.bin`...")
+            colmap.write_points3D_binary(colmap_point_data, os.path.join(output_path, "points3D.bin"))
+        else:
+            print("Copying `points3D.bin`...")
+            shutil.copyfile(os.path.join(colmap_images.path, "points3D.bin"), os.path.join(output_path, "points3D.bin"))
+        print("Copying `cameras.bin`...")
         shutil.copyfile(os.path.join(colmap_images.path, "cameras.bin"), os.path.join(output_path, "cameras.bin"))
         
         return output_path
