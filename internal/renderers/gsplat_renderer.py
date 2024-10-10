@@ -31,10 +31,16 @@ class GSPlatRenderer(Renderer):
         "hard_inverse_depth": _HARD_INVERSE_DEPTH_REQUIRED,
     }
 
-    def __init__(self, block_size: int = DEFAULT_BLOCK_SIZE, anti_aliased: bool = DEFAULT_ANTI_ALIASED_STATUS) -> None:
+    def __init__(
+            self, 
+            block_size: int = DEFAULT_BLOCK_SIZE, 
+            anti_aliased: bool = DEFAULT_ANTI_ALIASED_STATUS,
+            kernel_size: float = 0.3,
+    ) -> None:
         super().__init__()
         self.block_size = block_size
         self.anti_aliased = anti_aliased
+        self.filter_2d_kernel_size = kernel_size
 
     def parse_render_types(self, render_types: list) -> int:
         if render_types is None:
@@ -69,6 +75,7 @@ class GSPlatRenderer(Renderer):
             img_height=img_height,
             img_width=img_width,
             block_width=self.block_size,
+            filter_2d_kernel_size=getattr(self, "filter_2d_kernel_size", 0.3),
         )
 
         opacities = pc.get_opacity

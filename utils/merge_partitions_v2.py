@@ -11,8 +11,11 @@ from internal.cameras.cameras import Camera
 from internal.dataparsers.colmap_dataparser import Colmap
 from internal.models.vanilla_gaussian import VanillaGaussian
 from internal.models.appearance_feature_gaussian import AppearanceFeatureGaussianModel
+from internal.models.appearance_mip_gaussian import AppearanceMipGaussianModel
+from internal.models.mip_splatting import MipSplattingModel
 from internal.renderers.vanilla_renderer import VanillaRenderer
 from internal.renderers.gsplat_renderer import GSPlatRenderer
+from internal.renderers.gsplat_mip_splatting_renderer_v2 import GSplatMipSplattingRendererV2
 from internal.density_controllers.vanilla_density_controller import VanillaDensityController
 from internal.utils.gaussian_model_loader import GaussianModelLoader
 
@@ -85,9 +88,12 @@ def update_ckpt(ckpt, merged_gaussians, max_sh_degree):
 
     # replace `GSplatAppearanceEmbeddingRenderer` with `GSPlatRenderer`
     anti_aliased = True
+    kernel_size = 0.3
     if isinstance(ckpt["hyper_parameters"]["renderer"], VanillaRenderer):
         anti_aliased = False
-    ckpt["hyper_parameters"]["renderer"] = GSPlatRenderer(anti_aliased=anti_aliased)
+    elif isinstance(ckpt["hyper_parameters"]["renderer"], GSplatMipSplattingRendererV2):
+        kernel_size = ckpt["hyper_parameters"]["renderer"].filter_2d_kernel_size
+    ckpt["hyper_parameters"]["renderer"] = GSPlatRenderer(anti_aliased=anti_aliased, kernel_size=kernel_size)
 
     # remove existing Gaussians from ckpt
     for i in list(ckpt["state_dict"].keys()):
@@ -145,6 +151,7 @@ def main():
 
     with tqdm(mergable_partitions, desc="Pre-processing") as t:
         for partition_idx, partition_id_str, ckpt_file, bounding_box in t:
+            t.set_description("{}".format(partition_id_str))
             t.set_postfix_str("Loading checkpoint...")
             ckpt = torch.load(ckpt_file, map_location="cpu")
 
@@ -187,13 +194,16 @@ def main():
 
                 t.set_postfix_str("Fusing...")
                 # TODO: fuse MipSplatting 3D filter
-                # TODO: add the 2D filter kernel size option to GSPlatRenderer
                 fuse_appearance_features(
                     ckpt,
                     gaussian_model,
                     cameras_json,
                     image_name_to_camera=image_name_to_camera,
                 )
+            elif isinstance(gaussian_model, MipSplattingModel):
+                new_opacities, new_scales = gaussian_model.get_3d_filtered_scales_and_opacities()
+                gaussian_model.opacities = gaussian_model.opacity_inverse_activation(new_opacities)
+                gaussian_model.scales = gaussian_model.scale_inverse_activation(new_scales)
 
             if args.preprocess:
                 update_ckpt(ckpt, {k: gaussian_model.get_property(k) for k in MERGABLE_PROPERTY_NAMES}, gaussian_model.max_sh_degree)

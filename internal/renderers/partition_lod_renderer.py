@@ -21,6 +21,8 @@ class PartitionLoDRenderer(RendererConfig):
     min_images: int = 32
     visibility_filter: bool = False
     freeze: bool = False
+    filter_2d_kernel_size: float = 0.3
+    drop_shs_rest: bool = False
 
     def instantiate(self, *args, **kwargs) -> "PartitionLoDRendererModule":
         return PartitionLoDRendererModule(self)
@@ -31,7 +33,7 @@ class PartitionLoDRendererModule(Renderer):
         super().__init__()
         self.config = config
 
-        self.gsplat_renderer = GSPlatRenderer()
+        self.gsplat_renderer = GSPlatRenderer(kernel_size=self.config.filter_2d_kernel_size)
 
         self.on_render_hooks = []
         self.on_model_updated_hooks = []
@@ -93,6 +95,10 @@ class PartitionLoDRendererModule(Renderer):
                     "preprocessed.ckpt"
                 ), map_location="cpu")
                 gaussian_model = GaussianModelLoader.initialize_model_from_checkpoint(ckpt, device)
+                if self.config.drop_shs_rest:
+                    gaussian_model.config.sh_degree = 0
+                    gaussian_model.active_sh_degree = 0
+                    gaussian_model.shs_rest = torch.empty((gaussian_model.n_gaussians, 0, 3), device=gaussian_model.shs_dc.device)
                 gaussian_model.pre_activate_all_properties()
                 gaussian_model.freeze()
                 gaussian_model.to(device=device)
