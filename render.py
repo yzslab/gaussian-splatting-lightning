@@ -28,22 +28,37 @@ def initializer_viewer_renderer(
         renderer_override,
         device,
 ) -> ViewerRenderer:
-    model_list = []
-    renderer = None
+    if len(args.model_paths) == 1 and args.model_paths[0].endswith(".yaml"):
+        import yaml
+        from internal.models.vanilla_gaussian import VanillaGaussian
+        model = VanillaGaussian().instantiate()
+        model.setup_from_number(0)
+        model.pre_activate_all_properties()
+        model.eval()
+        from internal.renderers.partition_lod_renderer import PartitionLoDRenderer
+        with open(model_paths[0], "r") as f:
+            lod_config = yaml.safe_load(f)
+        renderer = PartitionLoDRenderer(**lod_config).instantiate()
+        renderer.setup("validation")
 
-    load_device = torch.device("cuda") if len(model_paths) == 1 or enable_transform is False else torch.device("cpu")
-    for model_path in model_paths:
-        model, renderer = GaussianModelLoader.search_and_load(model_path, load_device)
-        model.freeze()
-        model_list.append(model)
+        model_manager = model
+    else:
+        model_list = []
+        renderer = None
 
-    if len(model_paths) > 1:
-        renderer = VanillaRenderer()
-    if renderer_override is not None:
-        print(f"Renderer: {renderer_override.__class__}")
-        renderer = renderer_override
+        load_device = torch.device("cuda") if len(model_paths) == 1 or enable_transform is False else torch.device("cpu")
+        for model_path in model_paths:
+            model, renderer = GaussianModelLoader.search_and_load(model_path, load_device)
+            model.freeze()
+            model_list.append(model)
 
-    model_manager = MultipleGaussianModelEditor(model_list, device)
+        if len(model_paths) > 1:
+            renderer = VanillaRenderer()
+        if renderer_override is not None:
+            print(f"Renderer: {renderer_override.__class__}")
+            renderer = renderer_override
+
+        model_manager = MultipleGaussianModelEditor(model_list, device)
 
     return ViewerRenderer(model_manager, renderer, torch.tensor(background_color, dtype=torch.float, device=device))
 
