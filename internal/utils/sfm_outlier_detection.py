@@ -55,6 +55,9 @@ def read_colmap_sparse_model(path: str, poses_from_exif: dict) -> ColmapImages:
     )
     image_c2w_in_gps = []
     for idx, image in colmap_image_data.items():
+        if image.name not in image_name_to_gps_set_idx:
+            print("skip {}".format(image.name))
+            continue
         colmap_images.id.append(idx)
         colmap_images.image_name.append(image.name)
         w2c = np.eye(4)
@@ -63,7 +66,6 @@ def read_colmap_sparse_model(path: str, poses_from_exif: dict) -> ColmapImages:
         colmap_images.w2c.append(w2c)
         colmap_images.n_points.append((image.point3D_ids > 0).sum())
 
-        # TODO: image may not present in `poses_from_exif`
         image_c2w_in_gps.append(poses_from_exif["c2w"][image_name_to_gps_set_idx[image.name]])
 
     colmap_images.id = np.asarray(colmap_images.id)
