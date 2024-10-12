@@ -5,7 +5,7 @@ from lightning.pytorch.cli import ArgsType
 
 from internal.gaussian_splatting import GaussianSplatting
 from internal.dataset import DataModule
-from internal.callbacks import SaveGaussian, KeepRunningIfWebViewerEnabled, StopImageSavingThreads, ProgressBar, ValidateOnTrainEnd
+from internal.callbacks import SaveGaussian, KeepRunningIfWebViewerEnabled, StopImageSavingThreads, ProgressBar, ValidateOnTrainEnd, StopDataLoaderCacheThread
 
 
 def cli(args: ArgsType = None):
@@ -30,6 +30,7 @@ def cli(args: ArgsType = None):
                 lazy_instance(KeepRunningIfWebViewerEnabled),
                 lazy_instance(StopImageSavingThreads),
                 lazy_instance(ProgressBar),
+                lazy_instance(StopDataLoaderCacheThread),
             ],
         },
         save_config_kwargs={"overwrite": True},

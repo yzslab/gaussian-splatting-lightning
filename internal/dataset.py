@@ -2,6 +2,8 @@ import concurrent.futures
 import json
 import math
 import os.path
+import threading
+import queue
 import shutil
 from concurrent.futures import ThreadPoolExecutor
 from rich.progress import track
@@ -144,6 +146,7 @@ class CacheDataLoader(torch.utils.data.DataLoader):
             distributed: bool = False,
             world_size: int = -1,
             global_rank: int = -1,
+            async_caching: bool = False,
             **kwargs,
     ):
         assert kwargs.get("batch_size", 1) == 1, "only batch_size=1 is supported"
@@ -187,8 +190,35 @@ class CacheDataLoader(torch.utils.data.DataLoader):
             self.generator.manual_seed(seed)
             print("#{} dataloader seed to {}".format(os.getpid(), seed))
 
-    def _cache_data(self, indices: list):
-        # TODO: speedup image loading
+        self.async_caching = async_caching and self.max_cache_num > 0
+        self.cache_output_queue = None
+        self.cache_thread = None
+        self.stop_caching = False
+        if self.async_caching:
+            self.cache_output_queue = queue.Queue(maxsize=1)
+            self.cache_thread = threading.Thread(target=self._async_cache)
+            self.cache_thread.start()
+
+    def _async_cache(self):
+        # TODO: GC will freeze program a while
+        while not self.stop_caching:
+            if self.shuffle is True:
+                indices = torch.randperm(len(self.indices), generator=self.generator).tolist()  # shuffle for each epoch
+                # print("#{} 1st index: {}".format(os.getpid(), indices[0]))
+            else:
+                indices = self.indices.copy()
+
+            not_cached = indices.copy()
+
+            while not_cached and not self.stop_caching:
+                # select self.max_cache_num images
+                to_cache = not_cached[:self.max_cache_num]
+                del not_cached[:self.max_cache_num]
+
+                self.cache_output_queue.put(None)  # simulate a queue with zero size
+                self.cache_output_queue.put(self._cache_data(to_cache, pbar_leave=False))
+
+    def _cache_data(self, indices: list, pbar_leave: bool = True):
         cached = []
         if self.num_workers > 0:
             with ThreadPoolExecutor(max_workers=self.num_workers) as e:
@@ -196,10 +226,11 @@ class CacheDataLoader(torch.utils.data.DataLoader):
                         e.map(self.dataset.__getitem__, indices),
                         total=len(indices),
                         desc="#{} caching images (1st: {})".format(os.getpid(), indices[0]),
+                        leave=pbar_leave,
                 ):
                     cached.append(i)
         else:
-            for i in tqdm(indices, desc="#{} loading images (1st: {})".format(os.getpid(), indices[0])):
+            for i in tqdm(indices, desc="#{} loading images (1st: {})".format(os.getpid(), indices[0]), leave=pbar_leave):
                 cached.append(self.dataset.__getitem__(i))
 
         return cached
@@ -239,20 +270,28 @@ class CacheDataLoader(torch.utils.data.DataLoader):
                 # the list contains the data have not been cached
                 not_cached = indices.copy()
 
-                while not_cached:
-                    # select self.max_cache_num images
-                    to_cache = not_cached[:self.max_cache_num]
-                    del not_cached[:self.max_cache_num]
+                if self.async_caching:
+                    while True:
+                        cached = self.cache_output_queue.get()  # setting to None allows GC
+                        assert cached is None
+                        cached = self.cache_output_queue.get()
+                        for i in cached:
+                            yield i
+                else:
+                    while not_cached:
+                        # select self.max_cache_num images
+                        to_cache = not_cached[:self.max_cache_num]
+                        del not_cached[:self.max_cache_num]
 
-                    # cache
-                    try:
-                        del cached
-                    except:
-                        pass
-                    cached = self._cache_data(to_cache)
+                        # cache
+                        try:
+                            del cached
+                        except:
+                            pass
+                        cached = self._cache_data(to_cache, pbar_leave=False)
 
-                    for i in cached:
-                        yield i
+                        for i in cached:
+                            yield i
 
 
 class DataModule(LightningDataModule):
@@ -277,6 +316,7 @@ class DataModule(LightningDataModule):
             camera_on_cpu: bool = False,
             image_on_cpu: bool = True,
             image_uint8: bool = False,
+            async_caching: bool = False,
     ) -> None:
         r"""Load dataset
 
@@ -453,6 +493,7 @@ class DataModule(LightningDataModule):
             distributed=self.hparams["distributed"],
             world_size=self.trainer.world_size,
             global_rank=self.trainer.global_rank,
+            async_caching=self.hparams["async_caching"],
         )
 
     def test_dataloader(self) -> EVAL_DATALOADERS:
