@@ -52,7 +52,7 @@ class MinMaxBoundingBoxes:
 @dataclass
 class SceneBoundingBox:
     bounding_box: MinMaxBoundingBox
-    n_partitions: torch.Tensor
+    n_partitions: torch.Tensor  # = [N_x, N_y]
     origin_partition_offset: torch.Tensor
 
 
