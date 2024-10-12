@@ -267,6 +267,12 @@ class PartitionTraining:
         except:
             pass
 
+        partition_output_dir = os.path.join(project_output_dir, self.get_experiment_name(partition_idx))
+        if os.path.exists(partition_output_dir):
+            previous_output_new_dir = "{}-{}".format(partition_output_dir, int(time.time()))
+            print("Move existing {} to {}".format(partition_output_dir, previous_output_new_dir))
+            os.rename(partition_output_dir, previous_output_new_dir)
+
         # build args
         # basic
         args = [
