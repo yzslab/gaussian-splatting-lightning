@@ -50,11 +50,12 @@ for camera in camera_poses:
     )
 
     up += torch.tensor(camera["rotation"])[:3, 1]
+up *= -1
 
 if args.up is not None:
     up = torch.tensor(args.up)
 print("up vector = {}".format(up))
-up = -up / torch.linalg.norm(up)
+up = up / torch.linalg.norm(up)
 
 if args.points is not None:
     from internal.utils.graphics_utils import fetch_ply_without_rgb_normalization
