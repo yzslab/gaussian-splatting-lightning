@@ -178,7 +178,7 @@ class Viewer:
         if up is not None:
             self.camera_transform = torch.eye(4, dtype=torch.float)
             up = torch.tensor(up)
-            up = -up / torch.linalg.norm(up)
+            up = up / torch.linalg.norm(up)
             self.up_direction = up.numpy()
 
         # load camera poses
