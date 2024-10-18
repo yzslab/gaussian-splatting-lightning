@@ -28,7 +28,7 @@ if args.output is None:
     args.output = os.path.join(os.path.dirname(args.image_dir), "estimated_depths")
 
 images = get_task_list_with_args(args, find_files(args.image_dir, args.extensions, as_relative_path=False))
-assert len(images) > 0, "not an image with extenstion name '{}' can be found in '{}'".format(args.extensions, args.image_dir)
+assert len(images) > 0, "not an image with extension name '{}' can be found in '{}'".format(args.extensions, args.image_dir)
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
 
