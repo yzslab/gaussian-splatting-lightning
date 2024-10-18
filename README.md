@@ -150,11 +150,25 @@ You can use `utils/image_downsample.py` to downsample your images, e.g. 4x downs
 Rounding mode is specified by `--data.parser.down_sample_rounding_mode`. Available values are `floor`, `round`, `round_half_up`, `ceil`. Default is `round`.
 
 * Load large dataset without OOM
-```bash
-... fit \
-  --data.train_max_num_images_to_cache 1024 \
-  ...
-```
+  * [1st option] Cache images in uint8 data type
+    ```bash
+    ... fit \
+        --data.image_uint8 true
+    ```
+  * [2nd option] Limit the maximum number of the cached images
+    * Cache the next batch during training (Recommended)
+      ```bash
+      ... fit \
+        --data.train_max_num_images_to_cache 512 \
+        --data.async_caching true \
+        ...
+      ```
+    * Cache the next batch at the end of the current batch
+      ```bash
+      ... fit \
+        --data.train_max_num_images_to_cache 1024 \
+        ...
+      ```
 
 ### 2.3. Use <a href="https://github.com/nerfstudio-project/gsplat">nerfstudio-project/gsplat</a>
 Make sure that command `which nvcc` can produce output, or gsplat will be disabled automatically.
