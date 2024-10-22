@@ -1,6 +1,27 @@
 import os
+from dataclasses import dataclass
 from train_partitions import PartitionTrainingConfig, PartitionTraining
 import argparse
+
+
+@dataclass
+class ColmapPartitionTrainingConfig(PartitionTrainingConfig):
+    eval: bool = False
+
+    ff_densify: bool = False
+
+    @classmethod
+    def get_extra_init_kwargs(cls, args):
+        return {
+            "eval": args.eval,
+            "ff_densify": args.ff_densify,
+        }
+
+    @staticmethod
+    def configure_argparser(parser, extra_epoches: int = 0):
+        PartitionTrainingConfig.configure_argparser(parser, extra_epoches)
+        parser.add_argument("--eval", action="store_true", default=False)
+        parser.add_argument("--ff-densify", action="store_true", default=False)
 
 
 class ColmapPartitionTraining(PartitionTraining):
@@ -13,15 +34,25 @@ class ColmapPartitionTraining(PartitionTraining):
                 self.path,
                 "{}.txt".format(self.get_partition_id_str(partition_idx)),
             )),
-            "--data.parser.split_mode=reconstruction",
+            "--data.parser.split_mode={}".format("experiment" if self.config.eval else "reconstruction"),
             "--data.parser.eval_step=64",
+        ]
+
+    def get_overridable_partition_specific_args(self, partition_idx: int) -> list[str]:
+        args = super().get_overridable_partition_specific_args(partition_idx)
+        if not self.config.ff_densify:
+            return args
+        return args + [
+            "--model.density=internal.density_controllers.foreground_first_density_controller.ForegroundFirstDensityController",
+            "--model.density.partition={}".format(self.path),
+            "--model.density.partition_idx={}".format(partition_idx),
         ]
 
 
 def main():
     parser = argparse.ArgumentParser()
-    PartitionTrainingConfig.configure_argparser(parser)
-    ColmapPartitionTraining.start_with_configured_argparser(parser)
+    ColmapPartitionTrainingConfig.configure_argparser(parser)
+    ColmapPartitionTraining.start_with_configured_argparser(parser, config_cls=ColmapPartitionTrainingConfig)
 
 
 main()
