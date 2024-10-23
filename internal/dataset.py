@@ -304,8 +304,8 @@ class DataModule(LightningDataModule):
             val_on_train: bool = False,
             image_scale_factor: float = 1.,  # TODO
             train_max_num_images_to_cache: int = -1,
-            val_max_num_images_to_cache: int = 0,
-            test_max_num_images_to_cache: int = 0,
+            val_max_num_images_to_cache: int = -1,
+            test_max_num_images_to_cache: int = -1,
             num_workers: int = 2,
             add_background_sphere: bool = False,
             background_sphere_center: Literal["points", "cameras"] = "points",
