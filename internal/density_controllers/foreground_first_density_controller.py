@@ -81,7 +81,7 @@ class ForegroundFirstDensityControllerModule(DensityControllerImpl):
             partition_data["extra_data"]["rotation_transform"],
             persistent=False,
         )
-        # get boudning box
+        # get bounding box
         partition_center = partition_data["partition_coordinates"]["xy"][self.config.partition_idx] + partition_size * 0.5
         self.register_buffer(
             "partition_center",
