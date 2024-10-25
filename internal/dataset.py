@@ -54,7 +54,16 @@ class Dataset(torch.utils.data.Dataset):
             return self.image_set.image_names[index], None, None
 
         # TODO: resize
-        pil_image = Image.open(self.image_set.image_paths[index])
+        image_path = self.image_set.image_paths[index]
+        if not os.path.splitext(image_path)[1]:
+            # Check if the file exists with common image extensions
+            for ext in ['.png', '.jpg', '.jpeg', '.bmp', '.tiff']:
+                if os.path.exists(image_path + ext):
+                    image_path += ext
+                    break
+                else:
+                    raise FileNotFoundError(f"No file found for {image_path} with common image extensions")
+        pil_image = Image.open(image_path)
         numpy_image = np.array(pil_image, dtype=np.uint8)
 
         # undistort image
