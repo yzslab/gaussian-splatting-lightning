@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Tuple, Dict, Any
 import torch
 from .vanilla_metrics import VanillaMetrics, VanillaMetricsImpl
+from .inverse_depth_metrics import HasInverseDepthMetrics, HasInverseDepthMetricsModule
 
 
 @dataclass
@@ -105,4 +106,14 @@ class ScaleRegularizationMetrics(ScaleRegularizationMetricsMixin, VanillaMetrics
 
 
 class ScaleRegularizationMetricsModule(ScaleRegularizationMetricsModuleMixin, VanillaMetricsImpl):
+    pass
+
+
+@dataclass
+class ScaleRegularizationWithDepthMetrics(ScaleRegularizationMetricsMixin, HasInverseDepthMetrics):
+    def instantiate(self, *args, **kwargs) -> "ScaleRegularizationWithDepthMetricsModule":
+        return ScaleRegularizationWithDepthMetricsModule(self)
+
+
+class ScaleRegularizationWithDepthMetricsModule(ScaleRegularizationMetricsModuleMixin, HasInverseDepthMetricsModule):
     pass
