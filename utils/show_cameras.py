@@ -1,15 +1,20 @@
 import add_pypath
+import os
 import argparse
 import time
 import viser
 import viser.transforms as vtf
 import json
+from tqdm.auto import tqdm
+from PIL import Image
 import numpy as np
 import torch
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--cameras", default="cameras.json", required=True, type=str)
 parser.add_argument("--points", default=None, type=str)
+parser.add_argument("--point-sparsify", type=int, default=1)
+parser.add_argument("--images", default=None, type=str)
 parser.add_argument("--up", nargs="+", required=False, type=float, default=None)
 parser.add_argument("--camera-scale", type=float, default=0.02)
 parser.add_argument("--point-size", type=float, default=0.002)
@@ -24,7 +29,7 @@ camera_transform = torch.eye(4, dtype=torch.float)
 
 camera_pose_transform = np.linalg.inv(camera_transform.cpu().numpy())
 up = torch.zeros(3)
-for camera in camera_poses:
+for camera in tqdm(camera_poses, leave=False, desc="Loading images"):
     name = camera["img_name"]
     c2w = np.eye(4)
     c2w[:3, :3] = np.asarray(camera["rotation"])
@@ -39,6 +44,22 @@ for camera in camera_poses:
     cy = camera["height"] // 2
     fx = camera["fx"]
 
+    image_file_path = None
+    if args.images is not None:
+        image_file_path = os.path.join(args.images, name)
+        if not os.path.exists(image_file_path):
+            print("[WARNING] {} not found".format(image_file_path))
+            image_file_path = None
+
+    shape = np.asarray([camera["height"], camera["width"]])
+    shape = (shape / shape.max() * 100).astype(np.int32)
+
+    if image_file_path is None:
+        image = np.ones((shape[0], shape[1], 3), dtype=np.uint8) * camera.get("color", (200, 0, 0))
+    else:
+        pil_image = Image.open(image_file_path).convert("RGB").resize((shape[1], shape[0]))
+        image = np.asarray(pil_image)
+
     camera_handle = viser_server.scene.add_camera_frustum(
         name="cameras/{}".format(name),
         fov=float(2 * np.arctan(cx / fx)),
@@ -47,6 +68,7 @@ for camera in camera_poses:
         wxyz=R.wxyz,
         position=c2w[:3, 3],
         color=camera.get("color", (255, 0, 0)),
+        image=image,
     )
 
     up += torch.tensor(camera["rotation"])[:3, 1]
@@ -63,8 +85,8 @@ if args.points is not None:
     pcd = fetch_ply_without_rgb_normalization(args.points)
     viser_server.scene.add_point_cloud(
         "points",
-        pcd.points,
-        pcd.colors,
+        pcd.points[::args.point_sparsify],
+        pcd.colors[::args.point_sparsify],
         point_size=args.point_size,
     )
 
