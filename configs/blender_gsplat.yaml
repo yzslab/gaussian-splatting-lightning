@@ -3,6 +3,7 @@ trainer:
 model:
   renderer: internal.renderers.gsplat_renderer.GSPlatRenderer
 data:
+  parser: Blender
   val_max_num_images_to_cache: -1
   test_max_num_images_to_cache: -1
   image_on_cpu: false
