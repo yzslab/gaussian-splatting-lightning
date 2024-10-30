@@ -39,7 +39,7 @@ class GaussianPlyUtils:
         names = [p.name for p in plyelement.properties if p.name.startswith(name_prefix)]
         if len(names) == 0:
             if required is True:
-                raise RuntimeError(f"'{name_prefix}' not found in ply, create an empty one")
+                raise RuntimeError(f"'{name_prefix}' not found in ply")
             return np.empty((plyelement["x"].shape[0], 0))
         names = sorted(names, key=lambda x: int(x.split('_')[-1]))
         v_list = []
@@ -64,7 +64,7 @@ class GaussianPlyUtils:
         features_dc[:, 1, 0] = np.asarray(plydata.elements[0]["f_dc_1"])
         features_dc[:, 2, 0] = np.asarray(plydata.elements[0]["f_dc_2"])
 
-        features_rest = cls.load_array_from_plyelement(plydata.elements[0], "f_rest_").reshape((xyz.shape[0], 3, -1))
+        features_rest = cls.load_array_from_plyelement(plydata.elements[0], "f_rest_", required=False).reshape((xyz.shape[0], 3, -1))
         if sh_degrees >= 0:
             assert features_rest.shape[-1] == (sh_degrees + 1) ** 2 - 1  # TODO: remove such a assertion
         else:
