@@ -9,6 +9,7 @@
 # For inquiries contact  george.drettakis@inria.fr
 #
 
+from dataclasses import dataclass
 import torch
 import math
 import numpy as np
@@ -16,7 +17,8 @@ from typing import NamedTuple
 from plyfile import PlyData, PlyElement
 
 
-class BasicPointCloud(NamedTuple):
+@dataclass
+class BasicPointCloud:
     points: np.array
     colors: np.array
     normals: np.array
@@ -33,7 +35,7 @@ def fetch_ply_without_rgb_normalization(path):
 
 def fetch_ply(path):
     pcd = fetch_ply_without_rgb_normalization(path)
-    pcd.colors /= 255.
+    pcd.colors = pcd.colors / 255.
     return pcd
 
 
