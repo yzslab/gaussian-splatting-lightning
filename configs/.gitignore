@@ -44,6 +44,7 @@
 !appearance_embedding_renderer/sh_view_dependent-128_dims-lr_0.005-with_scheduler-estimated_depth_reg-hard_depth.yaml
 !appearance_embedding_renderer/sh_view_dependent-lr_0.005-with_scheduler-estimated_depth_reg-hard_depth.yaml
 !appearance_embedding_renderer/sh_view_dependent-mip.yaml
+!appearance_embedding_renderer/distributed-view_independent-128_dims-lr_0.005-with_scheduler-estimated_depth_reg-hard_depth-scale_reg-mip.yaml
 !random_background.yaml
 !mcmc.yaml
 !gsplat-mcmc.yaml
@@ -70,3 +71,4 @@
 !depth_regularization/estimated_inverse_depth-l2.yaml
 !stp
 !stp/baseline.yaml
+!scale_reg.yaml
