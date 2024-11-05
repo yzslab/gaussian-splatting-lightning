@@ -40,6 +40,8 @@
   * <a href="#216-new-multiple-gpu-training-strategy">New Multiple GPU training strategy (2.16.)</a>
   * <a href="#217-spotlesssplats">SpotLessSplats (2.17.)</a>
   * <a href="#218-depth-regularization-with-depth-anything-v2">Depth Regularization with Depth Anything V2 (2.18.)</a>
+  * <a href="#219-stopthepop">StopThePop (2.19.)</a>
+  * <a href="#220-scale-regularization">Scale Regularization (2.20.)</a>
 ## 1. Installation
 ### 1.1. Clone repository
 
@@ -213,10 +215,17 @@ python main.py fit \
 ```
 
 ### 2.6. <a href="https://niujinshuchong.github.io/mip-splatting/">Mip-Splatting</a>
+Training:
 ```bash
 python main.py fit \
-    --config configs/mip_splatting_gsplat.yaml \
+    --config configs/mip_splatting_gsplat_v2.yaml \
     --data.path ...
+```
+
+Fuse the 3D smoothing filter to the Gaussian parameters:
+```bash
+python utils/fuse_mip_filter.py \
+    TRAINED_MODEL_DIR
 ```
 
 ### 2.7. <a href="https://lightgaussian.github.io/">LightGaussian</a>
@@ -845,6 +854,33 @@ This is implemented with reference to <a href="https://repo-sam.inria.fr/fungrap
       * [view_dependent-estimated_depth_reg-hard_depth.yaml](https://github.com/yzslab/gaussian-splatting-lightning/blob/main/configs/appearance_embedding_renderer/view_dependent-estimated_depth_reg-hard_depth.yaml)
     
     In my experiments, simply L1 is slightly better than L2 or the one with SSIM.
+
+### 2.19. <a href="https://r4dl.github.io/StopThePop/">StopThePop</a>
+* Install the StopThePop-Rasterization first:
+  ```bash
+  pip install dacite git+https://github.com/yzslab/StopThePop-Rasterization.git
+  ```
+
+* Training:
+  ```bash
+  python main.py fit \
+      --config configs/stp/baseline.yaml \
+      --data.path ... \
+      ...
+  ```
+
+### 2.20. Scale Regularization
+The scales of Gaussians will grow to some unreasonable values after densification. For example, some linear shape Gaussians are almost longer than your scene, and appear as artifacts at many viewpoints. This regularization, containing max scale and scale ratio losses, can avoid it. Take a look <a href="https://github.com/yzslab/gaussian-splatting-lightning/blob/main/internal/metrics/scale_regularization_metrics.py">internal/metrics/scale_regularization_metrics.py</a> for more details.
+
+Usage: 
+```bash
+python main.py fit \
+    --config configs/scale_reg.yaml \
+    --model.metric.max_scale 1. \
+    ...
+```
+
+The `--model.metric.max_scale` is a scene-specific hyperparameter. The regularization will be applied to the Gaussians with scales exceeding it. It should be greater than `percent_dense * camera_extent`. The `percent_dense` is `0.01` by default. The `camera_extent` will be printed as `spatial_lr_scale=...` at the beginning of the training. Set it to a very large value, e.g. `2048`, to disable the max scale loss if you are not sure what value should be used.
 
 ## 3. Evaluation
 
