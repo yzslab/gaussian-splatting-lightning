@@ -17,6 +17,8 @@ class GSplatDistributedRenderer(RendererConfig):
 
     anti_aliased: bool = DEFAULT_ANTI_ALIASED_STATUS
 
+    filter_2d_kernel_size: float = 0.3
+
     # Since the density controllers are replaceable, below parameters should be updated manually when the parameters of density controller changed
 
     redistribute_interval: int = 1000
@@ -201,10 +203,13 @@ class GSplatDistributedRendererImpl(Renderer):
             xys, depths.squeeze(-1), radii.squeeze(-1), conics, comp.squeeze(-1), num_tiles_hit.squeeze(-1),
         ], opacities, rgbs, visible_mask_list
 
-    def project(self, camera: Camera, pc: GaussianModel, scaling_modifier):
+    def get_scales_and_opacities(self, pc: GaussianModel):
+        return pc.get_scales(), pc.get_opacities()
+
+    def project(self, camera: Camera, pc: GaussianModel, scales, scaling_modifier):
         results = project_gaussians(
             means3d=pc.get_xyz,
-            scales=pc.get_scaling,
+            scales=scales,
             glob_scale=scaling_modifier,
             quats=pc.get_rotation,
             viewmat=camera.world_to_camera.T,
@@ -216,6 +221,7 @@ class GSplatDistributedRendererImpl(Renderer):
             img_height=camera.height.item(),
             img_width=camera.width.item(),
             block_width=self.block_size,
+            filter_2d_kernel_size=self.config.filter_2d_kernel_size,
         )
 
         return results
@@ -242,13 +248,14 @@ class GSplatDistributedRendererImpl(Renderer):
                         camera.to_device(viewpoint_camera.device)
                     gathered_cameras.append(camera)
 
+            scales, opacities = self.get_scales_and_opacities(pc)
             with self.profiler.profile(f"{self.profile_prefix}project"):
                 # perform the projection and SH for each member's camera
                 projection_results_list = []
                 rgb_list = []
                 for camera in gathered_cameras:
                     # store projection results to list
-                    project_results = self.project(camera, pc, scaling_modifier)
+                    project_results = self.project(camera, pc, scales, scaling_modifier)
                     projection_results_list.append(project_results)
 
                     rgb_list.append(self.get_rgbs(pc, camera, project_results))
@@ -258,7 +265,7 @@ class GSplatDistributedRendererImpl(Renderer):
                 projection_results, opacities, rgbs, visible_mask_list = self.rasterizer_required_data_all2all(
                     projection_result_list=projection_results_list,
                     rgb_list=rgb_list,
-                    opacities=pc.get_opacity,
+                    opacities=opacities,
                     device=bg_color.device,
                 )
 
@@ -290,9 +297,29 @@ class GSplatDistributedRendererImpl(Renderer):
                 )  # type: ignore
                 rgb = rgb.permute(2, 0, 1)
 
+                # hard inverse depth
+                hard_inverse_depth_im = None
+                if "hard_inverse_depth" in render_types:
+                    inverse_depth = 1. / (depths.clamp_min(0.) + 1e-8).unsqueeze(-1)
+                    hard_inverse_depth_im = rasterize_gaussians(
+                        xys,
+                        depths,
+                        radii,
+                        conics,
+                        num_tiles_hit,
+                        inverse_depth,
+                        opacities + (1 - opacities.detach()),  # aiming to reduce the opacities of artifacts
+                        img_height=img_height,
+                        img_width=img_width,
+                        block_width=self.block_size,
+                        background=torch.zeros((1,), dtype=torch.float, device=bg_color.device),
+                        return_alpha=False,
+                    ).permute(2, 0, 1)
+
         # a little difference below, since the densification needs projection results from all cameras
         return {
             "render": rgb,
+            "hard_inverse_depth": hard_inverse_depth_im,
             "cameras": gathered_cameras,
             "projection_results_list": projection_results_list,
             "visible_mask_list": visible_mask_list,
@@ -367,7 +394,8 @@ class GSplatDistributedRendererImpl(Renderer):
         def invoke_all2all(local_tensor):
             return self.all2all_gaussian_state(local_tensor, destination=destination, number_of_gaussians_to_receive=number_of_gaussians_to_receive)
 
-        optimizable_tensors = {}
+        new_tensors = {}
+        # optimizable
         for opt in optimizers:
             for group in opt.param_groups:
                 assert len(group["params"]) == 1
@@ -383,12 +411,19 @@ class GSplatDistributedRendererImpl(Renderer):
                 else:
                     group["params"][0] = torch.nn.Parameter(invoke_all2all(group["params"][0]).requires_grad_(True))
 
-                optimizable_tensors[group["name"]] = group["params"][0]
+                new_tensors[group["name"]] = group["params"][0]
+
+        # tensors
+        for name in gaussian_model.get_property_names():
+            if name in new_tensors:
+                continue
+            new_tensors[name] = invoke_all2all(gaussian_model.get_property(name))
 
         # update
-        gaussian_model.properties = optimizable_tensors
+        gaussian_model.properties = new_tensors
 
     def get_available_outputs(self) -> Dict:
         return {
             "rgb": RendererOutputInfo("render"),
+            "hard_inverse_depth": RendererOutputInfo("hard_inverse_depth", type=RendererOutputTypes.GRAY),
         }

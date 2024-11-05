@@ -90,3 +90,19 @@ class GSplatDistributedAppearanceEmbeddingRenderer(GSplatDistributedRenderer):
         # TODO: enable warm up
         assert self.appearance_optimization.warm_up == 0, "`warm_up` must be `0` currently"
         return GSplatDistributedAppearanceEmbeddingRendererImpl(self)
+
+
+# With Mip
+@dataclass
+class GSplatDistributedAppearanceMipRenderer(GSplatDistributedAppearanceEmbeddingRenderer):
+    filter_2d_kernel_size: float = 0.1
+
+    def instantiate(self, *args, **kwargs) -> "GSplatDistributedAppearanceMipRendererModule":
+        assert self.appearance_optimization.warm_up == 0, "`warm_up` must be `0` currently"
+        return GSplatDistributedAppearanceMipRendererModule(self)
+
+
+class GSplatDistributedAppearanceMipRendererModule(GSplatDistributedAppearanceEmbeddingRendererImpl):
+    def get_scales_and_opacities(self, pc):
+        opacities, scales = pc.get_3d_filtered_scales_and_opacities()
+        return scales, opacities

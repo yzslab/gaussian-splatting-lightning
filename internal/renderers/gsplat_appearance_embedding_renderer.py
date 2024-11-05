@@ -76,6 +76,7 @@ class Model(nn.Module):
 @dataclass
 class GSplatAppearanceEmbeddingRenderer(RendererConfig):
     anti_aliased: bool = DEFAULT_ANTI_ALIASED_STATUS
+    filter_2d_kernel_size: float = 0.3
     model: ModelConfig = field(default_factory=lambda: ModelConfig())
     optimization: OptimizationConfig = field(default_factory=lambda: OptimizationConfig())
 
@@ -89,6 +90,7 @@ class GSplatAppearanceEmbeddingRenderer(RendererConfig):
             anti_aliased=self.anti_aliased,
             model=self.model,
             optimization=self.optimization,
+            filter_2d_kernel_size=self.filter_2d_kernel_size,
         )
 
 
@@ -102,11 +104,13 @@ class GSplatAppearanceEmbeddingRendererModule(Renderer):
             anti_aliased: bool,
             model: ModelConfig,
             optimization: OptimizationConfig,
+            filter_2d_kernel_size: float,
     ):
         super().__init__()
         self.anti_aliased = anti_aliased  # tell absgrad whether AA enabled
         self.model_config = model
         self.optimization_config = optimization
+        self.filter_2d_kernel_size = filter_2d_kernel_size
 
     def setup(self, stage: str, lightning_module=None, *args: Any, **kwargs: Any) -> Any:
         if lightning_module is not None:
@@ -165,6 +169,9 @@ class GSplatAppearanceEmbeddingRendererModule(Renderer):
             rotations=pc.get_rotation,
             viewpoint_camera=viewpoint_camera,
             scaling_modifier=scaling_modifier,
+            extra_projection_kwargs={
+                "filter_2d_kernel_size": self.filter_2d_kernel_size,
+            },
         ), pc.get_opacities()
 
     def forward(self, viewpoint_camera: Camera, pc: GaussianModel, bg_color: torch.Tensor, scaling_modifier=1.0, render_types=None, **kwargs):
@@ -296,7 +303,7 @@ class GSplatAppearanceEmbeddingMipRenderer(GSplatAppearanceEmbeddingRenderer):
 
 class GSplatAppearanceEmbeddingMipRendererModule(GSplatAppearanceEmbeddingRendererModule):
     def __init__(self, anti_aliased: bool, model: ModelConfig, optimization: OptimizationConfig, filter_2d_kernel_size: float):
-        super().__init__(anti_aliased, model, optimization)
+        super().__init__(anti_aliased, model, optimization, filter_2d_kernel_size)
         self.filter_2d_kernel_size = filter_2d_kernel_size
 
     def preprocess(self, pc, viewpoint_camera, scaling_modifier):
