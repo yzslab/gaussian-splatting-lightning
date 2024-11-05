@@ -12,6 +12,7 @@ from internal.utils.graphics_utils import store_ply
 
 parser = argparse.ArgumentParser()
 parser.add_argument("path")
+parser.add_argument("--colmap", type=str, default=None)  # NOTE: the scale must be aligned first: `colmap model_aligner ...`
 parser.add_argument("--min-confidence", "-m", type=int, default=127)
 parser.add_argument("--max", type=int, default=2_048_000)
 parser.add_argument("--scale", type=float, default=5.)
@@ -22,10 +23,18 @@ output_path = os.path.join(args.path, "points3D.ply")
 # assert os.path.exists(output_path) is False
 
 
-dataparser = NGP(
-    pcd_from="random",
-    num_random_points=1,
-).instantiate(args.path, args.path, 0)
+if args.colmap is not None:
+    from internal.dataparsers.colmap_dataparser import Colmap
+    dataparser = Colmap(
+        image_dir=os.path.join(args.path, "keyframes", "images"),
+        force_pinhole=True,
+    ).instantiate(args.colmap, args.path, 0)
+else:
+    dataparser = NGP(
+        pcd_from="random",
+        num_random_points=1,
+    ).instantiate(args.path, args.path, 0)
+
 dataparser_outputs = dataparser.get_outputs()
 image_set = dataparser_outputs.train_set
 
@@ -36,8 +45,8 @@ for image_idx in tqdm(range(len(image_set))):
     frame_basename = frame_basename.split(".")[0].split("_")[0]
 
     # load images
-    depth = np.asarray(Image.open(os.path.join(dataparser.path, "keyframes", "depth", "{}.png".format(frame_basename))))
-    confidence = np.asarray(Image.open(os.path.join(dataparser.path, "keyframes", "confidence", "{}.png".format(frame_basename))))
+    depth = np.asarray(Image.open(os.path.join(args.path, "keyframes", "depth", "{}.png".format(frame_basename))))
+    confidence = np.asarray(Image.open(os.path.join(args.path, "keyframes", "confidence", "{}.png".format(frame_basename))))
     rgb_flatten = np.asarray(Image.open(dataparser_outputs.train_set.image_paths[image_idx]).resize((depth.shape[1], depth.shape[0]))).reshape((-1, 3))
 
     # retrieve camera parameters
