@@ -31,16 +31,8 @@ class BlenderDataParser(DataParser):
         self.global_rank = global_rank
         self.params = params
 
-    def _parse_transforms_json(self, split: str) -> ImageSet:
-        with open(os.path.join(self.path, "transforms_{}.json".format(split)), "r") as f:
-            transforms = json.load(f)
-
-        # if in reconstruction mode, merge val and test into train set
-        if split == "train" and self.params.split_mode == "reconstruction":
-            for i in ["val", "test"]:
-                with open(os.path.join(self.path, "transforms_{}.json".format(i)), "r") as f:
-                    transforms["frames"] += json.load(f)["frames"]
-
+    @staticmethod
+    def parse_transforms(transforms: dict, path: str) -> ImageSet:
         # parse extrinsic
         image_name_list = []
         image_path_list = []
@@ -49,7 +41,7 @@ class BlenderDataParser(DataParser):
         for frame in transforms["frames"]:
             image_name_with_extension = "{}.png".format(frame["file_path"])
             image_name_list.append(os.path.basename(image_name_with_extension))
-            image_path_list.append(os.path.join(self.path, image_name_with_extension))
+            image_path_list.append(os.path.join(path, image_name_with_extension))
             camera_to_world_list.append(frame["transform_matrix"])
             if "time" in frame:
                 time_list.append(frame["time"])
@@ -102,6 +94,18 @@ class BlenderDataParser(DataParser):
                 time=torch.tensor(time_list, dtype=torch.float),
             ),
         )
+
+    def _parse_transforms_json(self, split: str) -> ImageSet:
+        with open(os.path.join(self.path, "transforms_{}.json".format(split)), "r") as f:
+            transforms = json.load(f)
+
+        # if in reconstruction mode, merge val and test into train set
+        if split == "train" and self.params.split_mode == "reconstruction":
+            for i in ["val", "test"]:
+                with open(os.path.join(self.path, "transforms_{}.json".format(i)), "r") as f:
+                    transforms["frames"] += json.load(f)["frames"]
+
+        return self.parse_transforms(transforms=transforms, path=self.path)
 
     def get_outputs(self) -> DataParserOutputs:
         # ply_path = os.path.join(self.path, "points3D.ply")
