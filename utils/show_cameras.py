@@ -9,9 +9,10 @@ from tqdm.auto import tqdm
 from PIL import Image
 import numpy as np
 import torch
+from internal.utils.graphics_utils import BasicPointCloud
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--cameras", default="cameras.json", required=True, type=str)
+parser.add_argument("cameras", default="cameras.json", type=str)
 parser.add_argument("--points", default=None, type=str)
 parser.add_argument("--point-sparsify", type=int, default=1)
 parser.add_argument("--images", default=None, type=str)
@@ -20,15 +21,53 @@ parser.add_argument("--camera-scale", type=float, default=0.02)
 parser.add_argument("--point-size", type=float, default=0.002)
 args = parser.parse_args()
 
-with open(args.cameras, "r") as f:
-    camera_poses = json.load(f)
+pcd = None
+
+# load camera poses: from json or colmap
+if args.cameras.endswith(".json"):
+    with open(args.cameras, "r") as f:
+        camera_poses = json.load(f)
+else:
+    from internal.utils import colmap
+    colmap_cameras = colmap.read_cameras_binary(os.path.join(args.cameras, "cameras.bin"))
+    colmap_images = colmap.read_images_binary(os.path.join(args.cameras, "images.bin"))
+    camera_poses = []
+    for image_idx, image in colmap_images.items():
+        camera = colmap_cameras[image.camera_id]
+        w2c = np.eye(4)
+        w2c[:3, :3] = colmap.qvec2rotmat(image.qvec)
+        w2c[:3, 3] = image.tvec
+        c2w = np.linalg.inv(w2c)
+        camera_poses.append({
+            "img_name": image.name,
+            "width": camera.width,
+            "height": camera.height,
+            "rotation": c2w[:3, :3].tolist(),
+            "position": c2w[:3, 3].tolist(),
+            "fx": camera.params[0],
+            "fy": camera.params[1],
+        })
+
+    colmap_points = colmap.read_points3D_binary(os.path.join(args.cameras, "points3D.bin"))
+    points_xyz = []
+    points_rgb = []
+    for point in colmap_points.values():
+        points_xyz.append(point.xyz)
+        points_rgb.append(point.rgb)
+    pcd = BasicPointCloud(
+        points=np.asarray(points_xyz),
+        colors=np.asarray(points_rgb),
+        normals=None,
+    )
+
 
 viser_server = viser.ViserServer()
 
 camera_transform = torch.eye(4, dtype=torch.float)
-
 camera_pose_transform = np.linalg.inv(camera_transform.cpu().numpy())
 up = torch.zeros(3)
+
+# add cameras to the scene
 for camera in tqdm(camera_poses, leave=False, desc="Loading images"):
     name = camera["img_name"]
     c2w = np.eye(4)
@@ -83,6 +122,7 @@ if args.points is not None:
     from internal.utils.graphics_utils import fetch_ply_without_rgb_normalization
 
     pcd = fetch_ply_without_rgb_normalization(args.points)
+if pcd is not None:
     viser_server.scene.add_point_cloud(
         "points",
         pcd.points[::args.point_sparsify],
