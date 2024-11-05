@@ -24,7 +24,6 @@ model_init_kwargs = {
 }
 renderer_init_kwargs = {
     "anti_aliased": True,
-    "filter_2d_kernel_size": ckpt["hyper_parameters"]["renderer"].filter_2d_kernel_size
 }
 
 gaussian_model_name = ckpt["hyper_parameters"]["gaussian"].__class__.__name__
@@ -50,6 +49,10 @@ elif gaussian_model_name == "MipSplatting":
     from internal.renderers.gsplat_renderer import GSPlatRenderer
     model_class = VanillaGaussian
     renderer_class = GSPlatRenderer
+
+    renderer_init_kwargs.update({
+        "kernel_size": ckpt["hyper_parameters"]["renderer"].filter_2d_kernel_size
+    })
 else:
     raise ValueError("unsupported model type '{}'".format(gaussian_model_name))
 
