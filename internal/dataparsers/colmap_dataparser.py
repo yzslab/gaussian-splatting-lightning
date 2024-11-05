@@ -64,6 +64,8 @@ class Colmap(DataParserConfig):
 
     n_random_points: int = 100_000
 
+    force_pinhole: bool = False
+
     def instantiate(self, path: str, output_path: str, global_rank: int) -> DataParser:
         return ColmapDataParser(path, output_path, global_rank, self)
 
@@ -300,7 +302,7 @@ class ColmapDataParser(DataParser):
                 cy = intrinsics.params[2]
                 # fov_y = focal2fov(focal_length_x, height)
                 # fov_x = focal2fov(focal_length_x, width)
-            elif intrinsics.model == "PINHOLE":
+            elif intrinsics.model == "PINHOLE" or self.params.force_pinhole is True:
                 focal_length_x = intrinsics.params[0]
                 focal_length_y = intrinsics.params[1]
                 cx = intrinsics.params[2]
