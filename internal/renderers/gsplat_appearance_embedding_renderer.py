@@ -25,6 +25,8 @@ class ModelConfig:
     n_layers: int = 3
     skip_layers: List[int] = field(default_factory=lambda: [])
 
+    normalize: bool = False
+
 
 @dataclass
 class OptimizationConfig:
@@ -66,6 +68,9 @@ class Model(nn.Module):
 
     def forward(self, gaussian_features, appearance, view_dirs):
         appearance_embeddings = self.embedding(appearance.reshape((-1,))).repeat(gaussian_features.shape[0], 1)
+        if self.config.normalize:
+            gaussian_features = torch.nn.functional.normalize(gaussian_features, dim=-1)
+            appearance_embeddings = torch.nn.functional.normalize(appearance_embeddings, dim=-1)
         input_tensor_list = [gaussian_features, appearance_embeddings]
         if self.config.is_view_dependent is True:
             input_tensor_list.append(self.view_direction_encoding(view_dirs))

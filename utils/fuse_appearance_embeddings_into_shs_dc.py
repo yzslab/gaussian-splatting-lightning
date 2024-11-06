@@ -113,6 +113,8 @@ def average_color_fusing(
         real_chunk_size = right - left
 
         appearance_features = gaussian_model.get_appearance_features().unsqueeze(1).repeat(1, real_chunk_size, 1)
+        if renderer.model.config.normalize:
+            appearance_features = torch.nn.functional.normalize(appearance_features, dim=-1)
         appearance_model_input_feature_list.append(appearance_features)
 
         # pick appearance id
@@ -124,6 +126,8 @@ def average_color_fusing(
             real_chunk_size,
             -1,
         ))  # [N_gaussians, real_chunk_size, N_embedding_dims]
+        if renderer.model.config.normalize:
+            appearance_embeddings = torch.nn.functional.normalize(appearance_embeddings, dim=-1)
         appearance_model_input_feature_list.append(appearance_embeddings)
 
         if renderer.model_config.is_view_dependent:
