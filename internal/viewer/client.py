@@ -109,15 +109,15 @@ class ClientThread(threading.Thread):
                 camera_transform=self.viewer.camera_transform,
             ).to_device(self.viewer.device)
 
-            with torch.no_grad():
-                image = self.renderer.get_outputs(camera, scaling_modifier=self.viewer.scaling_modifier.value)
-                image = torch.clamp(image, max=1.)
-                image = torch.permute(image, (1, 2, 0))
-                self.client.set_background_image(
-                    image.cpu().numpy(),
-                    format=self.viewer.image_format,
-                    jpeg_quality=jpeg_quality,
-                )
+        with torch.no_grad():
+            image = self.renderer.get_outputs(camera, scaling_modifier=self.viewer.scaling_modifier.value)
+            image = torch.clamp(image, max=1.)
+            image = torch.permute(image, (1, 2, 0))
+            self.client.set_background_image(
+                image.cpu().numpy(),
+                format=self.viewer.image_format,
+                jpeg_quality=jpeg_quality,
+            )
 
     def run(self):
         while True:
