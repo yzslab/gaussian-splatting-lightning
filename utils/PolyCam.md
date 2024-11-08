@@ -2,7 +2,7 @@
 
 * Only the raw data in LiDAR or Room mode are supported
 
-* Take a look <a href="https://docs.nerf.studio/quickstart/custom_dataset.html#polycam-capture">NeRFStudio's quick start</a> about how to export raw data.
+* Take a look <a href="https://docs.nerf.studio/quickstart/custom_dataset.html#polycam-capture">NeRFStudio's quick start</a> about how to export raw data
 
 ## Using the raw data in this repo.
 1. Unzip the raw data file
