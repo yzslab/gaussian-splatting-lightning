@@ -11,6 +11,7 @@
 * Multiple dataset types support
   * <a href="https://drive.google.com/drive/folders/1JDdLGDruGNXWnM1eqY1FNL9PlStjaKWi">Blender (nerf_synthetic)</a>
   * Colmap
+  * PolyCam (<a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/utils/PolyCam.md">See the instruction here</a>)
   * <a href="https://github.com/google/nerfies?tab=readme-ov-file#datasets">Nerfies</a>
   * <a href="https://github.com/facebookresearch/NSVF?tab=readme-ov-file#dataset">NSVF (Synthetic only)</a>
   * <a href="https://city-super.github.io/matrixcity/">MatrixCity</a> (<a href="https://github.com/yzslab/gaussian-splatting-lightning/tree/main/configs/matrixcity/README.md">Prepare your dataset</a>)
