@@ -122,8 +122,8 @@ class NGPDataParser(DataParser):
         R = w2c[:, :3, :3]
         T = w2c[:, :3, 3]
 
-        appearance_id = torch.zeros_like(fx, dtype=torch.int)
-        normalized_appearance_id = torch.zeros_like(fx, dtype=torch.float)
+        appearance_id = torch.arange(0, fx.shape[0], dtype=torch.int)
+        normalized_appearance_id = appearance_id.to(torch.float32) / appearance_id[-1]
 
         def generate_image_set(indices: list):
             tensor_indices = torch.tensor(indices, dtype=torch.int)
@@ -183,4 +183,5 @@ class NGPDataParser(DataParser):
             val_set=generate_image_set(val_set_index_list if len(val_set_index_list) > 0 else train_set_index_list[:1]),
             test_set=generate_image_set(test_set_index_list if len(test_set_index_list) > 0 else train_set_index_list[:1]),
             point_cloud=point_cloud,
+            appearance_group_ids={filename: (appearance_id[idx].item(), normalized_appearance_id[idx].item()) for idx, filename in enumerate(file_name_list)},
         )
