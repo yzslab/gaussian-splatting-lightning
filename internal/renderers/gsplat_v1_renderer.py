@@ -101,6 +101,7 @@ class GSplatV1RendererModule(Renderer):
 
         project_results_for_rasterization = radii, means2d, depths, conics, None, isects  # set the `compensations` to None, since the `opacities` have alredy been applied compensations
 
+        depths = depths.squeeze(0)
         def rasterize(input_features: torch.Tensor, background, return_alpha: bool = False):
             rendered_colors, rendered_alphas = GSplatV1.rasterize(
                 project_results_for_rasterization,
@@ -113,7 +114,7 @@ class GSplatV1RendererModule(Renderer):
             )
 
             if return_alpha:
-                return rendered_colors, rendered_alphas.squeeze(-1)
+                return rendered_colors, rendered_alphas.squeeze(0).squeeze(-1)
             return rendered_colors
 
         # rgb
