@@ -78,12 +78,23 @@ pip install -r requirements.txt
 ### 1.5. Install optional packages
 * <a href="https://ffmpeg.org/">ffmpeg</a> is required if you want to render video: `sudo apt install -y ffmpeg`
 * If you want to use <a href="https://github.com/nerfstudio-project/gsplat">nerfstudio-project/gsplat</a>
+
+  Both the v0 and v1 are supported. The v0 is recommended currently.
+  * v0.1.12 (recommended)
   
     ```bash
     pip install git+https://github.com/yzslab/gsplat.git
     ```
   
-  This command will install my modified version, which is required by LightGaussian and Mip-Splatting. If you do not need them, you can also install vanilla gsplat <a href="https://github.com/nerfstudio-project/gsplat/tree/v0.1.12">v0.1.12</a>.
+    This command will install my modified version, which is required by LightGaussian and Mip-Splatting. If you do not need them, you can also install vanilla gsplat <a href="https://github.com/nerfstudio-project/gsplat/tree/v0.1.12">v0.1.12</a>.
+    
+  * v1 (beta)
+
+    NOTE: Only my modified v1 is supported
+    
+    ```bash
+    pip install git+https://github.com/yzslab/gsplat.git@v1-with_v0_interfaces
+    ```
   
 * If you need <a href="#210-segment-any-3d-gaussians">SegAnyGaussian</a>
   * gsplat (see command above)
