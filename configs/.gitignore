@@ -17,6 +17,7 @@
 !deformable_real.yaml
 !deformable_6dof_real.yaml
 !gsplat.yaml
+!gsplat_v1.yaml
 !pypreprocess_gsplat.yaml
 !swag_baseline.yaml
 !mip_splatting_gsplat.yaml
