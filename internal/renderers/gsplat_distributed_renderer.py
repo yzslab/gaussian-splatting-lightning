@@ -227,6 +227,8 @@ class GSplatDistributedRendererImpl(Renderer):
         return results
 
     def forward(self, viewpoint_camera: Camera, pc: GaussianModel, bg_color: torch.Tensor, scaling_modifier=1.0, render_types: list = None, **kwargs):
+        if render_types is None:
+            render_types = ["rgb"]
         with self.profiler.profile(f"{self.profile_prefix}forward"):
             with self.profiler.profile(f"{self.profile_prefix}gather_cameras"):
                 # gather camera ids
