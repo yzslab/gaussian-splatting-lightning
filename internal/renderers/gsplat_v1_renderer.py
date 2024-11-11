@@ -8,9 +8,9 @@ from gsplat.cuda._wrapper import (
     fully_fused_projection,
     isect_offset_encode,
     isect_tiles,
-    rasterize_to_pixels,
     spherical_harmonics,
 )
+from gsplat.v0_interfaces import rasterize_to_pixels
 
 
 @dataclass
@@ -90,10 +90,6 @@ class GSplatV1RendererModule(Renderer):
             anti_aliased=self.config.anti_aliased,
             tile_size=self.config.block_size,
         )
-
-        # key to making retain grad work properly
-        return_xys = means2d.squeeze(0)
-        means2d = return_xys.unsqueeze(0)
 
         opacities = pc.get_opacities()
         if self.config.anti_aliased is True:
@@ -199,8 +195,6 @@ class GSplatV1RendererModule(Renderer):
 
         radii = radii.squeeze(0)
 
-        return_xys.has_hit_any_pixels = means2d.has_hit_any_pixels.squeeze(0)
-
         return {
             "render": rgb,
             "alpha": alpha,
@@ -211,8 +205,8 @@ class GSplatV1RendererModule(Renderer):
             "inverse_depth": inverse_depth_im,
             "hard_depth": hard_depth_im,
             "hard_inverse_depth": hard_inverse_depth_im,
-            "viewspace_points": return_xys,
-            "viewspace_points_grad_scale": 0.5 * torch.tensor([[img_width, img_height]]).to(return_xys),
+            "viewspace_points": means2d,
+            "viewspace_points_grad_scale": 0.5 * torch.tensor([[img_width, img_height]]).to(means2d),
             "visibility_filter": radii > 0,
             "radii": radii,
         }
@@ -250,7 +244,20 @@ class GSplatV1:
         tile_size: int = 16,
         **kwargs,
     ):
-        """Non-batching camera inputs to batching outputs"""
+        """
+        Returns:
+            A tuple:
+
+            - **radii**. [1, N]
+            - **means2d**. [1, N, 2]
+            - **depths**. [1, N]
+            - **conics**. [1, N, 3]
+            - **compensations**. [1, N]
+            - **A tuple**:
+            -   **tiles_per_gauss**. [1, N]
+            -   **isect_ids**. [n_isects]
+            -   **flatten_ids**. [n_isects]
+        """
 
         K = cls.get_intrinsics_matrix(
             fx=fx,
@@ -290,7 +297,7 @@ class GSplatV1:
         )
         isect_offsets = isect_offset_encode(isect_ids, 1, tile_width, tile_height)
 
-        return radii, means2d, depths, conics, compensations, (
+        return radii, means2d.squeeze(0), depths, conics, compensations, (
             tiles_per_gauss,
             isect_ids,
             flatten_ids,
@@ -300,7 +307,7 @@ class GSplatV1:
     @classmethod
     def rasterize(
         cls,
-        project_results,
+        project_results,  # then tuple returned by `cls.project()`
         opacities: torch.Tensor,  # [N, 1]
         colors: torch.Tensor,  # [N, n_color_dims]
         background: torch.Tensor,  # [n_color_dims]
@@ -310,8 +317,6 @@ class GSplatV1:
         absgrad: bool = True,
         **kwargs,
     ):
-        """Batching project results and non-batching parameters to non-batching outputs"""
-
         radii, means2d, depths, conics, compensations, (
             tiles_per_gauss,
             isect_ids,
