@@ -279,7 +279,7 @@ def main():
             ckpt["state_dict"][key] = embedding_state_dict[k]
 
         ckpt_file_name = os.path.basename(ckpt_file)
-        ckpt_file_name = ckpt_file_name[:-4]
+        ckpt_file_name = ckpt_file_name[:-5]
         ckpt_path = os.path.join(output_dir, "{}-{}.ckpt".format(ckpt_file_name, config.optimize_on))
         torch.save(
             ckpt,
