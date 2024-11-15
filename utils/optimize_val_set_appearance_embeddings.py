@@ -3,8 +3,8 @@ NeRF in the Wild: Neural Radiance Fields for Unconstrained Photo Collections
     Because optimization only yields appearance embeddings l^a for images in the training set, when evaluating error metrics on test-set images we optimize l^a to match the appearance of the true image using only the left half of each image. Error metrics are evaluated on only the right half of each image, so as to avoid information leakage.
 """
 
-
-from typing import Any, Optional, Union
+import add_pypath
+from typing import Any, Optional, Union, Literal
 from dataclasses import dataclass
 import os
 import torch
@@ -31,6 +31,8 @@ class Config:
 
     val_only: bool = False
 
+    optimize_on: Literal["left", "right"] = "left"
+
     seed: int = 42
 
     lr_init: float = 1e-2
@@ -47,6 +49,9 @@ class AppearanceEmbeddingOptimizer(lightning.LightningModule):
         self.config = config
         self.ckpt = ckpt
         self.metric = None
+
+        # optimize using the left half?
+        self.on_left = self.config.optimize_on == "left"
 
     def setup(self, stage: str) -> None:
         super().setup(stage)
@@ -91,16 +96,23 @@ class AppearanceEmbeddingOptimizer(lightning.LightningModule):
         image_width = gt_image.shape[-1]
         half_width = image_width // 2
 
+        width_from = 0
+        width_to = half_width
+        if not self.on_left:
+            # on right
+            width_from = half_width
+            width_to = image_width
+
         metrics, _ = self.metric.get_train_metrics(
             self,
             self.gaussian_model,
             self.trainer.global_step,
             (camera, (
                 image_name,
-                gt_image[..., :half_width],
-                mask[..., :half_width] if mask is not None else None,
+                gt_image[..., width_from:width_to],
+                mask[..., width_from:width_to] if mask is not None else None,
             ), extra_data),
-            {"render": outputs["render"][..., :half_width]}
+            {"render": outputs["render"][..., width_from:width_to]}
         )
 
         self.log("train/loss", metrics["loss"], prog_bar=True, on_step=True, on_epoch=False, batch_size=1)
@@ -118,15 +130,22 @@ class AppearanceEmbeddingOptimizer(lightning.LightningModule):
         image_width = gt_image.shape[-1]
         half_width = image_width // 2
 
+        width_from = half_width
+        width_to = image_width
+        if not self.on_left:
+            # optimize on right, validate on left
+            width_from = 0
+            width_to = half_width
+
         metrics, _ = self.metric.get_validate_metrics(
             self,
             self.gaussian_model,
             (camera, (
                 image_name,
-                gt_image[..., half_width:],
-                mask[..., half_width:] if mask is not None else None,
+                gt_image[..., width_from:width_to],
+                mask[..., width_from:width_to] if mask is not None else None,
             ), extra_data),
-            {"render": outputs["render"][..., half_width:]}
+            {"render": outputs["render"][..., width_from:width_to]}
         )
 
         self.log("val/loss", metrics["loss"], prog_bar=True, on_epoch=True, batch_size=1)
@@ -259,7 +278,9 @@ def main():
             assert key in ckpt["state_dict"]
             ckpt["state_dict"][key] = embedding_state_dict[k]
 
-        ckpt_path = os.path.join(output_dir, os.path.basename(ckpt_file))
+        ckpt_file_name = os.path.basename(ckpt_file)
+        ckpt_file_name = ckpt_file_name[:-4]
+        ckpt_path = os.path.join(output_dir, "{}-{}.ckpt".format(ckpt_file_name, config.optimize_on))
         torch.save(
             ckpt,
             ckpt_path,
