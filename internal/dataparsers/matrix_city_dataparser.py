@@ -91,8 +91,6 @@ class MatrixCityDataParser(DataParser):
             for frame in transforms["frames"]:
                 # TODO: load fov provided by frame
                 frame_id = frame["frame_index"]
-                # TODO: fix incorrect image names
-                image_names.append("{:04d}".format(frame_id))
                 base_dir = os.path.dirname(path)
                 if "path" in frame:
                     base_dir = os.path.join(base_dir, frame["path"])
@@ -106,6 +104,8 @@ class MatrixCityDataParser(DataParser):
                     "depth",
                     "{:04d}.exr".format(frame_id),
                 ))
+
+                image_names.append("{}/{:04d}".format(os.path.basename(base_dir), frame_id))
 
                 c2w = torch.tensor(frame['rot_mat'], dtype=torch.float64)
                 c2w_list.append(c2w)
