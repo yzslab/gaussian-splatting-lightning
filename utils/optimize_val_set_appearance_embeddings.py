@@ -226,6 +226,7 @@ def main():
     appearance_embedding_optimizer.setup("fit")
 
     experiment_name = os.path.basename(ckpt["hyper_parameters"]["output_path"]) if config.name is None else config.name
+    experiment_name = "{}-{}".format(experiment_name, config.optimize_on)
     output_dir = os.path.join(os.path.dirname(os.path.dirname(ckpt_file)), "embedding_optimization")
     os.makedirs(output_dir, exist_ok=True)
 
