@@ -72,15 +72,18 @@ class Vanilla2DGSRenderer(Renderer):
         rotations = pc.get_rotation
 
         # If precomputed colors are provided, use them. Otherwise, if it is desired to precompute colors
-        # from SHs in Python, do it. If not, then SH -> RGB conversion will be done by rasterizer.
-        shs = pc.get_features
+        colors_precomp = kwargs.get("colors_precomp", None)
+        shs = None
+        if colors_precomp is None:
+            # from SHs in Python, do it. If not, then SH -> RGB conversion will be done by rasterizer.
+            shs = pc.get_features
 
         # Rasterize visible Gaussians to image, obtain their radii (on screen).
         rendered_image, radii, allmap = rasterizer(
             means3D=means3D,
             means2D=means2D,
             shs=shs,
-            colors_precomp=None,
+            colors_precomp=colors_precomp,
             opacities=opacity,
             scales=scales,
             rotations=rotations,
