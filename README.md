@@ -270,7 +270,7 @@ python utils/fuse_mip_filter.py \
 ### 2.9. <a href="https://surfsplatting.github.io/">2D Gaussian Splatting</a>
 * Install `diff-surfel-rasterization` first
   ```bash
-  pip install git+https://github.com/hbb1/diff-surfel-rasterization.git@3a9357f6a4b80ba319560be7965ed6a88ec951c6
+  pip install git+https://github.com/hbb1/diff-surfel-rasterization.git@e0ed0207b3e0669960cfad70852200a4a5847f61
   ```
 
 * Then start training
@@ -279,6 +279,23 @@ python utils/fuse_mip_filter.py \
       --config configs/vanilla_2dgs.yaml \
       --data.path ...
   ```
+
+* Mesh extraction
+
+  Install required libraries first:
+  ```bash
+  pip install open3d==0.18.0 scikit-image==0.24.0 trimesh==4.4.3
+  ```
+
+  * Bounded
+    ```bash
+    python utils/gs2d_mesh_extraction.py MODEL_OUTPUT_PATH
+    ```
+
+  * Unbounded
+    ```bash
+    python utils/gs2d_mesh_extraction.py MODEL_OUTPUT_PATH --unbounded true
+    ```
   
 ### 2.10. <a href="https://jumpat.github.io/SAGA/">Segment Any 3D Gaussians</a>
 * First, train a 3DGS scene using gsplat
@@ -971,7 +988,7 @@ python viewer.py \
 * <a href="https://github.com/hbb1/2d-gaussian-splatting">hbb1/2d-gaussian-splatting</a>
 ```bash
 # Install `diff-surfel-rasterization` first
-pip install git+https://github.com/hbb1/diff-surfel-rasterization.git@28c928a36ea19407cd9754d068bd9a9535216979
+pip install git+https://github.com/hbb1/diff-surfel-rasterization.git@e0ed0207b3e0669960cfad70852200a4a5847f61
 # Then start viewer
 python viewer.py \
     2d-gaussian-splatting/outputs/Truck \
