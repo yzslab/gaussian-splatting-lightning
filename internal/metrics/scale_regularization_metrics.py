@@ -26,8 +26,10 @@ class ScaleRegularizationMetricsMixin:
             super().__post_init__()
 
         assert self.scale_reg_from > 0
-        assert self.max_scale > 0
-        assert self.max_scale_ratio > 0
+        if self.scale_reg_lambda > 0.:
+            assert self.max_scale > 0
+        if self.scale_ratio_reg_lambda > 0.:
+            assert self.max_scale_ratio > 0
 
     def instantiate(self, *args, **kwargs) -> "ScaleRegularizationMetricsModuleMixin":
         raise NotImplementedError()
@@ -41,15 +43,22 @@ class ScaleRegularizationMetricsModuleMixin:
         max_scales = sorted_scales[:, -1]
         mid_scales = sorted_scales[:, -2]
 
-        is_over_scales = scales.detach() > self.config.max_scale
-        n_over_scales = is_over_scales.sum()
+        n_over_scales = 0
+        over_scale_loss = 0.
+        is_over_scales = None
+        if self.config.scale_reg_lambda > 0.:
+            is_over_scales = scales.detach() > self.config.max_scale
+            n_over_scales = is_over_scales.sum()
+            over_scale_loss = (scales * is_over_scales).sum() / (n_over_scales + 1) * self.config.scale_reg_lambda
 
-        scale_ratios = max_scales / (mid_scales + 1e-8)
-        is_over_ratios = scale_ratios.detach() > self.config.max_scale_ratio
-        n_over_ratios = is_over_ratios.sum()
-
-        over_scale_loss = (scales * is_over_scales).sum() / (n_over_scales + 1) * self.config.scale_reg_lambda
-        over_ratio_loss = (scale_ratios * is_over_ratios).sum() / (n_over_ratios + 1) * self.config.scale_ratio_reg_lambda
+        n_over_ratios = 0
+        over_ratio_loss = 0.
+        is_over_ratios = None
+        if self.config.scale_ratio_reg_lambda > 0.:
+            scale_ratios = max_scales / (mid_scales + 1e-8)
+            is_over_ratios = scale_ratios.detach() > self.config.max_scale_ratio
+            n_over_ratios = is_over_ratios.sum()
+            over_ratio_loss = (scale_ratios * is_over_ratios).sum() / (n_over_ratios + 1) * self.config.scale_ratio_reg_lambda
 
         metrics["loss"] = metrics["loss"] + over_scale_loss + over_ratio_loss
         metrics["scale_reg"] = over_scale_loss
