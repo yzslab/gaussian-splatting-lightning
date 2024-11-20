@@ -43,6 +43,8 @@ class ForegroundFirstDensityController(DensityController):
 
     absgrad: bool = False
 
+    acc_vis: bool = False
+
     def instantiate(self, *args, **kwargs) -> DensityControllerImpl:
         return ForegroundFirstDensityControllerModule(self)
 
@@ -76,9 +78,14 @@ class ForegroundFirstDensityControllerModule(DensityControllerImpl):
             persistent=False,
         )
         # get transform matrix
+        try:
+            rotation_transform = partition_data["extra_data"]["rotation_transform"]
+        except:
+            print("FFDensityController: No orientation transform")
+            rotation_transform = torch.eye(4, dtype=torch.float, device=pl_module.device)
         self.register_buffer(
             "rotation_transform",
-            partition_data["extra_data"]["rotation_transform"],
+            rotation_transform,
             persistent=False,
         )
         # get bounding box
@@ -148,6 +155,8 @@ class ForegroundFirstDensityControllerModule(DensityControllerImpl):
 
     def update_states(self, outputs):
         viewspace_point_tensor, visibility_filter, radii = outputs["viewspace_points"], outputs["visibility_filter"], outputs["radii"]
+        if self.config.acc_vis:
+            visibility_filter = viewspace_point_tensor.has_hit_any_pixels
         # retrieve viewspace_points_grad_scale if provided
         viewspace_points_grad_scale = outputs.get("viewspace_points_grad_scale", None)
 

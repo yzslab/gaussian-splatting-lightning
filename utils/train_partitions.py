@@ -29,6 +29,7 @@ class PartitionTrainingConfig:
     dry_run: bool
     extra_epoches: int
     name_suffix: str = ""
+    ff_densify: bool = False
     scalable_params: Optional[Dict[str, int]] = None
     extra_epoch_scalable_params: Optional[List[str]] = None
     scale_param_mode: Literal["linear", "sqrt", "none"] = "linear"
@@ -66,6 +67,7 @@ class PartitionTrainingConfig:
         parser.add_argument("--no-default-scalable", action="store_true")
         parser.add_argument("--dry-run", action="store_true")
         parser.add_argument("--name-suffix", type=str, default="")
+        parser.add_argument("--ff-densify", action="store_true", default=False)
         configure_arg_parser_v2(parser)
 
     @staticmethod
@@ -117,6 +119,7 @@ class PartitionTrainingConfig:
             dry_run=args.dry_run,
             extra_epoches=args.extra_epoches,
             name_suffix=args.name_suffix,
+            ff_densify=args.ff_densify,
             scalable_params=scalable_params,
             extra_epoch_scalable_params=extra_epoch_scalable_params,
             scale_param_mode=args.scale_param_mode,
@@ -190,7 +193,14 @@ class PartitionTraining:
         return []
 
     def get_overridable_partition_specific_args(self, partition_idx: int) -> list[str]:
-        return []
+        args = []
+        if self.config.ff_densify:
+            args += [
+                "--model.density=internal.density_controllers.foreground_first_density_controller.ForegroundFirstDensityController",
+                "--model.density.partition={}".format(self.path),
+                "--model.density.partition_idx={}".format(partition_idx),
+            ]
+        return args
 
     def get_partition_specific_args(self, partition_idx: int) -> list[str]:
         return []
@@ -330,14 +340,14 @@ class PartitionTraining:
 
             output_filename = os.path.join(self.srun_output_dir, "{}.txt".format(experiment_name))
             args = [
-                       "srun",
-                       "--output={}".format(output_filename),
-                       "--job-name={}-{}".format(self.config.project_name, experiment_name),
-                   ] + self.config.srun_args + args
+                "srun",
+                "--output={}".format(output_filename),
+                "--job-name={}-{}".format(self.config.project_name, experiment_name),
+            ] + self.config.srun_args + args
 
         ret_code = -1
         if dry_run:
-            print(" ".join(args))
+            print(" \\\n  ".join(args))
         else:
             try:
                 print_func(str(args))
