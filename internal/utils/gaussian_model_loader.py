@@ -168,14 +168,17 @@ class GaussianModelLoader:
         if model_state_dict["gaussians.scales"].shape[-1] == 2:
             from internal.models.gaussian_2d import Gaussian2D
             model = Gaussian2D(sh_degree=gaussian_ply_utils.sh_degrees).instantiate()
+            from internal.renderers.vanilla_2dgs_renderer import Vanilla2DGSRenderer
+            renderer_type = Vanilla2DGSRenderer
         else:
             from internal.models.vanilla_gaussian import VanillaGaussian
             model = VanillaGaussian(sh_degree=gaussian_ply_utils.sh_degrees).instantiate()
+            renderer_type = VanillaRenderer
         model.setup_from_number(gaussian_ply_utils.xyz.shape[0])
         model.to(device)
         model.load_state_dict(model_state_dict, strict=False)
 
-        renderer = VanillaRenderer().to(device)
+        renderer = renderer_type().to(device)
 
         if eval_mode is True:
             renderer.setup("validation")
