@@ -27,18 +27,20 @@ class FreezableParameterDict(nn.ParameterDict):
 
 
 class HasExtraParameters(nn.ParameterDict):
-    def __init__(self, extra_parameters, parameters: Any, readonly: bool = True):
+    def __init__(self, extra_parameters, parameters: Any):
         self.readonly = False
         super().__init__(parameters)
         self.extra_parameter_getter = self.create_parameter_getter(extra_parameters)
-        self.readonly = readonly
+        self.readonly = True
 
     def __getitem__(self, key: str) -> Any:
         return torch.concat([super().__getitem__(key), self.extra_parameter_getter(key)], dim=0)
 
     def __setitem__(self, key: str, value: Any) -> None:
         if self.readonly:
-            raise RuntimeError("Container should not be updated")
+            # Only update the non-extra part
+            n = super().__getitem__(key).shape[0]
+            value = value[:n]
         super().__setitem__(key, value)
 
     @staticmethod
