@@ -180,10 +180,15 @@ def average_embedding_fusing(
     # merge `n_average_cameras` embedding to a single embedding
     final_appearance_embeddings = torch.sum(weighted_appearance_embeddings, dim=1)
 
+    gaussian_appearance_features = gaussian_model.get_appearance_features()
+    if renderer.model.config.normalize:
+        final_appearance_embeddings = torch.nn.functional.normalize(final_appearance_embeddings, dim=-1)
+        gaussian_appearance_features = torch.nn.functional.normalize(gaussian_appearance_features, dim=-1)
+
     # embedding network forward, output rgb_offset
     embedding_network = renderer.model.network
     input_tensor_list = [
-        gaussian_model.get_appearance_features(),
+        gaussian_appearance_features,
         final_appearance_embeddings,
     ]
 

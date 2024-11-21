@@ -167,10 +167,6 @@ def main():
                 orientation_transformation,
             )
 
-            if isinstance(gaussian_model, MipSplattingModelMixin):
-                t.set_postfix_str("Fusing MipSplatting filters...")
-                fuse_mip_filters(gaussian_model)
-
             if isinstance(gaussian_model, AppearanceFeatureGaussianModel):
                 with open(os.path.join(
                         os.path.dirname(os.path.dirname(ckpt_file)),
@@ -208,6 +204,10 @@ def main():
                     cameras_json,
                     image_name_to_camera=image_name_to_camera,
                 )
+
+            if isinstance(gaussian_model, MipSplattingModelMixin):
+                t.set_postfix_str("Fusing MipSplatting filters...")
+                fuse_mip_filters(gaussian_model)
 
             if args.preprocess:
                 update_ckpt(ckpt, {k: gaussian_model.get_property(k) for k in MERGABLE_PROPERTY_NAMES}, gaussian_model.max_sh_degree)
