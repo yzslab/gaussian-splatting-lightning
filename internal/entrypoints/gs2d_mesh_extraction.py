@@ -59,14 +59,25 @@ def main():
         if args.dataset_path is not None:
             dataset_path = args.dataset_path
     else:
+        dataset_path = args.dataset_path
+        if dataset_path is None:
+            cfg_args_file = os.path.join(args.model_path, "cfg_args")
+            try:
+                from argparse import Namespace
+                with open(cfg_args_file, "r") as f:
+                    cfg_args = eval(f.read())
+                dataset_path = cfg_args.source_path
+            except Exception as e:
+                print("Can not parse `cfg_args`: {}".format(e))
+                print("Please specific the data path via: `--dataset_path`")
+                exit(1)
+
         model, renderer = GaussianModelLoader.initialize_model_and_renderer_from_ply_file(
             loadable_file,
             device=device,
             eval_mode=True,
             pre_activate=True,
         )
-        assert args.dataset_path is not None
-        dataset_path = args.dataset_path
     if dataparser_config is None:
         from internal.dataparsers.colmap_dataparser import Colmap
         dataparser_config = Colmap()
@@ -107,7 +118,7 @@ def main():
         output_dir = os.path.dirname(output_dir)
     o3d.io.write_triangle_mesh(os.path.join(output_dir, name), mesh)
     print("mesh saved at {}".format(os.path.join(output_dir, name)))
-    
+
     # post-process the mesh and save, saving the largest N clusters
     print("post-processing...")
     mesh_post = post_process_mesh(mesh, cluster_to_keep=args.num_cluster)
