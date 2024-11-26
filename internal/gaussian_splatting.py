@@ -440,7 +440,7 @@ class GaussianSplatting(LightningModule):
 
             from internal.density_controllers.density_controller import Utils
             valid_points_mask = ~prune_mask  # `True` to keep
-            self.gaussian_model.properties = Utils.prune_optimizers(valid_points_mask, self.gaussian_optimizers)
+            self.gaussian_model.properties = Utils.prune_properties(valid_points_mask, self.gaussian_model, self.gaussian_optimizers)
             self.density_updated_by_renderer()
 
             print(f"number_of_gaussian_after_pruning={self.gaussian_model.get_xyz.shape[0]}")
