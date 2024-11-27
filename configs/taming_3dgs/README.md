@@ -3,7 +3,7 @@
 ```bash
 pip install \
     git+https://github.com/yzslab/taming-3dgs-rasterizer.git \
-    git+https://github.com/rahul-goel/fused-ssim.git@84422e0da94c516220eb3acedb907e68809e9e01
+    git+https://github.com/rahul-goel/fused-ssim.git@d99e3d27513fa3563d98f74fcd40fd429e9e9b0e
 ```
 ## 2. Training
 ```bash
