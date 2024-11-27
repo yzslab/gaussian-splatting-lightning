@@ -3,13 +3,7 @@ from .vanilla_metrics import VanillaMetrics, VanillaMetricsImpl
 from fused_ssim import fused_ssim
 
 
-@dataclass
-class VanillaWithFusedSSIMMetrics(VanillaMetrics):
-    def instantiate(self, *args, **kwargs) -> "VanillaWithFusedSSIMMetricsModule":
-        return VanillaWithFusedSSIMMetricsModule(self)
-
-
-class VanillaWithFusedSSIMMetricsModule(VanillaMetricsImpl):
+class VanillaWithFusedSSIMMetricsMixin:
     def _get_basic_metrics(self, pl_module, gaussian_model, batch, outputs):
         camera, image_info, _ = batch
         image_name, gt_image, masked_pixels = image_info
@@ -32,3 +26,13 @@ class VanillaWithFusedSSIMMetricsModule(VanillaMetricsImpl):
             "rgb_diff": True,
             "ssim": True,
         }
+
+
+@dataclass
+class VanillaWithFusedSSIMMetrics(VanillaMetrics):
+    def instantiate(self, *args, **kwargs) -> "VanillaWithFusedSSIMMetricsModule":
+        return VanillaWithFusedSSIMMetricsModule(self)
+
+
+class VanillaWithFusedSSIMMetricsModule(VanillaWithFusedSSIMMetricsMixin, VanillaMetricsImpl):
+    pass
