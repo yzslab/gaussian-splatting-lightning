@@ -88,7 +88,7 @@ pip install -r requirements.txt
   
     This command will install my modified version, which is required by LightGaussian and Mip-Splatting. If you do not need them, you can also install vanilla gsplat <a href="https://github.com/nerfstudio-project/gsplat/tree/v0.1.12">v0.1.12</a>.
     
-  * v1 (beta)
+  * v1 (experimental, a little bit faster than v0)
 
     NOTE: Only my modified v1 is supported
     
