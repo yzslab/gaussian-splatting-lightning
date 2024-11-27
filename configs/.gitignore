@@ -74,3 +74,9 @@
 !stp
 !stp/baseline.yaml
 !scale_reg.yaml
+!taming_3dgs
+!taming_3dgs/README.md
+!taming_3dgs/rasterizer.yaml
+!taming_3dgs/rasterizer-fused_ssim.yaml
+!taming_3dgs/rasterizer-fused_ssim-sparse_adam.yaml
+!taming_3dgs/fused_ssim.yaml
