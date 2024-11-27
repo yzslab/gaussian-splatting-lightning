@@ -82,7 +82,10 @@ class Taming3DGSRendererModule(Renderer):
         colors_precomp = kwargs.get("colors_precomp", None)
         if colors_precomp is None:
             if pc.is_pre_activated:
+                # TODO: avoid slicing
                 shs = pc.get_shs()
+                dc = shs[:, :1, :]
+                shs = shs[:, 1:, :]
             else:
                 dc, shs = pc.get_shs_dc(), pc.get_shs_rest()
 
