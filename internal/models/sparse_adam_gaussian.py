@@ -2,7 +2,7 @@ from typing import Optional, Union, List, Tuple
 from dataclasses import dataclass
 from .vanilla_gaussian import VanillaGaussian, VanillaGaussianModel
 
-from diff_t3dgs_rasterization import SparseGaussianAdam
+from diff_accel_gaussian_rasterization import SparseGaussianAdam
 import torch
 from torch.optim.optimizer import _use_grad_for_differentiable
 
