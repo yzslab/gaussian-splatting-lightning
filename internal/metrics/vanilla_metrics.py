@@ -19,6 +19,8 @@ class VanillaMetrics(Metric):
     the vanilla 3DGS uses 'vgg', but 'alex' is faster
     """
 
+    fused_ssim: bool = False
+
     def instantiate(self, *args, **kwargs) -> MetricImpl:
         return VanillaMetricsImpl(self)
 
@@ -28,6 +30,14 @@ class VanillaMetricsImpl(MetricImpl):
         super().__init__(config, *args, **kwargs)
 
         self.no_state_dict_models = {}
+
+    @staticmethod
+    def _create_fused_ssim_adapter():
+        from fused_ssim import fused_ssim
+        def adapter(pred, gt):
+            return fused_ssim(pred.unsqueeze(0), gt.unsqueeze(0))
+        return adapter
+
 
     def setup(self, stage: str, pl_module):
         self.psnr = PeakSignalNoiseRatio()
@@ -39,6 +49,11 @@ class VanillaMetricsImpl(MetricImpl):
             print("Use L2 loss")
             self.rgb_diff_loss_fn = self._l2_loss
 
+        self.ssim = ssim
+        if self.config.fused_ssim:
+            print("Fused SSIM enabled")
+            self.ssim = self._create_fused_ssim_adapter()
+
     def _get_basic_metrics(self, pl_module, gaussian_model, batch, outputs):
         camera, image_info, _ = batch
         image_name, gt_image, masked_pixels = image_info
@@ -49,7 +64,7 @@ class VanillaMetricsImpl(MetricImpl):
             gt_image = gt_image.clone()
             gt_image[masked_pixels] = image.detach()[masked_pixels]  # copy masked pixels from prediction to G.T.
         rgb_diff_loss = self.rgb_diff_loss_fn(outputs["render"], gt_image)
-        ssim_metric = ssim(outputs["render"], gt_image)
+        ssim_metric = self.ssim(outputs["render"], gt_image)
         loss = (1.0 - self.lambda_dssim) * rgb_diff_loss + self.lambda_dssim * (1. - ssim_metric)
 
         return {

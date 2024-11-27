@@ -78,5 +78,8 @@
 !taming_3dgs/README.md
 !taming_3dgs/rasterizer.yaml
 !taming_3dgs/rasterizer-fused_ssim.yaml
+!taming_3dgs/rasterizer-fused_ssim-aa.yaml
 !taming_3dgs/rasterizer-fused_ssim-sparse_adam.yaml
+!taming_3dgs/rasterizer-fused_ssim-sparse_adam-aa.yaml
 !taming_3dgs/fused_ssim.yaml
+!fused_ssim.yaml
