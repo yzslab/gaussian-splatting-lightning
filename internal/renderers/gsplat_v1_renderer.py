@@ -10,6 +10,16 @@ from gsplat.cuda._wrapper import (
     isect_tiles,
     spherical_harmonics,
 )
+
+try:
+    from gsplat.sh_decomposed import spherical_harmonics_decomposed
+except:
+    print("[ERROR] Incompatible gsplat found")
+    print("Please install the latest version:")
+    print("  pip uninstall gsplat")
+    print("  pip install git+https://github.com/yzslab/gsplat.git@v1-with_v0_interfaces")
+    exit()
+
 from gsplat.v0_interfaces import rasterize_to_pixels
 
 
@@ -117,7 +127,10 @@ class GSplatV1RendererModule(Renderer):
         rgb = None
         if self.is_type_required(render_type_bits, self._RGB_REQUIRED):
             viewdirs = pc.get_xyz.detach() - viewpoint_camera.camera_center  # (N, 3)
-            rgbs = spherical_harmonics(pc.active_sh_degree, viewdirs, pc.get_features)
+            if pc.is_pre_activated:
+                rgbs = spherical_harmonics(pc.active_sh_degree, viewdirs, pc.get_features)
+            else:
+                rgbs = spherical_harmonics_decomposed(pc.active_sh_degree, viewdirs, pc.get_shs_dc(), pc.get_shs_rest())
             rgbs = torch.clamp(rgbs + 0.5, min=0.0)  # type: ignore
 
             rgb = rasterize(rgbs, bg_color).permute(2, 0, 1)
