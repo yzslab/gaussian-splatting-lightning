@@ -13,6 +13,10 @@ from gsplat.cuda._wrapper import (
 
 try:
     from gsplat.sh_decomposed import spherical_harmonics_decomposed
+    from gsplat.cuda.isect_tiles_tile_based_culling import (
+        isect_tiles_tile_based_culling,
+        isect_offset_encode_tile_based_culling,
+    )
 except:
     print("[ERROR] Incompatible gsplat found")
     print("Please install the latest version:")
@@ -30,6 +34,8 @@ class GSplatV1Renderer(RendererConfig):
     anti_aliased: bool = True
 
     filter_2d_kernel_size: float = 0.3
+
+    tile_based_culling: bool = False
 
     def instantiate(self, *args, **kwargs) -> "GSplatV1RendererModule":
         return GSplatV1RendererModule(self)
@@ -85,7 +91,9 @@ class GSplatV1RendererModule(Renderer):
         if scaling_modifier != 1.:
             scales = scales * scaling_modifier
 
-        radii, means2d, depths, conics, compensations, isects = GSplatV1.project(
+        opacities = pc.get_opacities()
+
+        radii, means2d, depths, conics, compensations, isects = GSplatV1.preprocess(
             means3d=pc.get_means(),
             scales=scales,
             quats=pc.get_rotations(),
@@ -99,9 +107,10 @@ class GSplatV1RendererModule(Renderer):
             eps2d=self.config.filter_2d_kernel_size,
             anti_aliased=self.config.anti_aliased,
             tile_size=self.config.block_size,
+            tile_based_culling=self.config.tile_based_culling,
+            opacities=opacities,
         )
 
-        opacities = pc.get_opacities()
         if self.config.anti_aliased is True:
             opacities = opacities * compensations[0, :, None]
 
@@ -254,7 +263,6 @@ class GSplatV1:
         img_width: int,
         eps2d: float = 0.3,
         anti_aliased: bool = True,
-        tile_size: int = 16,
         **kwargs,
     ):
         """
@@ -266,10 +274,6 @@ class GSplatV1:
             - **depths**. [1, N]
             - **conics**. [1, N, 3]
             - **compensations**. [1, N]
-            - **A tuple**:
-            -   **tiles_per_gauss**. [1, N]
-            -   **isect_ids**. [n_isects]
-            -   **flatten_ids**. [n_isects]
         """
 
         K = cls.get_intrinsics_matrix(
@@ -279,7 +283,7 @@ class GSplatV1:
             cy=cy,
             device=means3d.device,
         )
-        radii, means2d, depths, conics, compensations = fully_fused_projection(
+        return fully_fused_projection(
             means3d,
             None,
             quats,
@@ -293,6 +297,26 @@ class GSplatV1:
             packed=False,
             **kwargs,
         )
+
+    @classmethod
+    def isect_encode(
+        cls,
+        projection_results,
+        img_height: int,
+        img_width: int,
+        tile_size: int = 16,
+    ):
+        """
+        Returns:
+            A tuple:
+
+            -   **tiles_per_gauss**. [1, N]
+            -   **isect_ids**. [n_isects]
+            -   **flatten_ids**. [n_isects]
+
+        """
+
+        radii, means2d, depths, _, _ = projection_results
 
         tile_width = math.ceil(img_width / float(tile_size))
         tile_height = math.ceil(img_height / float(tile_size))
@@ -310,17 +334,103 @@ class GSplatV1:
         )
         isect_offsets = isect_offset_encode(isect_ids, 1, tile_width, tile_height)
 
+        return tiles_per_gauss, isect_ids, flatten_ids, isect_offsets
+
+    @classmethod
+    def isect_encode_tile_based_culling(
+        cls,
+        projection_results,
+        opacities: torch.Tensor,  # [N, 1]
+        img_height: int,
+        img_width: int,
+        tile_size: int = 16,
+    ):
+        radii, means2d, depths, conics, _ = projection_results
+
+        tile_width = math.ceil(img_width / float(tile_size))
+        tile_height = math.ceil(img_height / float(tile_size))
+        tiles_per_gauss, isect_ids, flatten_ids = isect_tiles_tile_based_culling(
+            means2d,
+            radii,
+            depths,
+            conics,
+            opacities.detach().squeeze(-1).unsqueeze(0),
+            tile_size,
+            tile_width,
+            tile_height,
+            packed=False,
+            n_cameras=1,
+            camera_ids=None,
+            gaussian_ids=None,
+        )
+        isect_offsets, actual_n_isects = isect_offset_encode_tile_based_culling(isect_ids, 1, tile_width, tile_height)
+
+        return tiles_per_gauss, isect_ids, flatten_ids, isect_offsets, actual_n_isects
+
+    @classmethod
+    def preprocess(
+        cls,
+        means3d: torch.Tensor,  # [N, 3]
+        scales: torch.Tensor,  # [N, 3]
+        quats: torch.Tensor,  # [N, 4]
+        viewmat: torch.Tensor,  # [4, 4]
+        fx: Union[float, torch.Tensor],
+        fy: Union[float, torch.Tensor],
+        cx: Union[float, torch.Tensor],
+        cy: Union[float, torch.Tensor],
+        img_height: int,
+        img_width: int,
+        eps2d: float = 0.3,
+        anti_aliased: bool = True,
+        tile_size: int = 16,
+        tile_based_culling: bool = False,
+        opacities: torch.Tensor = None,  # [N, 1]
+    ):
+        radii, means2d, depths, conics, compensations = cls.project(
+            means3d=means3d,
+            scales=scales,
+            quats=quats,
+            viewmat=viewmat,
+            fx=fx,
+            fy=fy,
+            cx=cx,
+            cy=cy,
+            img_height=img_height,
+            img_width=img_width,
+            eps2d=eps2d,
+            anti_aliased=anti_aliased,
+        )
+
+        if tile_based_culling:
+            # TODO: opacities should be anti aliased if enabled
+            tiles_per_gauss, isect_ids, flatten_ids, isect_offsets, actual_n_isects = cls.isect_encode_tile_based_culling(
+                (radii, means2d, depths, conics, compensations),
+                opacities,
+                img_height=img_height,
+                img_width=img_width,
+                tile_size=tile_size,
+            )
+        else:
+            tiles_per_gauss, isect_ids, flatten_ids, isect_offsets = cls.isect_encode(
+                (radii, means2d, depths, conics, compensations),
+                img_height=img_height,
+                img_width=img_width,
+                tile_size=tile_size,
+            )
+            actual_n_isects = flatten_ids.shape[0]
+
         return radii, means2d.squeeze(0), depths, conics, compensations, (
             tiles_per_gauss,
             isect_ids,
             flatten_ids,
             isect_offsets,
+            actual_n_isects,
         )
 
     @classmethod
     def rasterize(
         cls,
-        project_results,  # then tuple returned by `cls.project()`
+        preprocess_results,  # then tuple returned by `cls.preprocess()`
         opacities: torch.Tensor,  # [N, 1]
         colors: torch.Tensor,  # [N, n_color_dims]
         background: torch.Tensor,  # [n_color_dims]
@@ -335,7 +445,8 @@ class GSplatV1:
             isect_ids,
             flatten_ids,
             isect_offsets,
-        ) = project_results
+            actual_n_isects,
+        ) = preprocess_results
 
         opacities = opacities.squeeze(-1).unsqueeze(0)
         colors = colors.unsqueeze(0)
@@ -356,6 +467,7 @@ class GSplatV1:
             flatten_ids=flatten_ids,
             backgrounds=background,
             absgrad=absgrad,
+            actual_n_isects=actual_n_isects,
             **kwargs,
         )
 
