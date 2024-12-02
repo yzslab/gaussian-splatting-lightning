@@ -19,6 +19,9 @@
 !gsplat.yaml
 !gsplat_v1.yaml
 !gsplat_v1-tile_based_culling.yaml
+!gsplat_v1-tile_based_culling-selective_adam.yaml
+!gsplat_v1-accel.yaml
+!gsplat_v1-accel_more.yaml
 !pypreprocess_gsplat.yaml
 !swag_baseline.yaml
 !mip_splatting_gsplat.yaml
