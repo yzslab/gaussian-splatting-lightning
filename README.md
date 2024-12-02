@@ -43,6 +43,7 @@
   * <a href="#218-depth-regularization-with-depth-anything-v2">Depth Regularization with Depth Anything V2 (2.18.)</a>
   * <a href="#219-stopthepop">StopThePop (2.19.)</a>
   * <a href="#220-scale-regularization">Scale Regularization (2.20.)</a>
+  * <a href="#221-taming-3dgs">Taming 3DGS</a>
 ## 1. Installation
 ### 1.1. Clone repository
 
@@ -910,6 +911,31 @@ python main.py fit \
 ```
 
 The `--model.metric.max_scale` is a scene-specific hyperparameter. The regularization will be applied to the Gaussians with scales exceeding it. It should be greater than `percent_dense * camera_extent`. The `percent_dense` is `0.01` by default. The `camera_extent` will be printed as `spatial_lr_scale=...` at the beginning of the training. Set it to a very large value, e.g. `2048`, to disable the max scale loss if you are not sure what value should be used.
+
+
+### 2.21. <a href="https://humansensinglab.github.io/taming-3dgs/">Taming 3DGS</a>
+There are two implementations: one is the gsplat v1 based, and the other is the vanilla one. The gsplat v1 based implementation currently does not have "Backpropagation with Per-Splat Parallelization."
+
+* (a) Install libraries first
+  * fused-ssim
+    ```bash
+    pip install git+https://github.com/rahul-goel/fused-ssim.git@d99e3d27513fa3563d98f74fcd40fd429e9e9b0e
+    ```
+
+  * my modified gsplat v1 if you want the gsplat v1 based one (refer to <a href="#15-install-optional-packages">1.5.</a> for the setup guide)
+  
+  * another rasterizer if you want the vanilla one
+    ```bash
+    pip install git+https://github.com/yzslab/diff-gaussian-rasterization.git@b403ab6c5cfb4ed89265a9759bd4766f9c4b56de
+    ```
+
+* (b) Available config files
+
+  | Type | gsplat v1 | vanilla |
+  | --- | --- | --- |
+  | Competitive quality | `configs/gsplat_v1-accel.yaml` | `configs/taming_3dgs/rasterizer-fused_ssim-aa.yaml` |
+  | More acceleration, slightly lower quality (SparseAdam) | `configs/gsplat_v1-accel_more.yaml` | `configs/taming_3dgs/rasterizer-fused_ssim-sparse_adam-aa.yaml` |
+
 
 ## 3. Evaluation
 
