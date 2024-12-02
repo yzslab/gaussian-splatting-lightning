@@ -114,6 +114,9 @@ class GSplatV1RendererModule(Renderer):
         if self.config.anti_aliased is True:
             opacities = opacities * compensations[0, :, None]
 
+        radii_squeezed = radii.squeeze(0)
+        visibility_filter = radii_squeezed > 0
+
         project_results_for_rasterization = radii, means2d, depths, conics, None, isects  # set the `compensations` to None, since the `opacities` have alredy been applied compensations
 
         depths = depths.squeeze(0)
@@ -137,9 +140,15 @@ class GSplatV1RendererModule(Renderer):
         if self.is_type_required(render_type_bits, self._RGB_REQUIRED):
             viewdirs = pc.get_xyz.detach() - viewpoint_camera.camera_center  # (N, 3)
             if pc.is_pre_activated:
-                rgbs = spherical_harmonics(pc.active_sh_degree, viewdirs, pc.get_features)
+                rgbs = spherical_harmonics(pc.active_sh_degree, viewdirs, pc.get_features, visibility_filter)
             else:
-                rgbs = spherical_harmonics_decomposed(pc.active_sh_degree, viewdirs, pc.get_shs_dc(), pc.get_shs_rest())
+                rgbs = spherical_harmonics_decomposed(
+                    pc.active_sh_degree, 
+                    viewdirs, 
+                    pc.get_shs_dc(), 
+                    pc.get_shs_rest(),
+                    visibility_filter,
+                )
             rgbs = torch.clamp(rgbs + 0.5, min=0.0)  # type: ignore
 
             rgb = rasterize(rgbs, bg_color).permute(2, 0, 1)
@@ -215,8 +224,6 @@ class GSplatV1RendererModule(Renderer):
 
             hard_inverse_depth_im = hard_inverse_depth_im.permute(2, 0, 1)
 
-        radii = radii.squeeze(0)
-
         return {
             "render": rgb,
             "alpha": alpha,
@@ -229,8 +236,8 @@ class GSplatV1RendererModule(Renderer):
             "hard_inverse_depth": hard_inverse_depth_im,
             "viewspace_points": means2d,
             "viewspace_points_grad_scale": 0.5 * torch.tensor([[img_width, img_height]]).to(means2d),
-            "visibility_filter": radii > 0,
-            "radii": radii,
+            "visibility_filter": visibility_filter,
+            "radii": radii_squeezed,
         }
 
     def get_available_outputs(self):
@@ -313,7 +320,7 @@ class GSplatV1:
             -   **tiles_per_gauss**. [1, N]
             -   **isect_ids**. [n_isects]
             -   **flatten_ids**. [n_isects]
-
+            -   **isect_offsets**. [1, tile_height, tile_width]
         """
 
         radii, means2d, depths, _, _ = projection_results
@@ -345,6 +352,17 @@ class GSplatV1:
         img_width: int,
         tile_size: int = 16,
     ):
+        """
+        Returns:
+            A tuple:
+
+            -   **tiles_per_gauss**. [1, N]
+            -   **isect_ids**. [n_isects]
+            -   **flatten_ids**. [n_isects]
+            -   **isect_offsets**. [1, tile_height, tile_width]
+            -   **actual_n_isects**. int
+        """
+
         radii, means2d, depths, conics, _ = projection_results
 
         tile_width = math.ceil(img_width / float(tile_size))
