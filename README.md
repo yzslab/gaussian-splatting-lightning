@@ -43,7 +43,7 @@
   * <a href="#218-depth-regularization-with-depth-anything-v2">Depth Regularization with Depth Anything V2 (2.18.)</a>
   * <a href="#219-stopthepop">StopThePop (2.19.)</a>
   * <a href="#220-scale-regularization">Scale Regularization (2.20.)</a>
-  * <a href="#221-taming-3dgs">Taming 3DGS</a>
+  * <a href="#221-taming-3dgs">Taming 3DGS (2.21.)</a>
 ## 1. Installation
 ### 1.1. Clone repository
 
@@ -923,7 +923,7 @@ There are two implementations: one is the gsplat v1 based, and the other is the 
     ```
 
   * my modified gsplat v1 if you want the gsplat v1 based one (refer to <a href="#15-install-optional-packages">1.5.</a> for the setup guide)
-  
+
   * another rasterizer if you want the vanilla one
     ```bash
     pip install git+https://github.com/yzslab/diff-gaussian-rasterization.git@b403ab6c5cfb4ed89265a9759bd4766f9c4b56de
