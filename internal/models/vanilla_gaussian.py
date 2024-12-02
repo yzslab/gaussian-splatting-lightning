@@ -15,6 +15,7 @@ from internal.utils.general_utils import (
     strip_symmetric,
     build_scaling_rotation,
 )
+from internal.optimizers import OptimizerConfig, Adam, SelectiveAdam, SparseGaussianAdam
 from internal.schedulers import Scheduler, ExponentialDecayScheduler
 
 
@@ -46,6 +47,8 @@ class OptimizationConfig:
     rotations_lr: float = 0.001
 
     sh_degree_up_interval: int = 1_000
+
+    optimizer: OptimizerConfig = field(default_factory=lambda: {"class_path": "Adam"})
 
 
 @dataclass
@@ -87,6 +90,12 @@ class VanillaGaussianModel(
 
     def before_setup_set_properties_from_pcd(self, xyz: torch.Tensor, rgb: torch.Tensor, property_dict: Dict[str, torch.Tensor], *args, **kwargs):
         pass
+
+    def _add_optimizer_after_backward_hook_if_available(self, optimizer, pl_module):
+        hook = getattr(optimizer, "on_after_backward", None)
+        if hook is None:
+            return
+        pl_module.on_after_backward_hooks.append(hook)
 
     def setup_from_pcd(self, xyz: Union[torch.Tensor, np.ndarray], rgb: Union[torch.Tensor, np.ndarray], *args, **kwargs):
         from internal.utils.sh_utils import RGB2SH
@@ -244,14 +253,18 @@ class VanillaGaussianModel(
 
         optimization_config = self.config.optimization
 
+        optimizer_factory = self.config.optimization.optimizer
+
         # the param name and property name must be identical
 
         # means
         means_lr_init = optimization_config.means_lr_init * spatial_lr_scale
-        means_optimizer = torch.optim.Adam(
+        means_optimizer = optimizer_factory.instantiate(
             [{'params': [self.gaussians["means"]], "name": "means"}],
             lr=means_lr_init,
+            eps=1e-15,
         )
+        self._add_optimizer_after_backward_hook_if_available(means_optimizer, module)
         # TODO: other scheduler may not contain `lr_final`, but does not need to change scheduler currently
         optimization_config.means_lr_scheduler.lr_final *= spatial_lr_scale
         means_scheduler = optimization_config.means_lr_scheduler.instantiate().get_scheduler(
@@ -267,7 +280,8 @@ class VanillaGaussianModel(
             {'params': [self.gaussians["scales"]], 'lr': optimization_config.scales_lr, "name": "scales"},
             {'params': [self.gaussians["rotations"]], 'lr': optimization_config.rotations_lr, "name": "rotations"},
         ]
-        constant_lr_optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
+        constant_lr_optimizer = optimizer_factory.instantiate(l, lr=0.0, eps=1e-15)
+        self._add_optimizer_after_backward_hook_if_available(constant_lr_optimizer, module)
 
         print("spatial_lr_scale={}, learning_rates=".format(spatial_lr_scale))
         print("  means={}->{}".format(means_lr_init, optimization_config.means_lr_scheduler.lr_final))
