@@ -197,8 +197,10 @@ Rounding mode is specified by `--data.parser.down_sample_rounding_mode`. Availab
     Combining this with `--data.image_uint8 true` to reduce GPU memory consumption is also feasible.
 
   * Avoid performing a validation after every training epoch
+
+    Simply set `check_val_every_n_epoch` to a very large value. Please note that the metrics starting with `val/`, such as `val/psnr`, on the progress bar will not be updated during the training.
+
     ```bash
-    # simply set `check_val_every_n_epoch` to a very large value
     ... fit \
       --trainer.check_val_every_n_epoch 99999 \
       ...
