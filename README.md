@@ -185,6 +185,27 @@ Rounding mode is specified by `--data.parser.down_sample_rounding_mode`. Availab
         ...
       ```
 
+* Speedup training
+  * Store all images in GPU memory
+
+    ```bash
+    ... fit \
+      --data.image_on_cpu false \
+      ...
+    ```
+
+    Combining this with `--data.image_uint8 true` to reduce GPU memory consumption is also feasible.
+
+  * Avoid performing a validation after every training epoch
+    ```bash
+    # simply set `check_val_every_n_epoch` to a very large value
+    ... fit \
+      --trainer.check_val_every_n_epoch 99999 \
+      ...
+    ```
+
+  * Take a look at <a href="#221-taming-3dgs">Taming 3DGS (2.21.)</a> for further acceleration
+
 ### 2.3. Use <a href="https://github.com/nerfstudio-project/gsplat">nerfstudio-project/gsplat</a>
 Make sure that command `which nvcc` can produce output, or gsplat will be disabled automatically.
 ```bash
