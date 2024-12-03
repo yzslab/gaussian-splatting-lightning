@@ -7,6 +7,7 @@ model:
   renderer: 
     class_path: internal.renderers.gsplat_v1_renderer.GSplatV1Renderer
     init_args:
+      separate_sh: true
       tile_based_culling: true
   metric:
     init_args:

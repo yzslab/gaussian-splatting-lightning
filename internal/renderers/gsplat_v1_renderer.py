@@ -35,7 +35,11 @@ class GSplatV1Renderer(RendererConfig):
 
     filter_2d_kernel_size: float = 0.3
 
+    separate_sh: bool = False
+    """Accelerated SH, from Taming 3DGS [Mallick and Goel, et al. 2024]"""
+
     tile_based_culling: bool = False
+    """Tile-based culling, from StopThePop [Radl et al. 2024]"""
 
     def instantiate(self, *args, **kwargs) -> "GSplatV1RendererModule":
         return GSplatV1RendererModule(self)
@@ -120,6 +124,7 @@ class GSplatV1RendererModule(Renderer):
         project_results_for_rasterization = radii, means2d, depths, conics, None, isects  # set the `compensations` to None, since the `opacities` have alredy been applied compensations
 
         depths = depths.squeeze(0)
+
         def rasterize(input_features: torch.Tensor, background, return_alpha: bool = False):
             rendered_colors, rendered_alphas = GSplatV1.rasterize(
                 project_results_for_rasterization,
@@ -139,13 +144,13 @@ class GSplatV1RendererModule(Renderer):
         rgb = None
         if self.is_type_required(render_type_bits, self._RGB_REQUIRED):
             viewdirs = pc.get_xyz.detach() - viewpoint_camera.camera_center  # (N, 3)
-            if pc.is_pre_activated:
+            if pc.is_pre_activated or not self.config.separate_sh:
                 rgbs = spherical_harmonics(pc.active_sh_degree, viewdirs, pc.get_features, visibility_filter)
             else:
                 rgbs = spherical_harmonics_decomposed(
-                    pc.active_sh_degree, 
-                    viewdirs, 
-                    pc.get_shs_dc(), 
+                    pc.active_sh_degree,
+                    viewdirs,
+                    pc.get_shs_dc(),
                     pc.get_shs_rest(),
                     visibility_filter,
                 )
