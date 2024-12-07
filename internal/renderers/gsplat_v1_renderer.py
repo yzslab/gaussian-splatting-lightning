@@ -365,7 +365,6 @@ class GSplatV1:
             -   **isect_ids**. [n_isects]
             -   **flatten_ids**. [n_isects]
             -   **isect_offsets**. [1, tile_height, tile_width]
-            -   **actual_n_isects**. int
         """
 
         radii, means2d, depths, conics, _ = projection_results
@@ -386,9 +385,15 @@ class GSplatV1:
             camera_ids=None,
             gaussian_ids=None,
         )
-        isect_offsets, actual_n_isects = isect_offset_encode_tile_based_culling(isect_ids, 1, tile_width, tile_height)
+        isect_offsets, flatten_ids = isect_offset_encode_tile_based_culling(
+            isect_ids,
+            flatten_ids,
+            1,
+            tile_width,
+            tile_height,
+        )
 
-        return tiles_per_gauss, isect_ids, flatten_ids, isect_offsets, actual_n_isects
+        return tiles_per_gauss, isect_ids, flatten_ids, isect_offsets
 
     @classmethod
     def preprocess(
@@ -426,7 +431,7 @@ class GSplatV1:
 
         if tile_based_culling:
             # TODO: opacities should be anti aliased if enabled
-            tiles_per_gauss, isect_ids, flatten_ids, isect_offsets, actual_n_isects = cls.isect_encode_tile_based_culling(
+            tiles_per_gauss, isect_ids, flatten_ids, isect_offsets = cls.isect_encode_tile_based_culling(
                 (radii, means2d, depths, conics, compensations),
                 opacities,
                 img_height=img_height,
@@ -440,14 +445,12 @@ class GSplatV1:
                 img_width=img_width,
                 tile_size=tile_size,
             )
-            actual_n_isects = flatten_ids.shape[0]
 
         return radii, means2d.squeeze(0), depths, conics, compensations, (
             tiles_per_gauss,
             isect_ids,
             flatten_ids,
             isect_offsets,
-            actual_n_isects,
         )
 
     @classmethod
@@ -468,7 +471,6 @@ class GSplatV1:
             isect_ids,
             flatten_ids,
             isect_offsets,
-            actual_n_isects,
         ) = preprocess_results
 
         opacities = opacities.squeeze(-1).unsqueeze(0)
@@ -490,7 +492,6 @@ class GSplatV1:
             flatten_ids=flatten_ids,
             backgrounds=background,
             absgrad=absgrad,
-            actual_n_isects=actual_n_isects,
             **kwargs,
         )
 
