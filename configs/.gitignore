@@ -51,6 +51,8 @@
 !appearance_embedding_renderer/sh_view_dependent-mip.yaml
 !appearance_embedding_renderer/distributed-view_independent-128_dims-lr_0.005-with_scheduler-estimated_depth_reg-hard_depth-scale_reg-mip.yaml
 !appearance_embedding_renderer/view_independent-2dgs.yaml
+!appearance_embedding_renderer/sh_view_dependent-accel.yaml
+!appearance_embedding_renderer/sh_view_dependent-normalized-accel.yaml
 !random_background.yaml
 !mcmc.yaml
 !gsplat-mcmc.yaml

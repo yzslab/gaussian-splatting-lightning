@@ -3,15 +3,15 @@ from dataclasses import dataclass, field
 import lightning
 import torch
 from torch import nn
-from gsplat.sh import spherical_harmonics
 
 from . import RendererOutputInfo, RendererOutputTypes
 from .renderer import Renderer, RendererConfig
-from .gsplat_renderer import GSPlatRenderer, DEFAULT_ANTI_ALIASED_STATUS
 from internal.utils.network_factory import NetworkFactory
 from ..cameras import Camera
 from ..models.gaussian import GaussianModel
 from internal.encodings.positional_encoding import PositionalEncoding
+
+from .gsplat_v1_renderer import GSplatV1, spherical_harmonics, spherical_harmonics_decomposed
 
 
 @dataclass
@@ -80,10 +80,12 @@ class Model(nn.Module):
 
 @dataclass
 class GSplatAppearanceEmbeddingRenderer(RendererConfig):
-    anti_aliased: bool = DEFAULT_ANTI_ALIASED_STATUS
+    anti_aliased: bool = True
     filter_2d_kernel_size: float = 0.3
     model: ModelConfig = field(default_factory=lambda: ModelConfig())
     optimization: OptimizationConfig = field(default_factory=lambda: OptimizationConfig())
+
+    tile_based_culling: bool = False
 
     def instantiate(self, *args, **kwargs) -> "GSplatAppearanceEmbeddingRendererModule":
         if getattr(self, "model_config", None) is not None:
@@ -96,6 +98,7 @@ class GSplatAppearanceEmbeddingRenderer(RendererConfig):
             model=self.model,
             optimization=self.optimization,
             filter_2d_kernel_size=self.filter_2d_kernel_size,
+            tile_based_culling=self.tile_based_culling,
         )
 
 
@@ -110,12 +113,14 @@ class GSplatAppearanceEmbeddingRendererModule(Renderer):
             model: ModelConfig,
             optimization: OptimizationConfig,
             filter_2d_kernel_size: float,
+            tile_based_culling: bool,
     ):
         super().__init__()
         self.anti_aliased = anti_aliased  # tell absgrad whether AA enabled
         self.model_config = model
         self.optimization_config = optimization
         self.filter_2d_kernel_size = filter_2d_kernel_size
+        self.tile_based_culling = tile_based_culling
 
     def setup(self, stage: str, lightning_module=None, *args: Any, **kwargs: Any) -> Any:
         if lightning_module is not None:
@@ -134,11 +139,9 @@ class GSplatAppearanceEmbeddingRendererModule(Renderer):
 
     def _setup_model(self, device=None):
         self.model = Model(self.model_config)
-        self.renderer = GSPlatRenderer()
 
         if device is not None:
             self.model.to(device=device)
-            self.renderer.to(device=device)
 
     def load_state_dict(self, state_dict: Mapping[str, Any], strict: bool = True):
         self.model_config.n_appearances = state_dict["model.embedding.weight"].shape[0]
@@ -168,95 +171,173 @@ class GSplatAppearanceEmbeddingRendererModule(Renderer):
         return [embedding_optimizer, network_optimizer], [embedding_scheduler, network_scheduler]
 
     def preprocess(self, pc, viewpoint_camera, scaling_modifier):
-        return GSPlatRenderer.project(
-            means3D=pc.get_xyz,
-            scales=pc.get_scaling,
-            rotations=pc.get_rotation,
-            viewpoint_camera=viewpoint_camera,
-            scaling_modifier=scaling_modifier,
-            extra_projection_kwargs={
-                "filter_2d_kernel_size": self.filter_2d_kernel_size,
-            },
-        ), pc.get_opacities()
+        scales = pc.get_scales()
+        if scaling_modifier != 1.:
+            scales = scales * scaling_modifier
 
-    def forward(self, viewpoint_camera: Camera, pc: GaussianModel, bg_color: torch.Tensor, scaling_modifier=1.0, render_types=None, **kwargs):
+        opacities = pc.get_opacities()
+
+        return GSplatV1.preprocess(
+            means3d=pc.get_means(),
+            scales=scales,
+            quats=pc.get_rotations(),
+            viewmat=viewpoint_camera.world_to_camera.T,
+            fx=viewpoint_camera.fx,
+            fy=viewpoint_camera.fy,
+            cx=viewpoint_camera.cx,
+            cy=viewpoint_camera.cy,
+            img_height=viewpoint_camera.height.item(),
+            img_width=viewpoint_camera.width.item(),
+            eps2d=self.filter_2d_kernel_size,
+            anti_aliased=self.anti_aliased,
+            tile_based_culling=self.tile_based_culling,
+            opacities=opacities,
+        ), opacities
+
+    def sh(self, pc, dirs, mask=None):
+        if pc.is_pre_activated:
+            return spherical_harmonics(
+                pc.active_sh_degree,
+                dirs,
+                pc.get_shs(),
+                masks=mask,
+            )
+        return spherical_harmonics_decomposed(
+            pc.active_sh_degree,
+            dirs,
+            dc=pc.get_shs_dc(),
+            coeffs=pc.get_shs_rest(),
+            masks=mask,
+        )
+
+    def selective_sh(self, pc, dirs, mask):
+        if pc.is_pre_activated:
+            return spherical_harmonics(
+                pc.active_sh_degree,
+                dirs,
+                pc.get_shs()[mask],
+            )
+        return spherical_harmonics_decomposed(
+            pc.active_sh_degree,
+            dirs,
+            dc=pc.get_shs_dc()[mask],
+            coeffs=pc.get_shs_rest()[mask],
+        )
+
+    def forward(
+            self,
+            viewpoint_camera: Camera,
+            pc: GaussianModel,
+            bg_color: torch.Tensor,
+            scaling_modifier=1.0,
+            render_types=None,
+            warm_up: bool = False,
+            **kwargs,
+    ):
         if render_types is None:
             render_types = ["rgb"]
 
-        projection_results, opacities = self.preprocess(pc=pc, viewpoint_camera=viewpoint_camera, scaling_modifier=scaling_modifier)
+        preprocess_results, opacities = self.preprocess(pc=pc, viewpoint_camera=viewpoint_camera, scaling_modifier=scaling_modifier)
 
-        xys, depths, radii, conics, comp, num_tiles_hit, cov3d = projection_results
-        is_gaussian_visible = radii > 0
+        radii, means2d, depths, conics, compensations, isects = preprocess_results
+
+        radii_squeezed = radii.squeeze(0)
+        visibility_filter = radii_squeezed > 0
 
         if self.anti_aliased:
-            opacities = opacities * comp[:, None]
+            opacities = opacities * compensations[0, :, None]
+
+        img_height = viewpoint_camera.height.item()
+        img_width = viewpoint_camera.width.item()
+
+        def rasterize(
+                input_features: torch.Tensor,
+                background,
+                opacities,
+        ):
+            rendered_colors, _ = GSplatV1.rasterize(
+                (radii, means2d, depths, conics, None, isects),
+                opacities=opacities,
+                colors=input_features,
+                background=background,
+                img_height=img_height,
+                img_width=img_width,
+            )
+
+            return rendered_colors.permute(2, 0, 1)
 
         rgb = None
         if "rgb" in render_types:
-            radii = projection_results[2]
+            if warm_up:
+                rgbs = torch.clamp(
+                    self.sh(
+                        pc,
+                        pc.get_xyz.detach() - viewpoint_camera.camera_center,
+                        visibility_filter,
+                    ) + 0.5,
+                    min=0.,
+                )
+            else:
+                # calculate normalized view directions
+                detached_xyz = pc.get_xyz.detach()[visibility_filter]
+                view_directions = detached_xyz - viewpoint_camera.camera_center  # (N, 3)
+                view_directions = torch.nn.functional.normalize(view_directions, dim=-1)
 
-            detached_xyz = pc.get_xyz.detach()
-            view_directions = detached_xyz[is_gaussian_visible] - viewpoint_camera.camera_center  # (N, 3)
-            view_directions = view_directions / view_directions.norm(dim=-1, keepdim=True)
-            base_rgb = spherical_harmonics(pc.active_sh_degree, view_directions, pc.get_features[is_gaussian_visible]) + 0.5
-            rgb_offset = self.model(pc.get_appearance_features()[is_gaussian_visible], viewpoint_camera.appearance_id, view_directions) * 2 - 1.
-            rgbs = torch.zeros((radii.shape[0], 3), dtype=projection_results[0].dtype, device=radii.device)
-            rgbs[is_gaussian_visible] = torch.clamp(base_rgb + rgb_offset, min=0., max=1.)
+                base_rgbs = self.selective_sh(
+                    pc,
+                    view_directions,
+                    visibility_filter,
+                ) + 0.5
 
-            rgb = self.renderer.rasterize_simplified(
-                project_results=projection_results,
-                viewpoint_camera=viewpoint_camera,
-                colors=rgbs,
-                bg_color=bg_color,
+                rgb_offsets = self.model(
+                    pc.get_appearance_features()[visibility_filter],
+                    viewpoint_camera.appearance_id,
+                    view_directions,
+                ) * 2 - 1.
+
+                rgbs = torch.zeros((means2d.shape[0], 3), dtype=means2d.dtype, device=means2d.device)
+                rgbs[visibility_filter] = torch.clamp(
+                    base_rgbs + rgb_offsets,
+                    min=0.,
+                    max=1.,
+                )
+
+            rgb = rasterize(
+                input_features=rgbs,
+                background=bg_color,
                 opacities=opacities,
-                anti_aliased=False,  # already applied AA above
             )
 
         inverse_depth_im = None
         if "inverse_depth" in render_types:
-            inverse_depth = 1. / (depths.clamp_min(0.) + 1e-8).unsqueeze(-1)
-            inverse_depth_im = self.renderer.rasterize_simplified(
-                project_results=projection_results,
-                viewpoint_camera=viewpoint_camera,
-                colors=inverse_depth,
-                bg_color=torch.zeros((1,), dtype=torch.float, device=bg_color.device),
+            inverse_depth = 1. / (depths[0].clamp_min(0.) + 1e-8).unsqueeze(-1)
+            inverse_depth_im = rasterize(
+                input_features=inverse_depth,
+                background=torch.zeros((1,), dtype=torch.float, device=bg_color.device),
                 opacities=opacities,
-                anti_aliased=False,  # already applied AA above
             )
 
         hard_inverse_depth_im = None
         if "hard_inverse_depth" in render_types:
-            inverse_depth = 1. / (depths.clamp_min(0.) + 1e-8).unsqueeze(-1)
-            hard_inverse_depth_im = self.renderer.rasterize_simplified(
-                project_results=projection_results,
-                viewpoint_camera=viewpoint_camera,
-                colors=inverse_depth,
-                bg_color=torch.zeros((1,), dtype=torch.float, device=bg_color.device),
+            inverse_depth = 1. / (depths[0].clamp_min(0.) + 1e-8).unsqueeze(-1)
+            hard_inverse_depth_im = rasterize(
+                input_features=inverse_depth,
+                background=torch.zeros((1,), dtype=torch.float, device=bg_color.device),
                 opacities=opacities + (1 - opacities.detach()),
-                anti_aliased=False,  # already applied AA above
             )
 
         return {
             "render": rgb,
             "inverse_depth": inverse_depth_im,
             "hard_inverse_depth": hard_inverse_depth_im,
-            "viewspace_points": xys,
-            "viewspace_points_grad_scale": 0.5 * torch.tensor([[viewpoint_camera.width, viewpoint_camera.height]]).to(xys),
-            "visibility_filter": is_gaussian_visible,
-            "radii": radii,
+            "viewspace_points": means2d,
+            "viewspace_points_grad_scale": 0.5 * torch.tensor([[viewpoint_camera.width, viewpoint_camera.height]]).to(means2d),
+            "visibility_filter": visibility_filter,
+            "radii": radii_squeezed,
         }
 
     def training_forward(self, step: int, module: lightning.LightningModule, viewpoint_camera: Camera, pc: GaussianModel, bg_color: torch.Tensor, scaling_modifier=1.0, **kwargs):
-        if step < self.optimization_config.warm_up:
-            return self.renderer(
-                viewpoint_camera,
-                pc,
-                bg_color,
-                scaling_modifier,
-                **kwargs,
-            )
-
-        return self.forward(viewpoint_camera, pc, bg_color, scaling_modifier, **kwargs)
+        return self.forward(viewpoint_camera, pc, bg_color, scaling_modifier, warm_up=step < self.optimization_config.warm_up, **kwargs)
 
     @staticmethod
     def _create_optimizer_and_scheduler(
@@ -303,23 +384,46 @@ class GSplatAppearanceEmbeddingMipRenderer(GSplatAppearanceEmbeddingRenderer):
             model=self.model,
             optimization=self.optimization,
             filter_2d_kernel_size=self.filter_2d_kernel_size,
+            tile_based_culling=self.tile_based_culling,
         )
 
 
 class GSplatAppearanceEmbeddingMipRendererModule(GSplatAppearanceEmbeddingRendererModule):
-    def __init__(self, anti_aliased: bool, model: ModelConfig, optimization: OptimizationConfig, filter_2d_kernel_size: float):
-        super().__init__(anti_aliased, model, optimization, filter_2d_kernel_size)
-        self.filter_2d_kernel_size = filter_2d_kernel_size
+    def __init__(
+            self,
+            anti_aliased: bool,
+            model: ModelConfig,
+            optimization: OptimizationConfig,
+            filter_2d_kernel_size: float,
+            tile_based_culling: bool,
+    ):
+        super().__init__(
+            anti_aliased,
+            model,
+            optimization,
+            filter_2d_kernel_size,
+            tile_based_culling,
+        )
 
     def preprocess(self, pc, viewpoint_camera, scaling_modifier):
         opacities, scales = pc.get_3d_filtered_scales_and_opacities()
-        return GSPlatRenderer.project(
-            means3D=pc.get_xyz,
+
+        if scaling_modifier != 1.:
+            scales = scales * scaling_modifier
+
+        return GSplatV1.preprocess(
+            means3d=pc.get_means(),
             scales=scales,
-            rotations=pc.get_rotation,
-            viewpoint_camera=viewpoint_camera,
-            scaling_modifier=scaling_modifier,
-            extra_projection_kwargs={
-                "filter_2d_kernel_size": self.filter_2d_kernel_size,
-            }
+            quats=pc.get_rotations(),
+            viewmat=viewpoint_camera.world_to_camera.T,
+            fx=viewpoint_camera.fx,
+            fy=viewpoint_camera.fy,
+            cx=viewpoint_camera.cx,
+            cy=viewpoint_camera.cy,
+            img_height=viewpoint_camera.height.item(),
+            img_width=viewpoint_camera.width.item(),
+            eps2d=self.filter_2d_kernel_size,
+            anti_aliased=self.anti_aliased,
+            tile_based_culling=self.tile_based_culling,
+            opacities=opacities,
         ), opacities
