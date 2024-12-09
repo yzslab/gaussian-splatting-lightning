@@ -101,6 +101,12 @@ class SpotLessMetricsModule(VanillaMetricsImpl):
             # register spotless module training hook
             pl_module.on_after_backward_hooks.append(self.spotless_module_loss_backward)
 
+            # minimum: upper_mask, maximum: lower_mask
+            # upper: more inliers, regard those with large error as outliers
+            # ReLU(pred - upper) + ReLU(lower - pred)
+            #    pred - upper: has loss when predicting as inlier but upper is outlier
+            #    lower - pred: has loss when predicting as outlier but lower is inlier
+            #    if a pixel has different masks in the upper and lower, its loss will be zero. This means that only those pixels can confidently determine the status by RobustMask will be used to supervised the MLP
             self.spotless_loss = lambda p, minimum, maximum: torch.mean(
                 torch.nn.ReLU()(p - minimum) + torch.nn.ReLU()(maximum - p)
             )
@@ -142,7 +148,7 @@ class SpotLessMetricsModule(VanillaMetricsImpl):
 
         with torch.no_grad():
             gaussian_model.shs_rest.clamp_(max=0.001)
-            gaussian_model.update_properties(DensityControllerUtils.replace_tensors_to_optimizers({"shs_rest": gaussian_model.shs_rest}, pl_module.gaussian_optimizers))
+            gaussian_model.update_properties(DensityControllerUtils.replace_tensors_to_properties({"shs_rest": gaussian_model.shs_rest}, pl_module.gaussian_optimizers))
 
     def update_running_stats(self, outputs, batch, gaussian_model, step, pl_module):
         if step >= self.config.densify_until_iter:
@@ -398,12 +404,15 @@ class SpotLessMetricsModule(VanillaMetricsImpl):
     @classmethod
     def robust_mask(
             cls,
-            error_per_pixel: torch.Tensor,
+            error_per_pixel: torch.Tensor,  # [1, H, W, C]
             loss_threshold: float,
     ) -> torch.Tensor:
+        """
+        Those with an error less than the threshold are regarded as inliers
+        """
         epsilon = 1e-3
-        error_per_pixel = error_per_pixel.mean(axis=-1, keepdims=True)
-        error_per_pixel = error_per_pixel.squeeze(-1).unsqueeze(0)
+        error_per_pixel = error_per_pixel.mean(axis=-1, keepdims=True)  # [1, H, W, 1]
+        error_per_pixel = error_per_pixel.squeeze(-1).unsqueeze(0)  # [1, 1, H, W]
         is_inlier_pixel = (error_per_pixel < loss_threshold).float()
         window_size = 3
         channel = 1
