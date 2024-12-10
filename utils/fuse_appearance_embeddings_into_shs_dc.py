@@ -4,7 +4,6 @@ import os
 import argparse
 import torch
 from tqdm.auto import tqdm
-from internal.renderers.gsplat_renderer import GSPlatRenderer
 from internal.renderers.gsplat_hit_pixel_count_renderer import GSplatHitPixelCountRenderer
 from internal.utils.sh_utils import RGB2SH
 from internal.utils.gaussian_model_loader import GaussianModelLoader
@@ -34,11 +33,18 @@ def calculate_gaussian_scores(cameras, gaussian_model, device):
     opacity_score_list = []
     alpha_score_list = []
     all_visibility_score = torch.zeros((len(cameras), gaussian_model.get_xyz.shape[0]), dtype=torch.float, device=device)
+
+    scales = gaussian_model.get_scales()
+    if scales.shape[-1] == 2:
+        scales = torch.concat(
+            [scales, torch.full((scales.shape[0], 1), 1e-6, dtype=scales.dtype, device=scales.device)],
+            dim=-1,
+        )
     for idx, camera in tqdm(enumerate(cameras), total=len(cameras), leave=False, desc="Calculating gaussian visibilities"):
         hit_count, opacity_score, alpha_score, visibility_score = GSplatHitPixelCountRenderer.hit_pixel_count(
             means3D=gaussian_model.get_xyz,
             opacities=gaussian_model.get_opacity,
-            scales=gaussian_model.get_scaling,
+            scales=scales,
             rotations=gaussian_model.get_rotation,
             viewpoint_camera=camera.to_device("cuda"),
         )
@@ -307,17 +313,34 @@ def update_ckpt(gaussian_model, ckpt):
 
     ckpt["optimizer_states"] = []
 
-    # replace `AppearanceFeatureGaussian` with `VanillaGaussian`
-    from internal.models.vanilla_gaussian import VanillaGaussian
-    ckpt["hyper_parameters"]["gaussian"] = VanillaGaussian(sh_degree=gaussian_model.max_sh_degree)
+    model_name = ckpt["hyper_parameters"]["gaussian"].__class__.__name__
+    if model_name == "AppearanceGS2D":
+        print("Appearance 2DGS -> Gaussian2D & Vanilla2DGSRenderer")
+        from internal.models.gaussian_2d import Gaussian2D
+        ckpt["hyper_parameters"]["gaussian"] = Gaussian2D(sh_degree=gaussian_model.max_sh_degree)
+        from internal.renderers.vanilla_2dgs_renderer import Vanilla2DGSRenderer
+        renderer = Vanilla2DGSRenderer(ckpt["hyper_parameters"]["renderer"].depth_ratio)
+    else:
+        # replace `AppearanceFeatureGaussian` with `VanillaGaussian`
+        from internal.models.vanilla_gaussian import VanillaGaussian
+        ckpt["hyper_parameters"]["gaussian"] = VanillaGaussian(sh_degree=gaussian_model.max_sh_degree)
+        # replace `GSplatAppearanceEmbeddingRenderer` with `GSplatV1Renderer`
+        from internal.renderers.gsplat_v1_renderer import GSplatV1Renderer
+        renderer = GSplatV1Renderer(
+            block_size=getattr(ckpt["hyper_parameters"]["renderer"], "block_size", 16),
+            anti_aliased=getattr(ckpt["hyper_parameters"]["renderer"], "anti_aliased", True),
+            filter_2d_kernel_size=getattr(ckpt["hyper_parameters"]["renderer"], "filter_2d_kernel_size", 0.3),
+            separate_sh=getattr(ckpt["hyper_parameters"]["renderer"], "separate_sh", False),
+            tile_based_culling=getattr(ckpt["hyper_parameters"]["renderer"], "tile_based_culling", False),
+        )
+        print(renderer)
 
     # remove existing Gaussians from ckpt
     for i in list(ckpt["state_dict"].keys()):
         if i.startswith("gaussian_model.gaussians."):
             del ckpt["state_dict"][i]
 
-    # replace `GSplatAppearanceEmbeddingRenderer` with `GSPlatRenderer`
-    ckpt["hyper_parameters"]["renderer"] = GSPlatRenderer()
+    ckpt["hyper_parameters"]["renderer"] = renderer
 
     ckpt["state_dict"]["gaussian_model.gaussians.means"] = gaussian_model.means
     ckpt["state_dict"]["gaussian_model.gaussians.shs_dc"] = gaussian_model.shs_dc
