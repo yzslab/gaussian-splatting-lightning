@@ -3,6 +3,7 @@
 !ddp.yaml
 !ddp_not_find_unused.yaml
 !image_on_gpu.yaml
+!image_on_gpu-uint8.yaml
 !blender.yaml
 !blender_gsplat.yaml
 !appearance.yaml
