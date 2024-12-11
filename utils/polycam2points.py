@@ -60,7 +60,7 @@ for image_idx in tqdm(range(len(image_set))):
 
     # build points
     points = depth_map_to_points(
-        torch.tensor(depth, dtype=torch.float) * 1e-3 * args.scale,
+        torch.tensor(depth.astype(np.float32), dtype=torch.float) * 1e-3 * args.scale,
         fx=camera.fx / scale_factor_x,
         fy=camera.fy / scale_factor_y,
         cx=camera.cx / scale_factor_x,
