@@ -28,6 +28,7 @@ class ModelConfig:
     normalize: bool = False
 
     tcnn: bool = False  # TODO: gradient scaling
+    """Speed up a little, but may sometimes reduce the metrics due to half-precision"""
 
 
 @dataclass
