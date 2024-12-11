@@ -27,6 +27,8 @@ class ModelConfig:
 
     normalize: bool = False
 
+    tcnn: bool = False  # TODO: gradient scaling
+
 
 @dataclass
 class OptimizationConfig:
@@ -56,7 +58,7 @@ class Model(nn.Module):
         if self.config.is_view_dependent is True:
             self.view_direction_encoding = PositionalEncoding(3, self.config.n_view_direction_frequencies)
             n_input_dims += self.view_direction_encoding.get_output_n_channels()
-        self.network = NetworkFactory(tcnn=False).get_network_with_skip_layers(
+        self.network = NetworkFactory(tcnn=self.config.tcnn).get_network_with_skip_layers(
             n_input_dims=n_input_dims,
             n_output_dims=3,
             n_layers=self.config.n_layers,
