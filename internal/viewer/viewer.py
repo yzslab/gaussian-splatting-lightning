@@ -42,6 +42,7 @@ class Viewer:
             no_edit_panel: bool = False,
             no_render_panel: bool = False,
             gsplat: bool = False,
+            gsplat_aa: bool = False,
             gsplat_v1_example: bool = False,
             gsplat_v1_example_aa: bool = False,
             seganygs: str = None,
@@ -67,6 +68,7 @@ class Viewer:
         self.default_camera_look_at = default_camera_look_at
 
         self.use_gsplat = gsplat
+        self.use_gsplat_aa = gsplat_aa
 
         self.simplified_model = True
         self.show_edit_panel = True
@@ -466,9 +468,9 @@ class Viewer:
             model, renderer = self._initialize_models_from_point_cloud(load_from)
             training_output_base_dir = os.path.dirname(os.path.dirname(os.path.dirname(load_from)))
             if self.use_gsplat is True:
-                from internal.renderers.gsplat_renderer import GSPlatRenderer
-                print("Use GSPlat renderer for ply file")
-                renderer = GSPlatRenderer()
+                from internal.renderers.gsplat_v1_renderer import GSplatV1Renderer
+                print("Use gsplat v1 renderer(AA={}) for ply file".format(self.use_gsplat_aa))
+                renderer = GSplatV1Renderer(anti_aliased=self.use_gsplat_aa).instantiate()
         else:
             raise ValueError("unsupported file {}".format(load_from))
 
