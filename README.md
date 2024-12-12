@@ -613,13 +613,6 @@ Please refer to <a href="https://github.com/yzslab/gaussian-splatting-lightning/
   By running `python utils/fuse_appearance_embeddings_into_shs_dc.py TRAINED_MODEL_DIR`, you can get a fixed appearance checkpoint without requiring a MLP.
   
 ### 2.13. <a href="https://ubc-vision.github.io/3dgs-mcmc/">3DGS-MCMC</a>
-* Install `submodules/mcmc_relocation` first
-
-```bash
-pip install submodules/mcmc_relocation
-```
-
-* Then training
 
 ```bash
 ... fit \

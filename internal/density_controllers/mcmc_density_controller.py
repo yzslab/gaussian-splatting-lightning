@@ -10,7 +10,7 @@ from dataclasses import dataclass
 import math
 from lightning import LightningModule
 import torch
-from mcmc_relocation import compute_relocation
+from gsplat.relocation import compute_relocation
 from internal.utils.general_utils import inverse_sigmoid
 from internal.utils.gaussian_projection import compute_cov_3d
 
@@ -121,13 +121,11 @@ class MCMCDensityControllerImpl(DensityControllerImpl):
 
     def compute_relocation(self, opacity_old, scale_old, N) -> Tuple[torch.Tensor, torch.Tensor]:
         # assert torch.all(N <= self.config.N_max)  # whether such a check is necessary?
-        N.clamp_(min=1, max=self.config.N_max - 1)
         return compute_relocation(
             opacity_old,
             scale_old,
             N,
             self.binoms,
-            self.config.N_max,
         )
 
     def _get_new_params(self, gaussian_model, idxs, ratio) -> Dict[str, torch.Tensor]:
