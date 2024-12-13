@@ -83,7 +83,7 @@ pip install -r requirements.txt
   NOTE: Only my modified v1 is supported
   
   ```bash
-  pip install git+https://github.com/yzslab/gsplat.git@2646b8ecbd4be78bbc88c2f33f314937755791b8
+  pip install git+https://github.com/yzslab/gsplat.git@f5368ccac83af6b30a3ebd9d38c9302576cb5f99
   ```
   
 * If you need <a href="#210-segment-any-3d-gaussians">SegAnyGaussian</a>
@@ -940,6 +940,9 @@ There are two implementations: one is the gsplat v1 based, and the other is the 
   | --- | --- | --- |
   | Competitive quality | `configs/gsplat_v1-accel.yaml` | `configs/taming_3dgs/rasterizer-fused_ssim-aa.yaml` |
   | More acceleration, slightly lower quality (SparseAdam) | `configs/gsplat_v1-accel_more.yaml` | `configs/taming_3dgs/rasterizer-fused_ssim-sparse_adam-aa.yaml` |
+  | Steerable Densification | `configs/gsplat_v1-accel-steerable.yaml` | - |
+
+  You need to adjust the `--model.density.budget` if you want to use the steerable one.
 
 
 ## 3. Evaluation

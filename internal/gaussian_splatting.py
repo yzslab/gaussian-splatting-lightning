@@ -94,6 +94,7 @@ class GaussianSplatting(LightningModule):
         self.val_metrics: List[Tuple[str, Dict]] = []
 
         # hooks
+        self.on_train_start_hooks: List[Callable[[GaussianModel, Self], None]] = []
         self.on_after_backward_hooks: List[Callable[[Dict, Any, GaussianModel, int, Self], None]] = []
         self.on_train_batch_end_hooks: List[Callable[[Dict, Any, GaussianModel, int, Self], None]] = []
 
@@ -310,6 +311,9 @@ class GaussianSplatting(LightningModule):
                 available_appearance_options=self.trainer.datamodule.dataparser_outputs.appearance_group_ids,
             )
             self.web_viewer.start()
+
+        for i in self.on_train_start_hooks:
+            i(self.gaussian_model, self)
 
     def on_train_batch_start(self, batch: Any, batch_idx: int):
         if self.web_viewer is not None:
