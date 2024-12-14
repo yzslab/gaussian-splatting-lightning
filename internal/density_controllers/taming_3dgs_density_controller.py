@@ -440,6 +440,8 @@ class Taming3DGSUtils:
                 render_types=["rgb"],
             )
             render_image = rgb_rasterization_outputs["render"]
+            visibility_filter = rgb_rasterization_outputs["visibility_filter"]
+
             photometric_loss = cls.compute_photometric_loss(
                 render_image,
                 gt_image,
@@ -449,6 +451,9 @@ class Taming3DGSUtils:
 
             # TODO: avoid project twice
             all_depths, all_radii, loss_accum, reverse_counts, blending_weights, dist_accum = cls.rasterize_to_weights(gaussian_model, renderer, pixel_weights, camera)
+
+            # In gsplat, only the visible Gaussians have valid depth values
+            all_depths *= visibility_filter
 
             g_importance = (
                 cls.normalize(score_coeffs.grad_importance, all_grads) +
@@ -465,7 +470,6 @@ class Taming3DGSUtils:
                 cls.normalize(score_coeffs.blend_importance, blending_weights)
             )
 
-            visibility_filter = rgb_rasterization_outputs["visibility_filter"]
             agg_importance = score_coeffs.view_importance * photometric_loss * (p_importance + g_importance) * visibility_filter
 
             gaussian_importance += agg_importance
