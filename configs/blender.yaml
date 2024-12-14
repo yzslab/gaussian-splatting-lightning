@@ -1,3 +1,4 @@
+pbar_rate: 10
 trainer:
   check_val_every_n_epoch: 10
 data:
