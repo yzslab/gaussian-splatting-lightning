@@ -130,9 +130,16 @@ def rename_ddp_appearance_states():
 if ckpt["hyper_parameters"]["renderer"].__class__.__name__ == "GSplatDistributedRenderer":
     print("Replace renderer with `GSPlatRenderer`")
 
-    import internal.renderers.gsplat_renderer
+    import internal.renderers.gsplat_v1_renderer
 
-    ckpt["hyper_parameters"]["renderer"] = internal.renderers.gsplat_renderer.GSPlatRenderer()
+    ckpt["hyper_parameters"]["renderer"] = internal.renderers.gsplat_v1_renderer.GSplatV1Renderer(
+        block_size=getattr(ckpt["hyper_parameters"]["renderer"], "block_size", 16),
+        anti_aliased=getattr(ckpt["hyper_parameters"]["renderer"], "anti_aliased", True),
+        filter_2d_kernel_size=getattr(ckpt["hyper_parameters"]["renderer"], "filter_2d_kernel_size", 0.3),
+        separate_sh=getattr(ckpt["hyper_parameters"]["renderer"], "separate_sh", False),
+        tile_based_culling=getattr(ckpt["hyper_parameters"]["renderer"], "tile_based_culling", False),
+    )
+    print(ckpt["hyper_parameters"]["renderer"])
 elif ckpt["hyper_parameters"]["renderer"].__class__.__name__ == "GSplatDistributedAppearanceEmbeddingRenderer":
     print("Replace renderer with `GSplatAppearanceEmbeddingRenderer`")
 
@@ -141,6 +148,8 @@ elif ckpt["hyper_parameters"]["renderer"].__class__.__name__ == "GSplatDistribut
     renderer = GSplatAppearanceEmbeddingRenderer(
         model=ckpt["hyper_parameters"]["renderer"].appearance,
         optimization=ckpt["hyper_parameters"]["renderer"].appearance_optimization,
+        filter_2d_kernel_size=getattr(ckpt["hyper_parameters"]["renderer"], "filter_2d_kernel_size", 0.3),
+        tile_based_culling=getattr(ckpt["hyper_parameters"]["renderer"], "tile_based_culling", False),
     )
     ckpt["hyper_parameters"]["renderer"] = renderer
 
@@ -153,7 +162,8 @@ elif ckpt["hyper_parameters"]["renderer"].__class__.__name__ == "GSplatDistribut
     renderer = GSplatAppearanceEmbeddingMipRenderer(
         model=ckpt["hyper_parameters"]["renderer"].appearance,
         optimization=ckpt["hyper_parameters"]["renderer"].appearance_optimization,
-        filter_2d_kernel_size=ckpt["hyper_parameters"]["renderer"].filter_2d_kernel_size
+        filter_2d_kernel_size=ckpt["hyper_parameters"]["renderer"].filter_2d_kernel_size,
+        tile_based_culling=getattr(ckpt["hyper_parameters"]["renderer"], "tile_based_culling", False),
     )
     ckpt["hyper_parameters"]["renderer"] = renderer
 

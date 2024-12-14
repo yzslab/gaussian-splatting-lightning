@@ -42,16 +42,21 @@ if gaussian_model_name == "AppearanceMipGaussian":
         "filter_2d_kernel_size": ckpt["hyper_parameters"]["renderer"].filter_2d_kernel_size,
         "model": ckpt["hyper_parameters"]["renderer"].model,
         "optimization": ckpt["hyper_parameters"]["renderer"].optimization,
+        "tile_based_culling": getattr(ckpt["hyper_parameters"]["renderer"], "tile_based_culling", False),
     })
 elif gaussian_model_name == "MipSplatting":
     print("MipSplatting -> VanillaModel & GSplatRenderer")
     from internal.models.vanilla_gaussian import VanillaGaussian
-    from internal.renderers.gsplat_renderer import GSPlatRenderer
+    from internal.renderers.gsplat_v1_renderer import GSplatV1Renderer
     model_class = VanillaGaussian
-    renderer_class = GSPlatRenderer
+    renderer_class = GSplatV1Renderer
 
     renderer_init_kwargs.update({
-        "kernel_size": ckpt["hyper_parameters"]["renderer"].filter_2d_kernel_size
+        "block_size": ckpt["hyper_parameters"]["renderer"].block_size,
+        "anti_aliased": ckpt["hyper_parameters"]["renderer"].anti_aliased,
+        "filter_2d_kernel_size": ckpt["hyper_parameters"]["renderer"].filter_2d_kernel_size,
+        "separate_sh": getattr(ckpt["hyper_parameters"]["renderer"], "separate_sh", False),
+        "tile_based_culling": getattr(ckpt["hyper_parameters"]["renderer"], "tile_based_culling", False),
     })
 else:
     raise ValueError("unsupported model type '{}'".format(gaussian_model_name))

@@ -85,17 +85,18 @@ class GSplatV1RendererModule(Renderer):
     def is_type_required(bits: int, type: int) -> bool:
         return bits & type != 0
 
+    def get_scales_and_opacities(self, pc):
+        return pc.get_scales(), pc.get_opacities()
+
     def forward(self, viewpoint_camera, pc, bg_color: torch.Tensor, scaling_modifier=1.0, render_types: list = None, **kwargs):
         render_type_bits = self.parse_render_types(render_types)
 
         img_height = int(viewpoint_camera.height.item())
         img_width = int(viewpoint_camera.width.item())
 
-        scales = pc.get_scales()
+        scales, opacities = self.get_scales_and_opacities(pc)
         if scaling_modifier != 1.:
             scales = scales * scaling_modifier
-
-        opacities = pc.get_opacities()
 
         radii, means2d, depths, conics, compensations, isects = GSplatV1.preprocess(
             means3d=pc.get_means(),

@@ -18,7 +18,7 @@ class DistributedVanillaDensityControllerImpl(VanillaDensityControllerImpl):
             return
 
         for i in outputs["projection_results_list"]:
-            i[0].retain_grad()
+            i[1].retain_grad()
 
     def update_states(self, outputs):
         cameras = outputs["cameras"]
@@ -28,7 +28,7 @@ class DistributedVanillaDensityControllerImpl(VanillaDensityControllerImpl):
         for i in range(len(projection_results_list)):
             # retrieve data
             camera = cameras[i]
-            xys, _, radii, _, _, _, _ = projection_results_list[i]
+            radii, xys = projection_results_list[i][0], projection_results_list[i][1]
 
             viewspace_point_tensor = xys
             visibility_filter = visible_mask_list[i]

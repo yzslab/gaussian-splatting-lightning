@@ -26,7 +26,6 @@
 !gsplat_v1-accel-steerable.yaml
 !pypreprocess_gsplat.yaml
 !swag_baseline.yaml
-!mip_splatting_gsplat.yaml
 !mip_splatting_gsplat_v2.yaml
 !mip_splatting_gsplat_v2-blender.yaml
 !light_gaussian
@@ -72,6 +71,7 @@
 !matrixcity/gsplat-aerial_street-example.yaml
 !matrixcity/gsplat-aerial_street-depth_reg-example.yaml
 !distributed.yaml
+!distributed-accel.yaml
 !pvg_dynamic.yaml
 !spot_less_splats
 !depth_regularization

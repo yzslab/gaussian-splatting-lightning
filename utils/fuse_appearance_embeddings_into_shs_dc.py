@@ -330,7 +330,7 @@ def update_ckpt(gaussian_model, ckpt):
             block_size=getattr(ckpt["hyper_parameters"]["renderer"], "block_size", 16),
             anti_aliased=getattr(ckpt["hyper_parameters"]["renderer"], "anti_aliased", True),
             filter_2d_kernel_size=getattr(ckpt["hyper_parameters"]["renderer"], "filter_2d_kernel_size", 0.3),
-            separate_sh=getattr(ckpt["hyper_parameters"]["renderer"], "separate_sh", False),
+            separate_sh=getattr(ckpt["hyper_parameters"]["renderer"], "separate_sh", True),
             tile_based_culling=getattr(ckpt["hyper_parameters"]["renderer"], "tile_based_culling", False),
         )
         print(renderer)
