@@ -49,6 +49,7 @@ class CLI(LightningCLI):
                             help="Whether use train set to do validation")
         parser.add_argument("--cache_all_images", action="store_true", default=False,
                             help="Speedup validation/test by caching all images. Images in train set is cached by default.")
+        parser.add_argument("--pbar_rate", type=int, default=None)
 
         # parser.link_arguments("iterations", "trainer.max_steps")
         # parser.link_arguments("epochs", "trainer.max_epochs")
@@ -146,3 +147,9 @@ class CLI(LightningCLI):
             config.data.train_max_num_images_to_cache = -1
             config.data.val_max_num_images_to_cache = -1
             config.data.test_max_num_images_to_cache = -1
+
+        # set refresh rate of the progress bar
+        if config.pbar_rate is not None:
+            for i in self.trainer_defaults["callbacks"]:
+                if i.__class__.__name__ == "LazyInstance_ProgressBar":
+                    i._lazy_kwargs["refresh_rate"] = config.pbar_rate
