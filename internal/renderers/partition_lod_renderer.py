@@ -8,7 +8,7 @@ import torch
 from tqdm.auto import tqdm
 
 from . import RendererOutputInfo
-from .gsplat_renderer import GSPlatRenderer
+from .gsplat_v1_renderer import GSplatV1Renderer
 from .renderer import RendererConfig, Renderer
 from ..cameras import Camera
 from ..models.gaussian import GaussianModel
@@ -21,7 +21,6 @@ class PartitionLoDRenderer(RendererConfig):
     min_images: int = 32
     visibility_filter: bool = False
     freeze: bool = False
-    filter_2d_kernel_size: float = 0.3
     drop_shs_rest: bool = False
 
     def instantiate(self, *args, **kwargs) -> "PartitionLoDRendererModule":
@@ -32,8 +31,6 @@ class PartitionLoDRendererModule(Renderer):
     def __init__(self, config) -> None:
         super().__init__()
         self.config = config
-
-        self.gsplat_renderer = GSPlatRenderer(kernel_size=self.config.filter_2d_kernel_size)
 
         self.on_render_hooks = []
         self.on_model_updated_hooks = []
@@ -159,6 +156,15 @@ class PartitionLoDRendererModule(Renderer):
         self.gaussian_model.to(device=device)
 
         # setup gsplat renderer
+        renderer_config = GSplatV1Renderer(
+            block_size=getattr(ckpt["hyper_parameters"]["renderer"], "block_size", 16),
+            anti_aliased=getattr(ckpt["hyper_parameters"]["renderer"], "anti_aliased", True),
+            filter_2d_kernel_size=getattr(ckpt["hyper_parameters"]["renderer"], "filter_2d_kernel_size", 0.3),
+            separate_sh=getattr(ckpt["hyper_parameters"]["renderer"], "separate_sh", True),
+            tile_based_culling=getattr(ckpt["hyper_parameters"]["renderer"], "tile_based_culling", False),
+        )
+        print(renderer_config)
+        self.gsplat_renderer = renderer_config.instantiate()
         self.gsplat_renderer.setup(stage)
 
     def get_partition_distances(self, p: torch.Tensor):
@@ -205,7 +211,6 @@ class PartitionLoDRendererModule(Renderer):
             partition_corners_in_image_space = torch.maximum(partition_corners_in_image_space, min_pixel_coor)
             partition_corners_in_image_space = torch.minimum(partition_corners_in_image_space, max_pixel_coor)
             # print("partition_corners_in_image_space[0]={}".format(partition_corners_in_image_space[0].cpu().numpy()))
-
 
             # prevent selecting valid min and max values from corners behind camera by applying the `behind_camera_corner_xy_offset`
             # behind_camera_corner_xy_offset = is_behind_camera * max_pixel_coor.max()

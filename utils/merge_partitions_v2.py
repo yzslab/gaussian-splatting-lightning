@@ -13,7 +13,7 @@ from internal.models.vanilla_gaussian import VanillaGaussian
 from internal.models.appearance_feature_gaussian import AppearanceFeatureGaussianModel
 from internal.models.mip_splatting import MipSplattingModelMixin
 from internal.renderers.vanilla_renderer import VanillaRenderer
-from internal.renderers.gsplat_renderer import GSPlatRenderer
+from internal.renderers.gsplat_v1_renderer import GSplatV1Renderer
 from internal.renderers.gsplat_mip_splatting_renderer_v2 import GSplatMipSplattingRendererV2
 from internal.density_controllers.vanilla_density_controller import VanillaDensityController
 from internal.utils.gaussian_model_loader import GaussianModelLoader
@@ -92,7 +92,12 @@ def update_ckpt(ckpt, merged_gaussians, max_sh_degree):
         anti_aliased = False
     elif isinstance(ckpt["hyper_parameters"]["renderer"], GSplatMipSplattingRendererV2) or ckpt["hyper_parameters"]["renderer"].__class__.__name__ == "GSplatAppearanceEmbeddingMipRenderer":
         kernel_size = ckpt["hyper_parameters"]["renderer"].filter_2d_kernel_size
-    ckpt["hyper_parameters"]["renderer"] = GSPlatRenderer(anti_aliased=anti_aliased, kernel_size=kernel_size)
+    ckpt["hyper_parameters"]["renderer"] = GSplatV1Renderer(
+        anti_aliased=anti_aliased,
+        filter_2d_kernel_size=kernel_size,
+        separate_sh=getattr(ckpt["hyper_parameters"]["renderer"], "separate_sh", True),
+        tile_based_culling=getattr(ckpt["hyper_parameters"]["renderer"], "tile_based_culling", False),
+    )
 
     # remove existing Gaussians from ckpt
     for i in list(ckpt["state_dict"].keys()):
