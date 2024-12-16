@@ -50,6 +50,10 @@ class GSplatDistributedRendererImpl(Renderer):
         self.block_size = config.block_size
         self.anti_aliased = config.anti_aliased
 
+        self.isect_encode = GSplatV1.isect_encode_with_unused_opacities
+        if self.config.tile_based_culling:
+            self.isect_encode = GSplatV1.isect_encode_tile_based_culling
+
         self.world_size = 1
         self.global_rank = 0
 
@@ -216,23 +220,16 @@ class GSplatDistributedRendererImpl(Renderer):
         return pc.get_scales(), pc.get_opacities()
 
     def project(self, camera, pc, scales, scaling_modifier):
-        img_height = camera.height.item()
-        img_width = camera.width.item()
+        preprocessed_camera = GSplatV1.preprocess_camera(camera)
 
         if scaling_modifier != 1.:
             scales = scales * scaling_modifier
 
         radii, means2d, depths, conics, compensations = GSplatV1.project(
+            preprocessed_camera,
             means3d=pc.get_means(),
             scales=scales,
             quats=pc.get_rotations(),
-            viewmat=camera.world_to_camera.T,
-            fx=camera.fx,
-            fy=camera.fy,
-            cx=camera.cx,
-            cy=camera.cy,
-            img_height=img_height,
-            img_width=img_width,
             eps2d=self.config.filter_2d_kernel_size,
             anti_aliased=True,
         )
@@ -359,43 +356,34 @@ class GSplatDistributedRendererImpl(Renderer):
             # rasterization below is the same as non-distributed renderer
 
             radii, means2d, depths, conics, compensations = projection_results
+            projection_results = radii.unsqueeze(0), means2d.unsqueeze(0), depths.unsqueeze(0), conics.unsqueeze(0), None
 
             if self.anti_aliased is True:
                 opacities = opacities * compensations
 
-            radii = radii.unsqueeze(0)
-            depths = depths.unsqueeze(0)
-            conics = conics.unsqueeze(0)
+            opacities = opacities.squeeze(-1).unsqueeze(0)
 
             local_camera_data = gathered_cameras[self.global_rank]
             img_height = local_camera_data.height
             img_width = local_camera_data.width
 
+            preprocessed_local_camera = None, None, (img_width, img_height)
+
+            isects = self.isect_encode(
+                preprocessed_local_camera,
+                projection_results,
+                opacities=opacities,
+                tile_size=self.block_size,
+            )
+
             with self.profiler.profile(f"{self.profile_prefix}rasterize"):
-                if self.config.tile_based_culling:
-                    tiles_per_gauss, isect_ids, flatten_ids, isect_offsets = GSplatV1.isect_encode_tile_based_culling(
-                        (radii, means2d.unsqueeze(0), depths, conics, None),
-                        opacities=opacities,
-                        img_height=img_height,
-                        img_width=img_width,
-                        tile_size=self.block_size,
-                    )
-                else:
-                    tiles_per_gauss, isect_ids, flatten_ids, isect_offsets = GSplatV1.isect_encode(
-                        (radii, means2d.unsqueeze(0), depths, conics, None),
-                        img_height=img_height,
-                        img_width=img_width,
-                        tile_size=self.block_size,
-                    )
                 rgb, _ = GSplatV1.rasterize(
-                    (radii, means2d, depths, conics, None, (
-                        tiles_per_gauss, isect_ids, flatten_ids, isect_offsets
-                    )),
-                    opacities=opacities,
+                    preprocessed_local_camera,
+                    projection_results,
+                    isects,
+                    opacities,
                     colors=rgbs,
                     background=bg_color,
-                    img_height=img_height,
-                    img_width=img_width,
                     tile_size=self.config.block_size,
                 )
                 rgb = rgb.permute(2, 0, 1)
@@ -403,16 +391,14 @@ class GSplatDistributedRendererImpl(Renderer):
                 # hard inverse depth
                 hard_inverse_depth_im = None
                 if "hard_inverse_depth" in render_types:
-                    inverse_depth = 1. / (depths[0].clamp_min(0.) + 1e-8).unsqueeze(-1)
+                    inverse_depth = 1. / (depths.clamp_min(0.) + 1e-8).unsqueeze(-1)
                     hard_inverse_depth_im, _ = GSplatV1.rasterize(
-                        (radii, means2d, depths, conics, None, (
-                            tiles_per_gauss, isect_ids, flatten_ids, isect_offsets
-                        )),
-                        opacities=opacities + (1 - opacities.detach()),
+                        preprocessed_local_camera,
+                        projection_results,
+                        isects,
+                        opacities + (1 - opacities.detach()),
                         colors=inverse_depth,
                         background=torch.zeros((1,), dtype=torch.float, device=bg_color.device),
-                        img_height=img_height,
-                        img_width=img_width,
                         tile_size=self.config.block_size,
                     )
                     hard_inverse_depth_im = hard_inverse_depth_im.permute(2, 0, 1)

@@ -136,7 +136,7 @@ def average_color_fusing(
             appearance_embeddings = torch.nn.functional.normalize(appearance_embeddings, dim=-1)
         appearance_model_input_feature_list.append(appearance_embeddings)
 
-        if renderer.model_config.is_view_dependent:
+        if renderer.config.model.is_view_dependent:
             camera_index_to_camera_center = torch.stack(
                 [i.camera_center for i in cameras],
             ).to(device=cuda_device)  # [N_cameras, 3]
@@ -199,7 +199,7 @@ def average_embedding_fusing(
     ]
 
     # view dependent
-    if renderer.model_config.is_view_dependent:
+    if renderer.config.model.is_view_dependent:
         camera_index_to_camera_center = torch.stack(
             [i.camera_center for i in cameras],
         ).to(device=cuda_device)  # [N_cameras, 3]

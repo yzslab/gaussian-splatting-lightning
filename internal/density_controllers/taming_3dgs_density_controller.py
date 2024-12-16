@@ -329,27 +329,20 @@ class Taming3DGSUtils:
 
     @staticmethod
     def rasterize_to_weights(pc, renderer, pixel_weights, viewpoint_camera):
-
-        img_height = int(viewpoint_camera.height.item())
-        img_width = int(viewpoint_camera.width.item())
+        preprocessed_camera = GSplatV1.preprocess_camera(viewpoint_camera)
+        img_width, img_height = preprocessed_camera[-1]
 
         # TODO: MipSplatting
         scales = pc.get_scales()
         opacities = pc.get_opacities()
 
-        radii, means2d, depths, conics, compensations, (
+        (radii, means2d, depths, conics, compensations), (
             tiles_per_gauss, isect_ids, flatten_ids, isect_offsets
-        ) = GSplatV1.preprocess(
+        ), opacities = GSplatV1.preprocess(
+            preprocessed_camera,
             means3d=pc.get_means(),
             scales=scales,
             quats=pc.get_rotations(),
-            viewmat=viewpoint_camera.world_to_camera.T,
-            fx=viewpoint_camera.fx,
-            fy=viewpoint_camera.fy,
-            cx=viewpoint_camera.cx,
-            cy=viewpoint_camera.cy,
-            img_height=img_height,
-            img_width=img_width,
             eps2d=renderer.config.filter_2d_kernel_size,
             anti_aliased=renderer.config.anti_aliased,
             tile_size=renderer.config.block_size,
@@ -357,13 +350,10 @@ class Taming3DGSUtils:
             opacities=opacities,
         )
 
-        if compensations is not None:
-            opacities = opacities * compensations[0, :, None]
-
         accum_weights, reverse_counts, blend_weights, dist_accum = rasterize_to_weights(
-            means2d=means2d.unsqueeze(0),
+            means2d=means2d,
             conics=conics,
-            opacities=opacities.squeeze(-1).unsqueeze(0),
+            opacities=opacities,
             image_width=img_width,
             image_height=img_height,
             tile_size=renderer.config.block_size,
