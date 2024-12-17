@@ -83,7 +83,7 @@ pip install -r requirements.txt
   NOTE: Only my modified v1 is supported
   
   ```bash
-  pip install git+https://github.com/yzslab/gsplat.git@f5368ccac83af6b30a3ebd9d38c9302576cb5f99
+  pip install git+https://github.com/yzslab/gsplat.git@58f3772541b6fb55e3219b36cd2b64be0584645c
   ```
   
 * If you need <a href="#210-segment-any-3d-gaussians">SegAnyGaussian</a>
