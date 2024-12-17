@@ -83,6 +83,7 @@ pip install -r requirements.txt
   NOTE: Only my modified v1 is supported
   
   ```bash
+  pip uninstall -y gsplat
   pip install git+https://github.com/yzslab/gsplat.git@58f3772541b6fb55e3219b36cd2b64be0584645c
   ```
   
@@ -198,7 +199,7 @@ Rounding mode is specified by `--data.parser.down_sample_rounding_mode`. Availab
   * Take a look at <a href="#221-taming-3dgs">Taming 3DGS (2.21.)</a> for further acceleration
 
 ### 2.3. Use <a href="https://github.com/nerfstudio-project/gsplat">nerfstudio-project/gsplat</a>
-Make sure that command `which nvcc` can produce output, or gsplat will be disabled automatically.
+
 ```bash
 python main.py fit \
     --config configs/gsplat.yaml \

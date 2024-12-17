@@ -11,19 +11,11 @@ from gsplat.cuda._wrapper import (
     spherical_harmonics,
 )
 
-try:
-    from gsplat.sh_decomposed import spherical_harmonics_decomposed
-    from gsplat.cuda.isect_tiles_tile_based_culling import (
-        isect_tiles_tile_based_culling,
-        isect_offset_encode_tile_based_culling,
-    )
-except:
-    print("[ERROR] Incompatible gsplat found")
-    print("Please install the latest version:")
-    print("  pip uninstall gsplat")
-    print("  pip install git+https://github.com/yzslab/gsplat.git@v1-with_v0_interfaces")
-    exit()
-
+from gsplat.sh_decomposed import spherical_harmonics_decomposed
+from gsplat.cuda.isect_tiles_tile_based_culling import (
+    isect_tiles_tile_based_culling,
+    isect_offset_encode_tile_based_culling,
+)
 from gsplat import rasterize_to_pixels
 
 
