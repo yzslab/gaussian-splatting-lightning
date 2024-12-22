@@ -47,6 +47,7 @@ class GSplatV1RendererModule(Renderer):
     _INVERSE_DEPTH_REQUIRED = 1 << 6
     _HARD_DEPTH_REQUIRED = 1 << 7
     _HARD_INVERSE_DEPTH_REQUIRED = 1 << 8
+    _DEPTH_ALTERNATIVE = 1 << 9
 
     RENDER_TYPE_BITS = {
         "rgb": _RGB_REQUIRED,
@@ -58,6 +59,7 @@ class GSplatV1RendererModule(Renderer):
         "inverse_depth": _INVERSE_DEPTH_REQUIRED,
         "hard_depth": _HARD_DEPTH_REQUIRED,
         "hard_inverse_depth": _HARD_INVERSE_DEPTH_REQUIRED,
+        "inv_depth_alt": _DEPTH_ALTERNATIVE,
     }
 
     def __init__(self, config: GSplatV1Renderer):
@@ -68,6 +70,12 @@ class GSplatV1RendererModule(Renderer):
         if self.config.tile_based_culling:
             self.isect_encode = GSplatV1.isect_encode_tile_based_culling
 
+        self._inv_depth_alt_state = 0
+        self._inv_depth_alt = [
+            self.RENDER_TYPE_BITS["inverse_depth"],
+            self.RENDER_TYPE_BITS["hard_inverse_depth"],
+        ]
+
     def parse_render_types(self, render_types: list) -> int:
         if render_types is None:
             return self._RGB_REQUIRED
@@ -75,6 +83,11 @@ class GSplatV1RendererModule(Renderer):
             bits = 0
             for i in render_types:
                 bits |= self.RENDER_TYPE_BITS[i]
+
+            if self.is_type_required(bits, self._DEPTH_ALTERNATIVE):
+                bits |= self._inv_depth_alt[self._inv_depth_alt_state]
+                self._inv_depth_alt_state = int(not self._inv_depth_alt_state)
+
             return bits
 
     @staticmethod
@@ -184,6 +197,7 @@ class GSplatV1RendererModule(Renderer):
         acc_depth_inverted_im = None
         exp_depth_im = None
         exp_depth_inverted_im = None
+        inv_depth_alt = None
         if self.is_type_required(render_type_bits, self._ACC_DEPTH_REQUIRED):
             # acc depth
             acc_depth_im, alpha = rasterize(depths[0].unsqueeze(-1), torch.zeros((1,), device=bg_color.device), True)
@@ -218,6 +232,7 @@ class GSplatV1RendererModule(Renderer):
         if self.is_type_required(render_type_bits, self._INVERSE_DEPTH_REQUIRED):
             inverse_depth = 1. / (depths[0].clamp_min(0.) + 1e-8).unsqueeze(-1)
             inverse_depth_im = rasterize(inverse_depth, torch.zeros((1,), dtype=torch.float, device=bg_color.device)).permute(2, 0, 1)
+            inv_depth_alt = inverse_depth_im
 
         # hard depth
         hard_depth_im = None
@@ -248,6 +263,7 @@ class GSplatV1RendererModule(Renderer):
             )
 
             hard_inverse_depth_im = hard_inverse_depth_im.permute(2, 0, 1)
+            inv_depth_alt = hard_inverse_depth_im
 
         return {
             "render": rgb,
@@ -259,6 +275,7 @@ class GSplatV1RendererModule(Renderer):
             "inverse_depth": inverse_depth_im,
             "hard_depth": hard_depth_im,
             "hard_inverse_depth": hard_inverse_depth_im,
+            "inv_depth_alt": inv_depth_alt,
             "viewspace_points": means2d,
             "viewspace_points_grad_scale": 0.5 * torch.tensor([preprocessed_camera[-1]]).to(means2d),
             "visibility_filter": visibility_filter,

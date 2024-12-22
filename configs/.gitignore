@@ -81,6 +81,7 @@
 !depth_regularization/estimated_inverse_depth-hard_depth-l1.yaml
 !depth_regularization/estimated_inverse_depth-hard_depth-l1_ssim.yaml
 !depth_regularization/estimated_inverse_depth-l2.yaml
+!depth_regularization/estimated_inverse_depth-alternating-l1-accel.yaml
 !stp
 !stp/baseline.yaml
 !scale_reg.yaml
