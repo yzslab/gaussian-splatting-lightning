@@ -54,6 +54,8 @@ class Taming3DGSDensityController(DensityController):
 
     absgrad: bool = False
 
+    acc_vis: bool = False
+
     # Taming3DGS hyperparameters
 
     n_sample_cameras: int = 10
@@ -275,6 +277,21 @@ class Taming3DGSDensityControllerModule(VanillaDensityControllerImpl):
 
         self._prune_points(final_prune, gaussian_model, optimizers)
 
+    def update_states(self, outputs):
+        viewspace_point_tensor, visibility_filter = outputs["viewspace_points"], outputs["visibility_filter"]
+        if self.config.acc_vis:
+            visibility_filter = viewspace_point_tensor.has_hit_any_pixels
+        # retrieve viewspace_points_grad_scale if provided
+        viewspace_points_grad_scale = outputs.get("viewspace_points_grad_scale", None)
+
+        # update `max_radii2D` is unnecessary, since it will be reset to 0 after cloning and splitting
+
+        # update states
+        xys_grad = viewspace_point_tensor.grad
+        if self.config.absgrad is True:
+            xys_grad = viewspace_point_tensor.absgrad
+        self._add_densification_stats(xys_grad, visibility_filter, scale=viewspace_points_grad_scale)
+
 
 class Taming3DGSUtils:
     @staticmethod
@@ -328,35 +345,20 @@ class Taming3DGSUtils:
         return final_loss
 
     @staticmethod
-    def rasterize_to_weights(pc, renderer, pixel_weights, viewpoint_camera):
+    def rasterize_to_weights(opacities, projections, isects, pixel_weights, viewpoint_camera):
         preprocessed_camera = GSplatV1.preprocess_camera(viewpoint_camera)
         img_width, img_height = preprocessed_camera[-1]
 
-        # TODO: MipSplatting
-        scales = pc.get_scales()
-        opacities = pc.get_opacities()
-
-        (radii, means2d, depths, conics, compensations), (
-            tiles_per_gauss, isect_ids, flatten_ids, isect_offsets
-        ), opacities = GSplatV1.preprocess(
-            preprocessed_camera,
-            means3d=pc.get_means(),
-            scales=scales,
-            quats=pc.get_rotations(),
-            eps2d=renderer.config.filter_2d_kernel_size,
-            anti_aliased=renderer.config.anti_aliased,
-            tile_size=renderer.config.block_size,
-            tile_based_culling=renderer.config.tile_based_culling,
-            opacities=opacities,
-        )
+        radii, means2d, depths, conics, _ = projections
+        _, _, flatten_ids, isect_offsets = isects
 
         accum_weights, reverse_counts, blend_weights, dist_accum = rasterize_to_weights(
             means2d=means2d,
             conics=conics,
-            opacities=opacities,
+            opacities=opacities.unsqueeze(0),
             image_width=img_width,
             image_height=img_height,
-            tile_size=renderer.config.block_size,
+            tile_size=16,
             isect_offsets=isect_offsets,
             flatten_ids=flatten_ids,
             pixel_weights=pixel_weights.unsqueeze(0),
@@ -408,8 +410,12 @@ class Taming3DGSUtils:
             dtype=torch.float32,
         )
 
-        all_opacity = gaussian_model.get_opacities().squeeze()
-        all_scales = torch.prod(gaussian_model.get_scales(), dim=1)
+        # Is MipSplatting?
+        if hasattr(gaussian_model, "get_3d_filtered_scales_and_opacities"):
+            _, all_scales = gaussian_model.get_3d_filtered_scales_and_opacities()
+        else:
+            all_scales = gaussian_model.get_scales()
+        all_scales = torch.prod(all_scales, dim=1)
 
         for camera_idx in range(len(sample_cameras)):
             # TODO: mask
@@ -430,6 +436,7 @@ class Taming3DGSUtils:
                 render_types=["rgb"],
             )
             render_image = rgb_rasterization_outputs["render"]
+            all_opacity = rgb_rasterization_outputs["opacities"]
             visibility_filter = rgb_rasterization_outputs["visibility_filter"]
 
             photometric_loss = cls.compute_photometric_loss(
@@ -439,8 +446,13 @@ class Taming3DGSUtils:
             )
             pixel_weights = cls.get_loss_map(render_image, gt_image, score_coeffs, edge_losses[camera_idx].to(device=bg_color.device))  # [H, W]
 
-            # TODO: avoid project twice
-            all_depths, all_radii, loss_accum, reverse_counts, blending_weights, dist_accum = cls.rasterize_to_weights(gaussian_model, renderer, pixel_weights, camera)
+            all_depths, all_radii, loss_accum, reverse_counts, blending_weights, dist_accum = cls.rasterize_to_weights(
+                opacities=rgb_rasterization_outputs["opacities"],
+                projections=rgb_rasterization_outputs["projections"],
+                isects=rgb_rasterization_outputs["isects"],
+                pixel_weights=pixel_weights,
+                viewpoint_camera=camera,
+            )
 
             # In gsplat, only the visible Gaussians have valid depth values
             all_depths *= visibility_filter

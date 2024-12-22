@@ -16,7 +16,7 @@ from gsplat.cuda.isect_tiles_tile_based_culling import (
     isect_tiles_tile_based_culling,
     isect_offset_encode_tile_based_culling,
 )
-from gsplat import rasterize_to_pixels
+from gsplat.v0_interfaces import rasterize_to_pixels
 
 
 @dataclass
@@ -113,7 +113,7 @@ class GSplatV1RendererModule(Renderer):
         if scaling_modifier != 1.:
             scales = scales * scaling_modifier
 
-        radii, means2d, depths, conics, compensations = GSplatV1.project(
+        projections = GSplatV1.project(
             preprocessed_camera,
             pc.get_means(),
             scales,
@@ -121,10 +121,7 @@ class GSplatV1RendererModule(Renderer):
             eps2d=self.config.filter_2d_kernel_size,
             anti_aliased=self.config.anti_aliased,
         )
-
-        # key to `retain_grad` working properly
-        means2d = means2d.squeeze(0)
-        projections = radii, means2d.unsqueeze(0), depths, conics, compensations
+        radii, means2d, depths, conics, compensations = projections
 
         radii_squeezed = radii.squeeze(0)
         visibility_filter = radii_squeezed > 0
@@ -151,10 +148,13 @@ class GSplatV1RendererModule(Renderer):
         )
 
         # 3. rasterization
+        means2d = means2d.squeeze(0)
+        projection_for_rasterization = radii, means2d, depths, conics, compensations
+
         def rasterize(input_features: torch.Tensor, background, return_alpha: bool = False):
             rendered_colors, rendered_alphas = GSplatV1.rasterize(
                 preprocessed_camera,
-                projections,
+                projection_for_rasterization,
                 isects,
                 opacities=opacities,
                 colors=input_features,
@@ -224,7 +224,7 @@ class GSplatV1RendererModule(Renderer):
         if self.is_type_required(render_type_bits, self._HARD_DEPTH_REQUIRED):
             hard_depth_im, _ = GSplatV1.rasterize(
                 preprocessed_camera,
-                projections,
+                projection_for_rasterization,
                 isects,
                 opacities=opacities + (1 - opacities.detach()),
                 colors=depths[0].unsqueeze(-1),
@@ -239,7 +239,7 @@ class GSplatV1RendererModule(Renderer):
             inverse_depth = 1. / (depths[0].clamp_min(0.) + 1e-8).unsqueeze(-1)
             hard_inverse_depth_im, _ = GSplatV1.rasterize(
                 preprocessed_camera,
-                projections,
+                projection_for_rasterization,
                 isects,
                 opacities=opacities + (1 - opacities.detach()),
                 colors=inverse_depth,
@@ -263,6 +263,10 @@ class GSplatV1RendererModule(Renderer):
             "viewspace_points_grad_scale": 0.5 * torch.tensor([preprocessed_camera[-1]]).to(means2d),
             "visibility_filter": visibility_filter,
             "radii": radii_squeezed,
+            "scales": scales,
+            "opacities": opacities[0],
+            "projections": projections,
+            "isects": isects,
         }
 
     def get_available_outputs(self):
@@ -473,13 +477,15 @@ class GSplatV1:
                 tile_size=tile_size,
             )
 
-        return projections, isects, opacities
+        radii, means2d, depths, conics, compensations = projections
+
+        return (radii, means2d.squeeze(0), depths, conics, compensations), isects, opacities
 
     @classmethod
     def rasterize(
         cls,
         preprocessed_camera: Tuple,
-        projections,
+        projections,  # NOTE: the means2D must be [N, 2]
         isects,
         opacities: torch.Tensor,  # [1, N]
         colors: torch.Tensor,  # [N, n_color_dims]

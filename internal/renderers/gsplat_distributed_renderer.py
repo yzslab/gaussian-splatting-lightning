@@ -356,7 +356,7 @@ class GSplatDistributedRendererImpl(Renderer):
             # rasterization below is the same as non-distributed renderer
 
             radii, means2d, depths, conics, compensations = projection_results
-            projection_results = radii.unsqueeze(0), means2d.unsqueeze(0), depths.unsqueeze(0), conics.unsqueeze(0), None
+            projection_results = radii.unsqueeze(0), means2d, depths.unsqueeze(0), conics.unsqueeze(0), None
 
             if self.anti_aliased is True:
                 opacities = opacities * compensations
@@ -371,7 +371,7 @@ class GSplatDistributedRendererImpl(Renderer):
 
             isects = self.isect_encode(
                 preprocessed_local_camera,
-                projection_results,
+                (projection_results[0], projection_results[1].unsqueeze(0), projection_results[2], projection_results[3], projection_results[4]),
                 opacities=opacities,
                 tile_size=self.block_size,
             )
