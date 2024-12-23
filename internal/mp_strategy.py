@@ -13,11 +13,15 @@ from lightning.fabric.utilities.seed import reset_seed
 from lightning.pytorch.utilities.rank_zero import rank_zero_info, rank_zero_only
 
 from lightning.fabric.utilities.distributed import (
-    _distributed_available,
     _get_default_process_group_backend_for_device,
     _init_dist_connection,
     _sync_ddp_if_available,
 )
+try:
+    from lightning.fabric.utilities.distributed import _distributed_available
+except ImportError:
+    from lightning.fabric.utilities.distributed import _distributed_is_initialized as _distributed_available
+
 from lightning.fabric.utilities.distributed import group as _group
 from lightning.pytorch.strategies.launchers.subprocess_script import _SubprocessScriptLauncher
 
