@@ -775,7 +775,7 @@ class ViewerOptions:
 
         @load_cluster_button.on_click
         def _(event):
-            match = re.search("^[a-zA-Z0-9_\-.]+\.pt$", cluster_result_file_dropdown.value)
+            match = re.search(r"^[a-zA-Z0-9_\-.]+\.pt$", cluster_result_file_dropdown.value)
             if not match:
                 self._show_message(event.client, "Invalid filename")
                 return
@@ -815,7 +815,7 @@ class ViewerOptions:
         if self.cluster_result is None:
             raise RuntimeError("Please click 'Re-Cluster in 3D' first")
 
-        match = re.search("^[a-zA-Z0-9_\-.]+$", name)
+        match = re.search(r"^[a-zA-Z0-9_\-.]+$", name)
         if match:
             output_path = os.path.join(self.cluster_result_save_dir, f"{name}.pt")
             if os.path.exists(output_path):
@@ -869,4 +869,4 @@ class ViewerOptions:
                     pass
 
     def _filename_check(self, name) -> bool:
-        return re.search("^[a-zA-Z0-9_\-.]+$", name) is not None
+        return re.search(r"^[a-zA-Z0-9_\-.]+$", name) is not None

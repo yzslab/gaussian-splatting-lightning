@@ -949,4 +949,4 @@ def populate_render_tab(
 
 
 def is_filename_valid(name):
-    return re.search("^[a-zA-Z0-9_\-. ]+$", name) is not None
+    return re.search(r"^[a-zA-Z0-9_\-. ]+$", name) is not None

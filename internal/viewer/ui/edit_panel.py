@@ -185,7 +185,7 @@ class EditPanel:
                         try:
                             # check whether is a valid name
                             name = name_text.value
-                            match = re.search("^[a-zA-Z0-9_\-]+$", name)
+                            match = re.search(r"^[a-zA-Z0-9_\-]+$", name)
                             if match:
                                 output_directory = "edited"
                                 os.makedirs(output_directory, exist_ok=True)
