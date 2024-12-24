@@ -25,6 +25,8 @@ class SceneConfig:
 
     visibility_threshold: float = None
 
+    bounding_box_based_visibility: bool = False
+
 
 @dataclass
 class MinMaxBoundingBox:
@@ -129,9 +131,24 @@ class PartitionableScene:
             enlarge=self.scene_config.location_based_enlarge,
         )
         return self.is_camera_in_partition
+    
+    def calculate_camera_visibilities(self, *args, **kwargs):
+        if self.scene_config.bounding_box_based_visibility:
+            return self.calculate_point_bounding_box_based_camera_visibilities(*args, **kwargs)
+        return self.calculate_point_based_camera_visibilities(*args, **kwargs)
 
     def calculate_point_based_camera_visibilities(self, point_getter: Callable, device):
         self.camera_visibilities = Partitioning.cameras_point_based_visibilities_calculation(
+            partition_coordinates=self.partition_coordinates,
+            size=self.scene_config.partition_size,
+            n_cameras=self.camera_centers.shape[0],
+            point_getter=point_getter,
+            device=device,
+        )
+        return self.camera_visibilities
+
+    def calculate_point_bounding_box_based_camera_visibilities(self, point_getter: Callable, device):
+        self.camera_visibilities = Partitioning.cameras_point_bounding_box_based_visibilities_calculation(
             partition_coordinates=self.partition_coordinates,
             size=self.scene_config.partition_size,
             n_cameras=self.camera_centers.shape[0],
@@ -153,11 +170,12 @@ class PartitionableScene:
         return self.is_partitions_visible_to_cameras
 
     def build_output_dirname(self):
-        return "partitions-size_{}-enlarge_{}-visibility_{}_{}".format(
+        return "partitions-size_{}-enlarge_{}-{}_visibility_{}_{}".format(
             self.scene_config.partition_size,
             self.scene_config.location_based_enlarge,
+            "bbox" if self.scene_config.bounding_box_based_visibility else "point",
             self.scene_config.visibility_based_distance,
-            self.scene_config.visibility_threshold,
+            round(self.scene_config.visibility_threshold, 2),
         )
 
     def save(self, output_dir: str, extra_data=None):
@@ -300,6 +318,7 @@ class PartitionableScene:
         fig, ax = plt.subplots()
         func(ax, *args, **kwargs)
         plt.savefig(path, dpi=600)
+        plt.show(fig)
 
 
 class Partitioning:
@@ -432,6 +451,40 @@ class Partitioning:
         return all_visibilities.T  # [N_partitions, N_cameras]
 
     @classmethod
+    def cameras_point_bounding_box_based_visibilities_calculation(
+            cls,
+            partition_coordinates: PartitionCoordinates,
+            size: float,
+            n_cameras,
+            point_getter: Callable[[int], Tuple[torch.Tensor, torch.Tensor, int]],
+            device,
+    ):
+        partition_bounding_boxes = partition_coordinates.get_bounding_boxes(size, enlarge=0.).to(device=device)
+        all_visibilities = torch.ones((n_cameras, len(partition_coordinates)), device="cpu") * -255.  # [N_cameras, N_partitions]
+
+        def calculate_visibilities(camera_idx: int):
+            points_2d, points_3d, n_pixels = point_getter(camera_idx)
+            visibilities, _, _ = Partitioning.calculate_point_bounding_box_based_visibilities(
+                partition_bounding_boxes=partition_bounding_boxes,
+                points_2d=points_2d,
+                points_3d=points_3d[..., :2],
+                n_pixels=n_pixels,
+            )  # [N_partitions]
+            all_visibilities[camera_idx].copy_(visibilities.to(device=all_visibilities.device))
+
+        from concurrent.futures.thread import ThreadPoolExecutor
+        with ThreadPoolExecutor() as tpe:
+            for _ in tqdm(
+                    tpe.map(calculate_visibilities, range(n_cameras)),
+                    total=n_cameras,
+            ):
+                pass
+
+        assert torch.all(all_visibilities >= 0.)
+
+        return all_visibilities.T  # [N_partitions, N_cameras]
+
+    @classmethod
     def visibility_based_partition_assignment(
             cls,
             partition_coordinates: PartitionCoordinates,
@@ -473,6 +526,49 @@ class Partitioning:
             visibilities = n_points_in_partitions / points.shape[0]  # [N_partitions]
 
         return visibilities, n_points_in_partitions
+
+    @classmethod
+    def calculate_point_bounding_box_based_visibilities(
+            cls,
+            partition_bounding_boxes: MinMaxBoundingBoxes,
+            points_2d: torch.Tensor,  # [N_points, 2]
+            points_3d: torch.Tensor,  # [N_points, 2 or 3]
+            n_pixels: int,
+    ) -> Tuple[torch.Tensor, torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        """
+        Get a bounding based on the feature points inside the partition, 
+        and then calculate its ratio to the image.
+        """
+
+        if points_3d.shape[0] == 0:
+            bbox_area = torch.zeros((partition_bounding_boxes.min.shape[0],), dtype=torch.long)
+            visibilities = torch.zeros((partition_bounding_boxes.min.shape[0],), dtype=torch.float)
+            bbox_min = torch.zeros((partition_bounding_boxes.min.shape[0], 2), dtype=torch.long)
+            bbox_max = bbox_min
+        else:
+            is_in_bounding_boxes = cls.is_in_bounding_boxes(
+                bounding_boxes=partition_bounding_boxes,
+                coordinates=points_3d,
+            )  # [N_partitions, N_points]
+
+            # get bounding boxes
+            not_in_bounding_boxes = ~is_in_bounding_boxes[:, :, None]  # [N_partitions, N_points, 1]
+            not_in_partition_offset = not_in_bounding_boxes * n_pixels  # avoid selecting points not in the partition
+            bbox_min = torch.min(points_2d[None, :, :] + not_in_partition_offset, dim=1).values  # [N_partitions, 2]
+            bbox_max = torch.max(points_2d[None, :, :] - not_in_partition_offset, dim=1).values  # [N_partitions, 2]
+
+            # calculate bounding box sizes
+            bbox_size = bbox_max - bbox_min  # [N_partitions, 2]
+            bbox_area = torch.prod(bbox_size, dim=-1)  # [N_partitions]
+
+            visible_partition = is_in_bounding_boxes.sum(dim=-1) > 0
+            bbox_area = bbox_area * visible_partition
+            bbox_min = bbox_min * visible_partition[:, None]
+            bbox_max = bbox_max * visible_partition[:, None]
+
+            visibilities = bbox_area / n_pixels  # [N_partitions]
+
+        return visibilities, bbox_area, (bbox_min, bbox_max)
 
     @classmethod
     def save_partitions(
