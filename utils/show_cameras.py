@@ -17,7 +17,7 @@ parser.add_argument("--points", default=None, type=str)
 parser.add_argument("--point-sparsify", type=int, default=1)
 parser.add_argument("--images", default=None, type=str)
 parser.add_argument("--up", nargs="+", required=False, type=float, default=None)
-parser.add_argument("--camera-scale", type=float, default=0.02)
+parser.add_argument("--camera-scale", type=float, default=0.002)
 parser.add_argument("--point-size", type=float, default=0.002)
 args = parser.parse_args()
 
@@ -59,6 +59,13 @@ else:
         colors=np.asarray(points_rgb),
         normals=None,
     )
+
+camera_centers = torch.tensor([i["position"] for i in camera_poses])
+camera_center_min = torch.min(camera_centers, dim=0).values
+camera_center_max = torch.max(camera_centers, dim=0).values
+scene_scale = torch.norm(camera_center_max - camera_center_min)
+camera_scale = scene_scale.item() * args.camera_scale
+print("scene_scale={}, auto_camera_scale={}".format(scene_scale, camera_scale))
 
 
 viser_server = viser.ViserServer()
@@ -102,7 +109,7 @@ for camera in tqdm(camera_poses, leave=False, desc="Loading images"):
     camera_handle = viser_server.scene.add_camera_frustum(
         name="cameras/{}".format(name),
         fov=float(2 * np.arctan(cx / fx)),
-        scale=args.camera_scale,
+        scale=camera_scale,
         aspect=float(cx / cy),
         wxyz=R.wxyz,
         position=c2w[:3, 3],
