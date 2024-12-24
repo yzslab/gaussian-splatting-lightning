@@ -48,7 +48,7 @@ class ScaleRegularizationMetricsModuleMixin:
         is_over_scales = None
         if self.config.scale_reg_lambda > 0.:
             is_over_scales = scales.detach() > self.config.max_scale
-            n_over_scales = is_over_scales.sum()
+            n_over_scales = is_over_scales.sum().float()
             over_scale_loss = (scales * is_over_scales).sum() / (n_over_scales + 1) * self.config.scale_reg_lambda
 
         n_over_ratios = 0
@@ -57,7 +57,7 @@ class ScaleRegularizationMetricsModuleMixin:
         if self.config.scale_ratio_reg_lambda > 0.:
             scale_ratios = max_scales / (mid_scales + 1e-8)
             is_over_ratios = scale_ratios.detach() > self.config.max_scale_ratio
-            n_over_ratios = is_over_ratios.sum()
+            n_over_ratios = is_over_ratios.sum().float()
             over_ratio_loss = (scale_ratios * is_over_ratios).sum() / (n_over_ratios + 1) * self.config.scale_ratio_reg_lambda
 
         metrics["loss"] = metrics["loss"] + over_scale_loss + over_ratio_loss
