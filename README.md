@@ -99,7 +99,7 @@ pip install -r requirements.txt
     
     ```bash
     pip install -r requirements/pytorch3d-pre.txt
-    pip install -r requirements/pytorch3d-py39_cu118_pyt201.txt
+    pip install --no-index --no-cache-dir -r requirements/pytorch3d-py39_cu118_pyt201.txt
     ```
    
   * Download <a href="https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth">ViT-H SAM model</a>, place it to the root dir of this repo.: `wget -O sam_vit_h_4b8939.pth https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth`
