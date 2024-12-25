@@ -67,7 +67,7 @@ conda activate gspl
 * For CUDA 11.8
 
   ```bash
-  pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
+  pip install -r requirements/pyt201_cu118.txt
   ```
 
 ### 1.4. Install requirements
@@ -84,19 +84,22 @@ pip install -r requirements.txt
   
   ```bash
   pip uninstall -y gsplat
-  pip install git+https://github.com/yzslab/gsplat.git@58f3772541b6fb55e3219b36cd2b64be0584645c
+  pip install -r requirements/gsplat.txt
   ```
   
 * If you need <a href="#210-segment-any-3d-gaussians">SegAnyGaussian</a>
   * gsplat (see command above)
-  * `pip install hdbscan scikit-learn==1.3.2 git+https://github.com/facebookresearch/segment-anything.git`
+  * SAM
+    ```bash
+    pip install -r requirements/sam.txt
+    ```
   * <a href="https://github.com/facebookresearch/pytorch3d/blob/main/INSTALL.md">facebookresearch/pytorch3d</a>
 
     For `torch==2.0.1` and cuda 11.8:
     
     ```bash
-    pip install fvcore iopath
-    pip install --no-index --no-cache-dir pytorch3d -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py39_cu118_pyt201/download.html
+    pip install -r requirements/pytorch3d-pre.txt
+    pip install --no-index --no-cache-dir -r requirements/pytorch3d-py39_cu118_pyt201.txt
     ```
    
   * Download <a href="https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth">ViT-H SAM model</a>, place it to the root dir of this repo.: `wget -O sam_vit_h_4b8939.pth https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth`
@@ -284,7 +287,7 @@ python utils/fuse_mip_filter.py \
 ### 2.9. <a href="https://surfsplatting.github.io/">2D Gaussian Splatting</a>
 * Install `diff-surfel-rasterization` first
   ```bash
-  pip install git+https://github.com/hbb1/diff-surfel-rasterization.git@e0ed0207b3e0669960cfad70852200a4a5847f61
+  pip install -r requirements/2DGS.txt
   ```
 
 * Then start training
@@ -295,11 +298,6 @@ python utils/fuse_mip_filter.py \
   ```
 
 * Mesh extraction
-
-  Install required libraries first:
-  ```bash
-  pip install open3d==0.18.0 scikit-image==0.24.0 trimesh==4.4.3
-  ```
 
   * Bounded
     ```bash
@@ -704,7 +702,7 @@ Please refer to <a href="https://rover-xingyu.github.io/Ha-NeRF/">Ha-NeRF</a>, `
 
 * <a href="https://github.com/NVlabs/tiny-cuda-nn">tiny-cuda-nn</a> is required
 ```bash
-pip install git+https://github.com/NVlabs/tiny-cuda-nn/#subdirectory=bindings/torch
+pip install -r requirements/tcnn.txt
 ```
 * Preparing dataset
 
@@ -797,7 +795,7 @@ python viewer.py outputs/TRAINED_MODEL_DIR/checkpoints/MERGED_CHECKPOINT_FILE
 
 * Install requirements
   ```bash
-  pip install diffusers==0.27.2 transformers==4.40.1 scikit-learn
+  pip install -r requirements/SpotLessSplats.txt
   ```
 * Extract Stable Diffusion features
   ```bash
@@ -894,7 +892,7 @@ This is implemented with reference to <a href="https://repo-sam.inria.fr/fungrap
 ### 2.19. <a href="https://r4dl.github.io/StopThePop/">StopThePop</a>
 * Install the StopThePop-Rasterization first:
   ```bash
-  pip install dacite git+https://github.com/yzslab/StopThePop-Rasterization.git
+  pip install -r requirements/StopThePop.txt
   ```
 
 * Training:
@@ -925,14 +923,14 @@ There are two implementations: one is the gsplat v1 based, and the other is the 
 * (a) Install libraries first
   * fused-ssim
     ```bash
-    pip install git+https://github.com/rahul-goel/fused-ssim.git@d99e3d27513fa3563d98f74fcd40fd429e9e9b0e
+    pip install -r requirements/fused-ssim.txt
     ```
 
   * my modified gsplat v1 if you want the gsplat v1 based one (refer to <a href="#15-install-optional-packages">1.5.</a> for the setup guide)
 
   * another rasterizer if you want the vanilla one
     ```bash
-    pip install git+https://github.com/yzslab/diff-gaussian-rasterization.git@b403ab6c5cfb4ed89265a9759bd4766f9c4b56de
+    pip install -r requirements/diff-accel-rasterization.txt
     ```
 
 * (b) Available config files
@@ -1023,7 +1021,7 @@ python viewer.py \
 * <a href="https://github.com/hbb1/2d-gaussian-splatting">hbb1/2d-gaussian-splatting</a>
 ```bash
 # Install `diff-surfel-rasterization` first
-pip install git+https://github.com/hbb1/diff-surfel-rasterization.git@e0ed0207b3e0669960cfad70852200a4a5847f61
+pip install -r requirements/diff-surfel-rasterization.txt
 # Then start viewer
 python viewer.py \
     2d-gaussian-splatting/outputs/Truck \
