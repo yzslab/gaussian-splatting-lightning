@@ -3,7 +3,7 @@ plyfile==0.8.1
 tensorboard
 wandb
 tqdm
-viser==0.2.19
+viser==0.2.3
 opencv-python-headless==4.10.*
 matplotlib
 mediapy==1.2.2
