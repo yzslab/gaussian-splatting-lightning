@@ -540,35 +540,46 @@ class Partitioning:
         and then calculate its ratio to the image.
         """
 
-        if points_3d.shape[0] == 0:
+        if points_3d.shape[0] < 1:
             bbox_area = torch.zeros((partition_bounding_boxes.min.shape[0],), dtype=torch.long)
             visibilities = torch.zeros((partition_bounding_boxes.min.shape[0],), dtype=torch.float)
-            bbox_min = torch.zeros((partition_bounding_boxes.min.shape[0], 2), dtype=torch.long)
-            bbox_max = bbox_min
+            meta = None
         else:
             is_in_bounding_boxes = cls.is_in_bounding_boxes(
                 bounding_boxes=partition_bounding_boxes,
                 coordinates=points_3d,
             )  # [N_partitions, N_points]
 
-            # get bounding boxes
-            not_in_bounding_boxes = ~is_in_bounding_boxes[:, :, None]  # [N_partitions, N_points, 1]
-            not_in_partition_offset = not_in_bounding_boxes * n_pixels  # avoid selecting points not in the partition
-            bbox_min = torch.min(points_2d[None, :, :] + not_in_partition_offset, dim=1).values  # [N_partitions, 2]
-            bbox_max = torch.max(points_2d[None, :, :] - not_in_partition_offset, dim=1).values  # [N_partitions, 2]
+            n_in_bounding_boxes = torch.sum(is_in_bounding_boxes, dim=-1)
 
-            # calculate bounding box sizes
-            bbox_size = bbox_max - bbox_min  # [N_partitions, 2]
-            bbox_area = torch.prod(bbox_size, dim=-1)  # [N_partitions]
+            # Eigendecomposition
+            masked_points_2d = points_2d[None, ...] * is_in_bounding_boxes[..., None]  # [1, N_points, 2] * [N_partitions, N_points, 1] -> [N_partitions, N_points, 2]
+            mean = torch.sum(masked_points_2d, dim=1) / n_in_bounding_boxes[:, None]  # [N_partitions, 2] / [N_partitions, 1] -> [N_partitions, 2]
+            masked_centered_points_2d = (masked_points_2d - mean[:, None, :]) * is_in_bounding_boxes[..., None]  # ... - [N_partitions, 1, 2] -> [N_partitions, N_points, 2]
+            masked_centered_points_2d = torch.nan_to_num(masked_centered_points_2d, 0.)
+            covariance_matrix = (masked_centered_points_2d.transpose(1, 2) @ masked_centered_points_2d) / (n_in_bounding_boxes[:, None, None])  # [N_partitions, 2, N_points] @ ... (-> [N_partitions, 2, 2]) / [N_partitions, 1, 1] -> [N_partitions, 2, 2]
+            covariance_matrix = torch.nan_to_num(covariance_matrix, 0.)
+            eigenvalues, eigenvectors = torch.linalg.eig(covariance_matrix)
 
-            visible_partition = is_in_bounding_boxes.sum(dim=-1) > 0
+            eigenvalues = eigenvalues.real  # [N_partitions, 2]
+            eigenvectors = eigenvectors.real  # [N_partitions, 2, 2]
+
+            # Calculate the sizes
+            projections = masked_centered_points_2d @ eigenvectors  # [N_partitions, N_points, 2] @ [N_partitions, 2, 2] -> [N_partitions, N_points, 2]
+            max_projections = torch.max(projections, dim=1)
+            min_projections = torch.min(projections, dim=1)
+            bbox_sizes = max_projections.values - min_projections.values  # [N_partitions, 2]
+            bbox_area = torch.prod(bbox_sizes, dim=-1)  # [N_partitions]
+
+            # Calculate the visibility
+            visible_partition = n_in_bounding_boxes > 0
             bbox_area = bbox_area * visible_partition
-            bbox_min = bbox_min * visible_partition[:, None]
-            bbox_max = bbox_max * visible_partition[:, None]
 
             visibilities = bbox_area / n_pixels  # [N_partitions]
 
-        return visibilities, bbox_area, (bbox_min, bbox_max)
+            meta = (is_in_bounding_boxes, mean, covariance_matrix, eigenvalues, eigenvectors, projections, max_projections, min_projections)
+
+        return visibilities, meta
 
     @classmethod
     def save_partitions(
