@@ -419,12 +419,13 @@ class Taming3DGSUtils:
 
         for camera_idx in range(len(sample_cameras)):
             # TODO: mask
-            # TODO: uint8 image
             # TODO: move camera to GPU
             camera, image_info, _ = sample_cameras[camera_idx]
             _, gt_image, masked_pixels = image_info
 
             gt_image = gt_image.to(device=bg_color.device)
+            if gt_image.dtype == torch.uint8:
+                gt_image = gt_image.to(dtype=bg_color.dtype) / 255.
 
             # appearance model has warm up, so invoke `training_forward` is required
             rgb_rasterization_outputs = renderer.training_forward(
