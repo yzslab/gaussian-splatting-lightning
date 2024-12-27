@@ -19,6 +19,8 @@ class EstimatedDepthColmap(Colmap):
 
     depth_scale_upper_bound: float = 5.
 
+    allow_depth_interpolation: bool = False
+
     def instantiate(self, path: str, output_path: str, global_rank: int) -> "EstimatedDepthColmapDataParser":
         return EstimatedDepthColmapDataParser(path=path, output_path=output_path, global_rank=global_rank, params=self)
 
@@ -53,22 +55,35 @@ class EstimatedDepthColmapDataParser(ColmapDataParser):
                     if depth_scale["scale"] < self.params.depth_scale_lower_bound * median_scale or depth_scale["scale"] > self.params.depth_scale_upper_bound * median_scale:
                         print("[WARNING depth scale of {} out of bound]".format(image_name))
                         continue
-                
-                image_set.extra_data[idx] = (depth_file_path, depth_scale)
+
+                image_set.extra_data[idx] = (depth_file_path, depth_scale, (image_set.cameras[idx].height.item(), image_set.cameras[idx].width.item()))
                 loaded_depth_count += 1
-            image_set.extra_data_processor = self.load_depth
+            image_set.extra_data_processor = self.get_depth_loader(self.params.allow_depth_interpolation)
 
         assert loaded_depth_count > 0
         print("found {} depth maps".format(loaded_depth_count))
 
         return dataparser_outputs
-
+    
     @staticmethod
-    def load_depth(depth_info):
-        if depth_info is None:
-            return None
+    def get_depth_loader(allow_depth_interpolation: bool):
+        def load_depth(depth_info):
+            if depth_info is None:
+                return None
 
-        depth_file_path, depth_scale = depth_info
-        depth = np.load(depth_file_path) * depth_scale["scale"] + depth_scale["offset"]
+            depth_file_path, depth_scale, image_shape = depth_info
+            depth = np.load(depth_file_path) * depth_scale["scale"] + depth_scale["offset"]
+            depth = torch.tensor(depth, dtype=torch.float)
 
-        return torch.tensor(depth, dtype=torch.float)
+            if depth.shape != image_shape:
+                assert allow_depth_interpolation, "the shape '{}' of depth map '{}' and '{}' of image not match, add the '--data.parser.allow_depth_interpolation=true' if you are sure this is expected".format(depth.shape, depth_file_path, image_shape)
+                depth = torch.nn.functional.interpolate(
+                    depth[None, None, ...],
+                    image_shape,
+                    mode="bilinear",
+                    align_corners=True,
+                )[0, 0]
+
+            return depth
+        
+        return load_depth
