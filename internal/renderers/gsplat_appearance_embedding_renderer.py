@@ -71,6 +71,13 @@ class Model(nn.Module):
         )
 
     def forward(self, gaussian_features, appearance, view_dirs):
+        if gaussian_features.shape[0] == 0:
+            return torch.zeros(
+                (gaussian_features.shape[0], 3),
+                dtype=gaussian_features.dtype,
+                device=gaussian_features.device,
+            )
+
         appearance_embeddings = self.embedding(appearance.reshape((-1,))).repeat(gaussian_features.shape[0], 1)
         if self.config.normalize:
             gaussian_features = torch.nn.functional.normalize(gaussian_features, dim=-1)
