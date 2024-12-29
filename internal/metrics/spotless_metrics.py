@@ -160,7 +160,7 @@ class SpotLessMetricsModule(VanillaMetricsImpl):
 
         # update hist_err
         err = torch.histogram(
-            torch.mean(torch.abs(predict - gt_image), dim=-3).clone().detach().cpu(),  # mean alone H?
+            torch.mean(torch.abs(predict - gt_image), dim=-1).clone().detach().cpu(),
             bins=self.config.bin_size,
             range=(0.0, 1.0),
         )[0].to(predict.device)
