@@ -30,12 +30,13 @@ class PartitionTrainingConfig:
     extra_epoches: int
     name_suffix: str = ""
     ff_densify: bool = False
+    t3dgs_densify: bool = False
     scalable_params: Optional[Dict[str, int]] = None
     extra_epoch_scalable_params: Optional[List[str]] = None
     scale_param_mode: Literal["linear", "sqrt", "none"] = "linear"
     partition_id_strs: Optional[List[str]] = None
     training_args: Union[Tuple, List] = None
-    config_file: Optional[str] = None
+    config_file: Optional[List[str]] = None
     srun_args: List[str] = field(default_factory=lambda: [])
 
     def __post_init__(self):
@@ -56,7 +57,7 @@ class PartitionTrainingConfig:
                             help="Project name")
         parser.add_argument("--min-images", "-m", type=int, default=32,
                             help="Ignore partitions with image number less than this value")
-        parser.add_argument("--config", "-c", type=str, default=None)
+        parser.add_argument("--config", "-c", type=str, nargs="*", default=None)
         parser.add_argument("--parts", default=None, nargs="*", action="extend")
         parser.add_argument("--extra-epoches", "-e", type=int, default=extra_epoches)
         parser.add_argument("--scalable-config", type=str, default=None,
@@ -68,6 +69,7 @@ class PartitionTrainingConfig:
         parser.add_argument("--dry-run", action="store_true")
         parser.add_argument("--name-suffix", type=str, default="")
         parser.add_argument("--ff-densify", action="store_true", default=False)
+        parser.add_argument("--t3dgs-densify", action="store_true", default=False)
         configure_arg_parser_v2(parser)
 
     @staticmethod
@@ -120,6 +122,7 @@ class PartitionTrainingConfig:
             extra_epoches=args.extra_epoches,
             name_suffix=args.name_suffix,
             ff_densify=args.ff_densify,
+            t3dgs_densify=args.t3dgs_densify,
             scalable_params=scalable_params,
             extra_epoch_scalable_params=extra_epoch_scalable_params,
             scale_param_mode=args.scale_param_mode,
@@ -146,6 +149,16 @@ class PartitionTraining:
         self.path = config.partition_dir
         self.config = config
         self.scene = torch.load(os.path.join(self.path, name), map_location="cpu")
+
+        # conversion for previous version
+        if "size" not in self.scene["partition_coordinates"]:
+            self.scene["partition_coordinates"]["size"] = torch.full(
+                (self.scene["partition_coordinates"]["xy"].shape[0], 2),
+                self.scene["scene_config"]["partition_size"],
+                dtype=torch.float,
+                device=self.scene["partition_coordinates"]["xy"].device,
+            )
+
         self.scene["partition_coordinates"] = PartitionCoordinates(**self.scene["partition_coordinates"])
         self.dataset_path = os.path.dirname(self.path.rstrip("/"))
 
@@ -195,8 +208,11 @@ class PartitionTraining:
     def get_overridable_partition_specific_args(self, partition_idx: int) -> list[str]:
         args = []
         if self.config.ff_densify:
+            density_controller = "internal.density_controllers.foreground_first_density_controller.ForegroundFirstDensityController"
+            if self.config.t3dgs_densify:
+                density_controller = "internal.density_controllers.taming_3dgs_density_ff_controller.Taming3DGSDensityFFController"
             args += [
-                "--model.density=internal.density_controllers.foreground_first_density_controller.ForegroundFirstDensityController",
+                "--model.density={}".format(density_controller),
                 "--model.density.partition={}".format(self.path),
                 "--model.density.partition_idx={}".format(partition_idx),
             ]
@@ -207,6 +223,12 @@ class PartitionTraining:
 
     def get_location_based_assignment_numbers(self) -> torch.Tensor:
         return self.scene["location_based_assignments"].sum(-1)
+
+    def get_visibility_based_assignment_numbers(self) -> torch.Tensor:
+        return self.scene["visibility_based_assignments"].sum(-1)
+
+    def get_assigned_camera_numbers(self) -> torch.Tensor:
+        return self.get_location_based_assignment_numbers() + self.get_visibility_based_assignment_numbers()
 
     def get_partition_id_str(self, idx: int) -> str:
         return self.partition_coordinates.get_str_id(idx)
@@ -223,8 +245,8 @@ class PartitionTraining:
             n_processes: int,
             process_id: int,
     ) -> list[int]:
-        location_based_numbers = self.get_location_based_assignment_numbers()
-        all_trainable_partition_indices = torch.ge(location_based_numbers, min_images).nonzero().squeeze(-1).tolist()
+        assigned_camera_numbers = self.get_assigned_camera_numbers()
+        all_trainable_partition_indices = torch.ge(assigned_camera_numbers, min_images).nonzero().squeeze(-1).tolist()
         return get_task_list(n_processors=n_processes, current_processor_id=process_id, all_tasks=all_trainable_partition_indices)
 
     def get_partition_trained_step_filename(self, partition_idx: int):
@@ -297,7 +319,8 @@ class PartitionTraining:
 
         # config file
         if config_file is not None:
-            args.append("--config={}".format(config_file))
+            for i in config_file:
+                args.append("--config={}".format(i))
 
         args += self.get_overridable_partition_specific_args(partition_idx)
 
