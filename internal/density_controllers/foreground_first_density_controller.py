@@ -71,7 +71,7 @@ class ForegroundFirstDensityControllerModule(DensityControllerImpl):
             self.config.partition,
             "partitions.pt",
         ))
-        partition_size = partition_data["scene_config"]["partition_size"]
+        partition_size = torch.max(partition_data["partition_coordinates"]["size"][self.config.partition_idx])
         self.register_buffer(
             "partition_radius",
             torch.sqrt((torch.tensor(partition_size * 0.5, dtype=torch.float) ** 2) * 2),
@@ -180,6 +180,8 @@ class ForegroundFirstDensityControllerModule(DensityControllerImpl):
         self.denom[update_filter] += 1
 
     def _get_grad_decay_factors(self, gaussian_model):
+        # TODO: bounding box based distance
+        
         # decay grads based on distance (xy only)
         # transform 3D means
         transformed_means = gaussian_model.get_means() @ self.rotation_transform[:2, :3].T + self.rotation_transform[:2, 3]
