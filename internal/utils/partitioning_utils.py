@@ -1,5 +1,5 @@
 import os
-from typing import Tuple, Callable
+from typing import Tuple, Callable, Union
 import dataclasses
 from dataclasses import dataclass
 
@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from tqdm.auto import tqdm
 import torch
 import numpy as np
+from scipy.spatial import ConvexHull
 import matplotlib.patches as mpatches
 from matplotlib.pyplot import cm
 
@@ -25,7 +26,13 @@ class SceneConfig:
 
     visibility_threshold: float = None
 
-    bounding_box_based_visibility: bool = False
+    visibility_based_distance_enlarge_on_no_location_based: float = 4.
+    """ distance = distance *  visibility_based_distance_enlarge_on_no_location_based """
+
+    visibility_threshold_reduce_on_no_location_based: float = 4.
+    """ visibility_threshold = visibility_threshold / visibility_threshold_reduce_on_no_location_based """
+
+    convex_hull_based_visibility: bool = False
 
 
 @dataclass
@@ -62,6 +69,7 @@ class SceneBoundingBox:
 class PartitionCoordinates:
     id: torch.Tensor  # [N_partitions, 2]
     xy: torch.Tensor  # [N_partitions, 2]
+    size: torch.Tensor  # [N_partitions, 2]
 
     def __len__(self):
         return self.id.shape[0]
@@ -71,11 +79,11 @@ class PartitionCoordinates:
 
     def __iter__(self):
         for idx in range(len(self)):
-            yield self.id[idx], self.xy[idx]
+            yield self.id[idx], self.xy[idx], self.size[idx]
 
-    def get_bounding_boxes(self, size: float, enlarge: float = 0.) -> MinMaxBoundingBoxes:
-        xy_min = self.xy - (enlarge * size)  # [N_partitions, 2]
-        xy_max = self.xy + size + (enlarge * size)  # [N_partitions, 2]
+    def get_bounding_boxes(self, enlarge: Union[float, torch.Tensor] = 0.) -> MinMaxBoundingBoxes:
+        xy_min = self.xy - (enlarge * self.size)  # [N_partitions, 2]
+        xy_max = self.xy + self.size + (enlarge * self.size)  # [N_partitions, 2]
         return MinMaxBoundingBoxes(
             min=xy_min,
             max=xy_max,
@@ -87,11 +95,13 @@ class PartitionCoordinates:
 
 @dataclass
 class PartitionableScene:
-    scene_config: SceneConfig
+    scene_config: SceneConfig = None
 
-    camera_centers: torch.Tensor
+    camera_centers: torch.Tensor = None
 
     camera_center_based_bounding_box: MinMaxBoundingBox = None
+
+    point_based_bounding_box: MinMaxBoundingBox = None
 
     scene_bounding_box: SceneBoundingBox = None
 
@@ -103,13 +113,24 @@ class PartitionableScene:
 
     is_partitions_visible_to_cameras: torch.Tensor = None  # [N_partitions, N_cameras]
 
+    unmerged = None
+
     def get_bounding_box_by_camera_centers(self, enlarge: float = 0.):
         self.camera_center_based_bounding_box = Partitioning.get_bounding_box_by_camera_centers(self.camera_centers, enlarge=enlarge)
         return self.camera_center_based_bounding_box
 
+    def get_bounding_box_by_points(self, points: torch.Tensor, enlarge: float = 0., outlier_threshold: float = 0.001):
+        self.point_based_bounding_box = Partitioning.get_bounding_box_by_points(
+            points,
+            enlarge=enlarge,
+            outlier_threshold=outlier_threshold,
+        )
+
+        return self.point_based_bounding_box
+
     def get_scene_bounding_box(self):
         self.scene_bounding_box = Partitioning.align_bounding_box(
-            self.camera_center_based_bounding_box,
+            self.point_based_bounding_box,
             origin=self.scene_config.origin,
             size=self.scene_config.partition_size,
         )
@@ -127,30 +148,27 @@ class PartitionableScene:
         self.is_camera_in_partition = Partitioning.camera_center_based_partition_assignment(
             partition_coordinates=self.partition_coordinates,
             camera_centers=self.camera_centers,
-            size=self.scene_config.partition_size,
             enlarge=self.scene_config.location_based_enlarge,
         )
         return self.is_camera_in_partition
-    
+
     def calculate_camera_visibilities(self, *args, **kwargs):
-        if self.scene_config.bounding_box_based_visibility:
-            return self.calculate_point_bounding_box_based_camera_visibilities(*args, **kwargs)
+        if self.scene_config.convex_hull_based_visibility:
+            return self.calculate_convex_hull_based_camera_visibilities(*args, **kwargs)
         return self.calculate_point_based_camera_visibilities(*args, **kwargs)
 
     def calculate_point_based_camera_visibilities(self, point_getter: Callable, device):
         self.camera_visibilities = Partitioning.cameras_point_based_visibilities_calculation(
             partition_coordinates=self.partition_coordinates,
-            size=self.scene_config.partition_size,
             n_cameras=self.camera_centers.shape[0],
             point_getter=point_getter,
             device=device,
         )
         return self.camera_visibilities
 
-    def calculate_point_bounding_box_based_camera_visibilities(self, point_getter: Callable, device):
-        self.camera_visibilities = Partitioning.cameras_point_bounding_box_based_visibilities_calculation(
+    def calculate_convex_hull_based_camera_visibilities(self, point_getter: Callable, device):
+        self.camera_visibilities = Partitioning.cameras_convex_hull_based_visibilities_calculation(
             partition_coordinates=self.partition_coordinates,
-            size=self.scene_config.partition_size,
             n_cameras=self.camera_centers.shape[0],
             point_getter=point_getter,
             device=device,
@@ -161,19 +179,235 @@ class PartitionableScene:
         self.is_partitions_visible_to_cameras = Partitioning.visibility_based_partition_assignment(
             partition_coordinates=self.partition_coordinates,
             camera_centers=self.camera_centers,
-            size=self.scene_config.partition_size,
             max_distance=self.scene_config.visibility_based_distance,
             assigned_mask=self.is_camera_in_partition,
             visibilities=self.camera_visibilities,
             visibility_threshold=self.scene_config.visibility_threshold,
+            no_camera_enlarge_distance=self.scene_config.visibility_based_distance_enlarge_on_no_location_based,
+            no_camera_reduce_threshold=self.scene_config.visibility_threshold_reduce_on_no_location_based,
         )
         return self.is_partitions_visible_to_cameras
+
+    def merge_no_location_based_partitions(self, min_location_based: int = 32):
+        self.unmerge()
+
+        # restore
+        self.partition_coordinates, self.is_camera_in_partition, self.is_partitions_visible_to_cameras = self.unmerged
+
+        shape = self.scene_bounding_box.n_partitions[1], self.scene_bounding_box.n_partitions[0]
+        n_location_based_assignments = self.is_camera_in_partition.sum(dim=-1).reshape(shape)  # [H, W]
+        has_merged = torch.zeros_like(n_location_based_assignments, dtype=torch.bool)
+
+        partition_ids = []
+        partition_xys = []
+        partition_sizes = []
+        is_camera_in_partition = []
+        is_partitions_visible_to_cameras = []
+
+        def get_partition_idx(rowIdx, colIdx):
+            return shape[1] * rowIdx + colIdx
+
+        for rowIdx in range(shape[0]):
+            for colIdx in range(shape[1]):
+                partition_idx = get_partition_idx(rowIdx, colIdx)
+
+                # skip merged
+                if has_merged[rowIdx, colIdx]:
+                    continue
+
+                def unmergeable():
+                    partition_ids.append(self.partition_coordinates.id[partition_idx])
+                    partition_xys.append(self.partition_coordinates.xy[partition_idx])
+                    partition_sizes.append(self.partition_coordinates.size[partition_idx])
+                    is_camera_in_partition.append(self.is_camera_in_partition[partition_idx])
+                    is_partitions_visible_to_cameras.append(self.is_partitions_visible_to_cameras[partition_idx])
+
+                # find unmerged neighbors
+                # left_mergeable = False
+                # left_n_location_based_cameras = 0
+                right_mergeable = False
+                right_n_location_based_cameras = 0
+                up_mergeable = False
+                up_n_location_based_cameras = 0
+                up_right_n_location_based_cameras = 0
+                up_right_mergeable = False
+                # down_mergeable = False
+                # down_n_location_based_cameras = 0
+                # # left
+                # if colIdx - 1 >= 0:
+                #     left_mergeable = not has_merged[rowIdx, colIdx - 1]
+                #     left_n_location_based_cameras = n_location_based_assignments[rowIdx, colIdx - 1]
+                # right
+                if colIdx + 1 < shape[1]:
+                    right_mergeable = not has_merged[rowIdx, colIdx + 1]
+                    right_n_location_based_cameras = n_location_based_assignments[rowIdx, colIdx + 1]
+                # up
+                if rowIdx + 1 < shape[0]:
+                    up_mergeable = not has_merged[rowIdx + 1, colIdx]
+                    up_n_location_based_cameras = n_location_based_assignments[rowIdx + 1, colIdx]
+                # up right
+                if rowIdx + 1 < shape[0] and colIdx + 1 < shape[1]:
+                    up_right_mergeable = not has_merged[rowIdx + 1, colIdx + 1]
+                    up_right_n_location_based_cameras = n_location_based_assignments[rowIdx + 1, colIdx + 1]
+                # # down
+                # if rowIdx - 1 >= 0:
+                #     down_mergeable = not has_merged[rowIdx - 1, colIdx]
+                #     down_n_location_based_cameras = n_location_based_assignments[rowIdx - 1, colIdx]
+
+                n_partitions_have_location_based = int(right_n_location_based_cameras >= min_location_based) + int(up_n_location_based_cameras >= min_location_based) + int(up_right_n_location_based_cameras >= min_location_based)
+                n_mergeable = int(right_mergeable) + int(up_mergeable) + int(up_right_mergeable)
+
+                def merge_three_neighbors():
+                    right_idx = get_partition_idx(rowIdx, colIdx + 1)
+                    up_idx = get_partition_idx(rowIdx + 1, colIdx)
+                    up_right_idx = get_partition_idx(rowIdx + 1, colIdx + 1)
+
+                    # make sure all have same size
+                    all_same_size = True
+                    for i in [right_idx, up_idx, up_right_idx]:
+                        if not torch.allclose(self.partition_coordinates.size[partition_idx], self.partition_coordinates.size[i]):
+                            all_same_size = False
+                    if not all_same_size:
+                        unmergeable()
+                        return False
+
+                    merged_id = self.partition_coordinates.id[partition_idx]
+                    merged_xy = self.partition_coordinates.xy[partition_idx]
+                    merged_size = self.partition_coordinates.size[partition_idx] * 2.
+                    merged_location_based_assignments = self.is_camera_in_partition[partition_idx]
+                    merged_visibility_based_assignments = self.is_partitions_visible_to_cameras[partition_idx]
+
+                    for i in [right_idx, up_idx, up_right_idx]:
+                        merged_location_based_assignments = merged_location_based_assignments | self.is_camera_in_partition[i]
+                        merged_visibility_based_assignments = merged_visibility_based_assignments | self.is_partitions_visible_to_cameras[i]
+
+                    merged_visibility_based_assignments = merged_visibility_based_assignments & ~merged_location_based_assignments
+
+                    partition_ids.append(merged_id)
+                    partition_xys.append(merged_xy)
+                    partition_sizes.append(merged_size)
+                    is_camera_in_partition.append(merged_location_based_assignments)
+                    is_partitions_visible_to_cameras.append(merged_visibility_based_assignments)
+
+                    # mark as merged
+                    has_merged[rowIdx, colIdx] = True
+                    has_merged[rowIdx, colIdx + 1] = True
+                    has_merged[rowIdx + 1, colIdx] = True
+                    has_merged[rowIdx + 1, colIdx + 1] = True
+
+                    return True
+
+                def merge_single(merge_with):
+                    merge_with_partition_idx = get_partition_idx(*merge_with)
+                    if torch.any(self.partition_coordinates.size[partition_idx] != self.partition_coordinates.size[merge_with_partition_idx]):
+                        unmergeable()
+                        return False
+
+                    merged_id = torch.minimum(self.partition_coordinates.id[partition_idx], self.partition_coordinates.id[merge_with_partition_idx])
+                    merged_xy = torch.minimum(self.partition_coordinates.xy[partition_idx], self.partition_coordinates.xy[merge_with_partition_idx])
+                    merged_size = self.partition_coordinates.size[partition_idx] * (1. + ((self.partition_coordinates.id[partition_idx] - self.partition_coordinates.id[merge_with_partition_idx]) != 0))
+
+                    merged_location_based_assignments = self.is_camera_in_partition[partition_idx] | self.is_camera_in_partition[merge_with_partition_idx]
+                    merged_visibility_based_assignments = self.is_partitions_visible_to_cameras[partition_idx] | self.is_partitions_visible_to_cameras[merge_with_partition_idx]
+
+                    merged_visibility_based_assignments = merged_visibility_based_assignments & ~merged_location_based_assignments
+
+                    partition_ids.append(merged_id)
+                    partition_xys.append(merged_xy)
+                    partition_sizes.append(merged_size)
+                    is_camera_in_partition.append(merged_location_based_assignments)
+                    is_partitions_visible_to_cameras.append(merged_visibility_based_assignments)
+
+                    has_merged[merge_with[0], merge_with[1]] = True
+
+                    return True
+
+                # current location has location based, simply add to merged list
+                if n_location_based_assignments[rowIdx, colIdx] >= min_location_based:
+                    if n_partitions_have_location_based == 0 and n_mergeable == 3:
+                        merge_three_neighbors()
+                    else:
+                        if right_mergeable and right_n_location_based_cameras < min_location_based:
+                            merge_single((rowIdx, colIdx + 1))
+                        elif up_mergeable and up_n_location_based_cameras < min_location_based:
+                            merge_single((rowIdx + 1, colIdx))
+                        else:
+                            unmergeable()
+                    continue
+
+                """
+                When is a mergeable partition: unmerged && exists
+
+                Cases:
+                    if all of the three neighbors are mergeable
+                        if n_has_location_based_partitions <= 1, then merge them
+                        else
+                            if both on the right, then merge with up
+                            else if both on up, then merge with left
+                            else merge into the least number of cameras one
+                    if right is unmergeable, then only merge into the up is possible
+                        if up is mergeable, merge them
+                        else unmergeable()
+                    if up is unmergeable, then only merge into the right is possible
+                        if right is mergeable, merge them
+                        else unmergeable()
+                """
+
+                # Merge 3 neighbors
+                if right_mergeable and up_mergeable and up_right_mergeable and n_partitions_have_location_based <= 1:
+                    merge_three_neighbors()
+                    continue
+                elif right_mergeable or up_mergeable:
+                    merge_with = None
+                    if n_partitions_have_location_based - int(up_right_n_location_based_cameras >= min_location_based) > 0:
+                        # neighbor has location based
+                        if up_n_location_based_cameras > right_n_location_based_cameras:
+                            merge_with = (rowIdx + 1, colIdx)
+                        else:
+                            merge_with = (rowIdx, colIdx + 1)
+                    else:
+                        # neighbor does not have location based
+                        if up_mergeable:
+                            merge_with = (rowIdx + 1, colIdx)
+                        elif right_mergeable:
+                            merge_with = (rowIdx, colIdx + 1)
+
+                    if merge_with is None:
+                        unmergeable()
+                        continue
+
+                    merge_single(merge_with)
+
+                else:
+                    unmergeable()
+
+        self.partition_coordinates = PartitionCoordinates(
+            torch.stack(partition_ids),
+            torch.stack(partition_xys),
+            torch.stack(partition_sizes)
+        )
+        self.is_camera_in_partition = torch.stack(is_camera_in_partition)
+        self.is_partitions_visible_to_cameras = torch.stack(is_partitions_visible_to_cameras)
+
+        return self.partition_coordinates, self.is_camera_in_partition, self.is_partitions_visible_to_cameras
+    
+    def manual_merge(self):
+        # TODO
+        raise NotImplemented()
+
+    def unmerge(self):
+        if self.unmerged is None:
+            self.unmerged = (
+                self.partition_coordinates,
+                self.is_camera_in_partition,
+                self.is_partitions_visible_to_cameras,
+            )
 
     def build_output_dirname(self):
         return "partitions-size_{}-enlarge_{}-{}_visibility_{}_{}".format(
             self.scene_config.partition_size,
             self.scene_config.location_based_enlarge,
-            "bbox" if self.scene_config.bounding_box_based_visibility else "point",
+            "convex_hull" if self.scene_config.convex_hull_based_visibility else "point",
             self.scene_config.visibility_based_distance,
             round(self.scene_config.visibility_threshold, 2),
         )
@@ -187,6 +421,7 @@ class PartitionableScene:
             visibilities=self.camera_visibilities,
             location_based_assignments=self.is_camera_in_partition,
             visibility_based_assignments=self.is_partitions_visible_to_cameras,
+            unmerged=self.unmerged,
             extra_data=extra_data,
         )
 
@@ -223,19 +458,19 @@ class PartitionableScene:
 
         color_iter = iter(colors)
         idx = 0
-        for partition_id, partition_xy in self.partition_coordinates:
+        for partition_id, partition_xy, partition_size in self.partition_coordinates:
             ax.add_artist(mpatches.Rectangle(
                 (partition_xy[0], partition_xy[1]),
-                self.scene_config.partition_size,
-                self.scene_config.partition_size,
+                partition_size[0],
+                partition_size[1],
                 fill=False,
                 color=next(color_iter),
             ))
             ax.annotate(
                 "#{}\n({}, {})".format(idx, partition_id[0], partition_id[1]),
                 xy=(
-                    partition_xy[0] + annotate_position_x * self.scene_config.partition_size,
-                    partition_xy[1] + annotate_position_y * self.scene_config.partition_size,
+                    partition_xy[0] + annotate_position_x * partition_size[0].item(),
+                    partition_xy[1] + annotate_position_y * partition_size[1].item(),
                 ),
                 fontsize=annotate_font_size,
             )
@@ -243,13 +478,11 @@ class PartitionableScene:
 
     def plot_partition_assigned_cameras(self, ax, partition_idx: int, point_xyzs: torch.Tensor = None, point_rgbs: torch.Tensor = None, point_size: float = 0.1, point_sparsify: int = 8):
         location_base_assignment_bounding_boxes = self.partition_coordinates.get_bounding_boxes(
-            size=self.scene_config.partition_size,
             enlarge=self.scene_config.location_based_enlarge,
         )
         location_base_assignment_bounding_box_sizes = location_base_assignment_bounding_boxes.max - location_base_assignment_bounding_boxes.min
 
         visibility_base_assignment_bounding_boxes = self.partition_coordinates.get_bounding_boxes(
-            size=self.scene_config.partition_size,
             enlarge=self.scene_config.visibility_based_distance,
         )
         visibility_base_assignment_bounding_box_size = visibility_base_assignment_bounding_boxes.max - visibility_base_assignment_bounding_boxes.min
@@ -265,8 +498,8 @@ class PartitionableScene:
         # plot original partition bounding box
         ax.add_artist(mpatches.Rectangle(
             self.partition_coordinates.xy[partition_idx],
-            self.scene_config.partition_size,
-            self.scene_config.partition_size,
+            self.partition_coordinates.size[partition_idx][0],
+            self.partition_coordinates.size[partition_idx][1],
             fill=False,
             color="green",
         ))
@@ -336,6 +569,22 @@ class Partitioning:
         )
 
     @staticmethod
+    def get_bounding_box_by_points(points: torch.Tensor, enlarge: float = 0., outlier_threshold: float = 0.001) -> MinMaxBoundingBox:
+        xyz_min = torch.quantile(points, outlier_threshold, dim=0)
+        xyz_max = torch.quantile(points, 1. - outlier_threshold, dim=0)
+
+        if enlarge > 0.:
+            size = xyz_max - xyz_min
+            enlarge_size = size * enlarge
+            xyz_min -= enlarge_size
+            xyz_max += enlarge_size
+
+        return MinMaxBoundingBox(
+            min=xyz_min[..., :2],
+            max=xyz_max[..., :2],
+        )
+
+    @staticmethod
     def align_xyz(xyz, origin: torch.Tensor, size: float):
         xyz_radius_factor = (xyz - origin) / size
         n_partitions = torch.ceil(torch.abs(xyz_radius_factor)).to(torch.long)
@@ -379,6 +628,7 @@ class Partitioning:
         return PartitionCoordinates(
             id=partition_id.reshape(torch.prod(partition_count), 2),
             xy=partition_xy.reshape(torch.prod(partition_count), 2),
+            size=torch.tensor([[size, size]], dtype=torch.float).repeat(torch.prod(partition_count), 1)
         )
 
     @staticmethod
@@ -404,13 +654,14 @@ class Partitioning:
             cls,
             partition_coordinates: PartitionCoordinates,
             camera_centers: torch.Tensor,  # [N_images, 2]
-            size: float,
-            enlarge: float = 0.1,
+            enlarge: Union[float, torch.Tensor] = 0.1,
     ) -> torch.Tensor:
-        assert enlarge >= 0.
+        if isinstance(enlarge, torch.Tensor):
+            assert torch.all(enlarge >= 0.)
+        else:
+            assert enlarge >= 0.
 
         bounding_boxes = partition_coordinates.get_bounding_boxes(
-            size=size,
             enlarge=enlarge,
         )
         return cls.is_in_bounding_boxes(
@@ -422,12 +673,11 @@ class Partitioning:
     def cameras_point_based_visibilities_calculation(
             cls,
             partition_coordinates: PartitionCoordinates,
-            size: float,
             n_cameras,
             point_getter: Callable[[int], torch.Tensor],
             device,
     ):
-        partition_bounding_boxes = partition_coordinates.get_bounding_boxes(size, enlarge=0.).to(device=device)
+        partition_bounding_boxes = partition_coordinates.get_bounding_boxes(enlarge=0.).to(device=device)
         all_visibilities = torch.ones((n_cameras, len(partition_coordinates)), device="cpu") * -255.  # [N_cameras, N_partitions]
 
         def calculate_visibilities(camera_idx: int):
@@ -451,24 +701,23 @@ class Partitioning:
         return all_visibilities.T  # [N_partitions, N_cameras]
 
     @classmethod
-    def cameras_point_bounding_box_based_visibilities_calculation(
+    def cameras_convex_hull_based_visibilities_calculation(
             cls,
             partition_coordinates: PartitionCoordinates,
-            size: float,
             n_cameras,
             point_getter: Callable[[int], Tuple[torch.Tensor, torch.Tensor, int]],
             device,
     ):
-        partition_bounding_boxes = partition_coordinates.get_bounding_boxes(size, enlarge=0.).to(device=device)
+        partition_bounding_boxes = partition_coordinates.get_bounding_boxes(enlarge=0.).to(device=device)
         all_visibilities = torch.ones((n_cameras, len(partition_coordinates)), device="cpu") * -255.  # [N_cameras, N_partitions]
 
         def calculate_visibilities(camera_idx: int):
-            points_2d, points_3d, n_pixels = point_getter(camera_idx)
-            visibilities, _, _ = Partitioning.calculate_point_bounding_box_based_visibilities(
+            points_2d, points_3d, projected_points = point_getter(camera_idx)
+            visibilities, _, _ = Partitioning.calculate_convex_hull_based_visibilities(
                 partition_bounding_boxes=partition_bounding_boxes,
                 points_2d=points_2d,
                 points_3d=points_3d[..., :2],
-                n_pixels=n_pixels,
+                projected_points=projected_points,
             )  # [N_partitions]
             all_visibilities[camera_idx].copy_(visibilities.to(device=all_visibilities.device))
 
@@ -489,18 +738,39 @@ class Partitioning:
             cls,
             partition_coordinates: PartitionCoordinates,
             camera_centers: torch.Tensor,
-            size: float,
             max_distance: float,
             assigned_mask: torch.Tensor,  # the Tensor produced by `camera_center_based_partition_assignment` above
             visibilities: torch.Tensor,  # [N_partitions, N_cameras]
             visibility_threshold: float,
+            no_camera_enlarge_distance: float = 2.,
+            no_camera_reduce_threshold: float = 4.,
     ):
+        # increase the distance, and lower the threshold, if a partition does not have location based camera assignments
+        assert no_camera_enlarge_distance >= 1.
+        assert no_camera_reduce_threshold >= 1.
+
+        have_assigned_cameras = torch.sum(assigned_mask, dim=-1, keepdim=True) > 0
+        no_assigned_cameras = ~have_assigned_cameras
+        have_assigned_cameras = have_assigned_cameras.to(dtype=visibilities.dtype)
+        no_assigned_cameras = no_assigned_cameras.to(dtype=visibilities.dtype)
+
+        max_distance_adjustments = have_assigned_cameras + no_camera_enlarge_distance * no_assigned_cameras
+        visibility_adjustments = have_assigned_cameras + ((1. / no_camera_reduce_threshold) * no_assigned_cameras)
+
+        max_distances = torch.tensor([[max_distance]], dtype=camera_centers.dtype) * max_distance_adjustments
         is_in_range = cls.camera_center_based_partition_assignment(
             partition_coordinates,
             camera_centers,
-            size,
-            max_distance,
+            max_distances,
         )  # [N_partitions, N_cameras]
+
+        visibility_threshold = torch.tensor(
+            [[visibility_threshold]],
+            dtype=visibilities.dtype,
+            device=visibilities.device,
+        ).repeat(visibilities.shape[0], 1)  # [N_partitions, 1]
+        visibility_threshold *= visibility_adjustments
+
         # exclude assigned
         is_not_assigned = torch.logical_and(is_in_range, torch.logical_not(assigned_mask))
 
@@ -528,47 +798,48 @@ class Partitioning:
         return visibilities, n_points_in_partitions
 
     @classmethod
-    def calculate_point_bounding_box_based_visibilities(
+    def calculate_convex_hull_based_visibilities(
             cls,
             partition_bounding_boxes: MinMaxBoundingBoxes,
             points_2d: torch.Tensor,  # [N_points, 2]
             points_3d: torch.Tensor,  # [N_points, 2 or 3]
-            n_pixels: int,
+            projected_points: torch.Tensor,  # [N_points, 2]
     ) -> Tuple[torch.Tensor, torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
-        """
-        Get a bounding based on the feature points inside the partition, 
-        and then calculate its ratio to the image.
-        """
+        assert projected_points.shape[-1] == 2
 
-        if points_3d.shape[0] == 0:
-            bbox_area = torch.zeros((partition_bounding_boxes.min.shape[0],), dtype=torch.long)
-            visibilities = torch.zeros((partition_bounding_boxes.min.shape[0],), dtype=torch.float)
-            bbox_min = torch.zeros((partition_bounding_boxes.min.shape[0], 2), dtype=torch.long)
-            bbox_max = bbox_min
-        else:
+        visibilities = torch.zeros((partition_bounding_boxes.min.shape[0],), dtype=torch.float)
+        scene_convex_hull = None
+        partition_convex_hull_list = []
+        is_in_bounding_boxes = None
+        if points_3d.shape[0] > 2:
+            try:
+                scene_convex_hull = ConvexHull(projected_points)
+            except:
+                return visibilities, scene_convex_hull, partition_convex_hull_list
+            scene_area = scene_convex_hull.volume
+
             is_in_bounding_boxes = cls.is_in_bounding_boxes(
                 bounding_boxes=partition_bounding_boxes,
                 coordinates=points_3d,
             )  # [N_partitions, N_points]
 
-            # get bounding boxes
-            not_in_bounding_boxes = ~is_in_bounding_boxes[:, :, None]  # [N_partitions, N_points, 1]
-            not_in_partition_offset = not_in_bounding_boxes * n_pixels  # avoid selecting points not in the partition
-            bbox_min = torch.min(points_2d[None, :, :] + not_in_partition_offset, dim=1).values  # [N_partitions, 2]
-            bbox_max = torch.max(points_2d[None, :, :] - not_in_partition_offset, dim=1).values  # [N_partitions, 2]
+            # TODO: batchify
+            for partition_idx in range(is_in_bounding_boxes.shape[0]):
+                if is_in_bounding_boxes[partition_idx].sum() < 3:
+                    partition_convex_hull_list.append(None)
+                    continue
+                points_2d_in_partition = points_2d[is_in_bounding_boxes[partition_idx]]
+                try:
+                    partition_convex_hull = ConvexHull(points_2d_in_partition)
+                except Exception as e:
+                    partition_convex_hull_list.append(None)
+                    continue
+                partition_convex_hull_list.append(partition_convex_hull)
+                partition_area = partition_convex_hull.volume
 
-            # calculate bounding box sizes
-            bbox_size = bbox_max - bbox_min  # [N_partitions, 2]
-            bbox_area = torch.prod(bbox_size, dim=-1)  # [N_partitions]
+                visibilities[partition_idx] = partition_area / scene_area
 
-            visible_partition = is_in_bounding_boxes.sum(dim=-1) > 0
-            bbox_area = bbox_area * visible_partition
-            bbox_min = bbox_min * visible_partition[:, None]
-            bbox_max = bbox_max * visible_partition[:, None]
-
-            visibilities = bbox_area / n_pixels  # [N_partitions]
-
-        return visibilities, bbox_area, (bbox_min, bbox_max)
+        return visibilities, scene_convex_hull, (partition_convex_hull_list, is_in_bounding_boxes)
 
     @classmethod
     def save_partitions(
@@ -580,6 +851,7 @@ class Partitioning:
             visibilities: torch.Tensor,  # [N_partitions, N_cameras]
             location_based_assignments: torch.Tensor,  # [N_partitions, N_cameras]
             visibility_based_assignments: torch.Tensor,  # [N_partitions, N_cameras]
+            unmerged: torch.Tensor,
             extra_data=None,
     ):
         os.makedirs(dir, exist_ok=True)
@@ -592,6 +864,7 @@ class Partitioning:
                 "visibilities": visibilities,
                 "location_based_assignments": location_based_assignments,
                 "visibility_based_assignments": visibility_based_assignments,
+                "unmerged": unmerged,
                 "extra_data": extra_data,
             },
             save_to,
