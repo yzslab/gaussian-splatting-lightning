@@ -26,6 +26,8 @@ class VanillaDensityController(DensityController):
     cull_opacity_threshold: float = 0.005
     """threshold of opacity for culling gaussians."""
 
+    cull_by_max_opacity: bool = False
+
     camera_extent_factor: float = 1.
 
     scene_extent_override: float = -1.
@@ -51,6 +53,8 @@ class VanillaDensityControllerImpl(DensityControllerImpl):
 
             self._init_state(pl_module.gaussian_model.n_gaussians, pl_module.device)
 
+        self.opacity_reset_at = -32768
+
     def _init_state(self, n_gaussians: int, device):
         max_radii2D = torch.zeros((n_gaussians), device=device)
         xyz_gradient_accum = torch.zeros((n_gaussians, 1), device=device)
@@ -63,6 +67,9 @@ class VanillaDensityControllerImpl(DensityControllerImpl):
     def before_backward(self, outputs: dict, batch, gaussian_model: VanillaGaussianModel, optimizers: List, global_step: int, pl_module: LightningModule) -> None:
         if global_step >= self.config.densify_until_iter:
             return
+        
+        if self.config.cull_by_max_opacity:
+            gaussian_model.update_opacity_max(outputs["opacities"])
 
         outputs["viewspace_points"].retain_grad()
 
@@ -84,9 +91,10 @@ class VanillaDensityControllerImpl(DensityControllerImpl):
 
             if global_step % self.config.opacity_reset_interval == 0 or \
                     (
-                            torch.all(pl_module.background_color == 1.) and global_step == self.config.densify_from_iter
+                        torch.all(pl_module.background_color == 1.) and global_step == self.config.densify_from_iter
                     ):
                 self._reset_opacities(gaussian_model, optimizers)
+                self.opacity_reset_at = global_step
 
     def update_states(self, outputs):
         viewspace_point_tensor, visibility_filter, radii = outputs["viewspace_points"], outputs["visibility_filter"], outputs["radii"]
@@ -125,7 +133,15 @@ class VanillaDensityControllerImpl(DensityControllerImpl):
         self._densify_and_split(grads, gaussian_model, optimizers)
 
         # prune
-        prune_mask = (gaussian_model.get_opacities() < min_opacity).squeeze()
+        if self.config.cull_by_max_opacity:
+            # TODO: re-implement as a new density controller
+            prune_mask = torch.logical_and(
+                gaussian_model.get_opacity_max() >= 0.,
+                gaussian_model.get_opacity_max() < min_opacity,
+            )
+            gaussian_model.reset_opacity_max()
+        else:
+            prune_mask = (gaussian_model.get_opacities() < min_opacity).squeeze()
         if max_screen_size:
             big_points_vs = self.max_radii2D > max_screen_size
             big_points_ws = gaussian_model.get_scales().max(dim=1).values > 0.1 * prune_extent
