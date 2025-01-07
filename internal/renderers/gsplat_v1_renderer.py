@@ -184,6 +184,7 @@ class GSplatV1RendererModule(Renderer):
 
         # rgb
         rgb = None
+        acc_vis = None
         if self.is_type_required(render_type_bits, self._RGB_REQUIRED):
             rgbs = self.get_rgbs(
                 viewpoint_camera,
@@ -194,6 +195,8 @@ class GSplatV1RendererModule(Renderer):
                 **kwargs,
             )
             rgb = rasterize(rgbs, bg_color).permute(2, 0, 1)
+            # avoid overriding by hard depth
+            acc_vis = means2d.has_hit_any_pixels
 
         alpha = None
         acc_depth_im = None
@@ -282,6 +285,7 @@ class GSplatV1RendererModule(Renderer):
             "viewspace_points": means2d,
             "viewspace_points_grad_scale": 0.5 * torch.tensor([preprocessed_camera[-1]]).to(means2d).clamp_(max=self.config.max_viewspace_grad_scale),
             "visibility_filter": visibility_filter,
+            "acc_vis": acc_vis,
             "radii": radii_squeezed,
             "scales": scales,
             "opacities": opacities[0],
