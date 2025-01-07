@@ -162,6 +162,24 @@ class MipSplattingUtils:
         return torch.nn.Parameter(filter_3d[..., None], requires_grad=False)
 
     @staticmethod
+    def apply_3d_filter_on_scales(
+            filter_3d: torch.Tensor,
+            scales: torch.Tensor,
+            compute_opacity_compensation: bool = True
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        # apply 3D filter
+        scales_square = torch.square(scales)
+        scales_after_square = scales_square + torch.square(filter_3d)
+
+        opacity_compensation = None
+        if compute_opacity_compensation:
+            det1 = scales_square.prod(dim=1)
+            det2 = scales_after_square.prod(dim=1)
+            opacity_compensation = torch.sqrt(det1 / det2)
+
+        return torch.sqrt(scales_after_square), opacity_compensation
+
+    @staticmethod
     def apply_3d_filter(
             filter_3d: torch.Tensor,
             opacities: torch.Tensor,
