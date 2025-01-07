@@ -33,6 +33,9 @@ class GSplatV1Renderer(RendererConfig):
     tile_based_culling: bool = False
     """Tile-based culling, from StopThePop [Radl et al. 2024]"""
 
+    max_viewspace_grad_scale: float = 65535.
+    """ 1600 is recommended """
+
     def instantiate(self, *args, **kwargs) -> "GSplatV1RendererModule":
         return GSplatV1RendererModule(self)
 
@@ -277,7 +280,7 @@ class GSplatV1RendererModule(Renderer):
             "hard_inverse_depth": hard_inverse_depth_im,
             "inv_depth_alt": inv_depth_alt,
             "viewspace_points": means2d,
-            "viewspace_points_grad_scale": 0.5 * torch.tensor([preprocessed_camera[-1]]).to(means2d),
+            "viewspace_points_grad_scale": 0.5 * torch.tensor([preprocessed_camera[-1]]).to(means2d).clamp_(max=self.config.max_viewspace_grad_scale),
             "visibility_filter": visibility_filter,
             "radii": radii_squeezed,
             "scales": scales,
