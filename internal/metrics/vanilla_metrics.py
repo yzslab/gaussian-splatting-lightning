@@ -61,10 +61,12 @@ class VanillaMetricsImpl(MetricImpl):
 
         # calculate loss
         if masked_pixels is not None:
-            gt_image = gt_image.clone()
-            gt_image[masked_pixels] = image.detach()[masked_pixels]  # copy masked pixels from prediction to G.T.
-        rgb_diff_loss = self.rgb_diff_loss_fn(outputs["render"], gt_image)
-        ssim_metric = self.ssim(outputs["render"], gt_image)
+            masked_pixels = masked_pixels.to(torch.uint8)  # False represents masked pixels
+            # TODO: avoid repeatedly masking G.T. image
+            gt_image = gt_image * masked_pixels
+            image = image * masked_pixels
+        rgb_diff_loss = self.rgb_diff_loss_fn(image, gt_image)
+        ssim_metric = self.ssim(image, gt_image)
         loss = (1.0 - self.lambda_dssim) * rgb_diff_loss + self.lambda_dssim * (1. - ssim_metric)
 
         return {
