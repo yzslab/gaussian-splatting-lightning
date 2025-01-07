@@ -247,7 +247,7 @@ def main():
     viewer_args = ["python", "viewer.py", args.output_path]
     if orientation_transformation is not None:
         viewer_args += ["--up"]
-        viewer_args += ["{:.4f}".format(i) for i in (-1. * partition_training.scene["extra_data"]["up"]).tolist()]
+        viewer_args += ["{:.4f}".format(i) for i in (partition_training.scene["extra_data"]["up"]).tolist()]
     print("The command to start web viewer:"
           " {}".format(" ".join(viewer_args)))
 
