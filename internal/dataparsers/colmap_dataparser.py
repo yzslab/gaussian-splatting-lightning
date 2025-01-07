@@ -3,7 +3,7 @@ import math
 import json
 from dataclasses import dataclass
 from typing import Optional, Literal, Tuple
-
+from tqdm.auto import tqdm
 import torch
 import numpy as np
 
@@ -125,7 +125,42 @@ class ColmapDataParser(DataParser):
         return torch.eye(3, dtype=a.dtype, device=a.device) + skew_sym_mat + skew_sym_mat @ skew_sym_mat * ((1 - c) / (s ** 2 + 1e-8))
 
     @staticmethod
-    def read_points3D_binary(path_to_model_file, selected_image_ids: dict = None):
+    def read_points3D_binary(
+        path_to_model_file,
+        selected_image_ids: dict,
+        mask_path_list,
+        image_point_xys_list,
+        image_point3D_ids_list,
+    ):
+        excluded_point3D_ids = {}
+        for image_idx in tqdm(range(len(mask_path_list)), leave=False, desc="Filtering points"):
+            mask_file_path = mask_path_list[image_idx]
+            if mask_file_path is None:
+                continue
+
+            from PIL import Image
+            with Image.open(mask_file_path) as pil_image:
+                is_pixel_masked = np.array(pil_image) == 0
+
+            point_xys = image_point_xys_list[image_idx]
+            point_ids = image_point3D_ids_list[image_idx]
+
+            valid_mask = point_ids > 0
+            point_xys = point_xys[valid_mask].astype(np.int32)
+            point_ids = point_ids[valid_mask]
+
+            # TODO: validate mask.shape match to the camera
+
+            is_masked = is_pixel_masked[
+                np.clip(point_xys[:, 1], a_min=None, a_max=is_pixel_masked.shape[0] - 1),  # H
+                np.clip(point_xys[:, 0], a_min=None, a_max=is_pixel_masked.shape[1] - 1),  # W
+            ]
+            masked_point_ids = point_ids[is_masked]
+            for i in masked_point_ids:
+                excluded_point3D_ids[i.item()] = True
+
+        print("{} 3D points excluded by masks".format(len(excluded_point3D_ids)))
+
         """
         see: src/base/reconstruction.cc
             void Reconstruction::ReadPoints3DBinary(const std::string& path)
@@ -142,6 +177,7 @@ class ColmapDataParser(DataParser):
             for p_id in range(num_points):
                 binary_point_line_properties = colmap_utils.read_next_bytes(
                     fid, num_bytes=43, format_char_sequence="QdddBBBd")
+                point3D_id = binary_point_line_properties[0]
                 xyz = np.array(binary_point_line_properties[1:4])
                 rgb = np.array(binary_point_line_properties[4:7])
                 error = np.array(binary_point_line_properties[7])
@@ -161,7 +197,8 @@ class ColmapDataParser(DataParser):
                     if point_in_selected_image_count == 0:
                         continue
 
-                # TODO: filter points in masked area
+                if point3D_id in excluded_point3D_ids:
+                    continue
 
                 xyzs.append(xyz)
                 rgbs.append(rgb)
@@ -240,30 +277,6 @@ class ColmapDataParser(DataParser):
             image_appearance_id.append(image_name_to_appearance_id[images[i].name])
             image_normalized_appearance_id.append(image_name_to_normalized_appearance_id[images[i].name])
 
-        # convert points3D to ply
-        # ply_path = os.path.join(sparse_model_dir, "points3D.ply")
-        # while os.path.exists(ply_path) is False:
-        #     if self.global_rank == 0:
-        #         print("converting points3D.bin to ply format")
-        #         xyz, rgb, _ = ColmapDataParser.read_points3D_binary(os.path.join(sparse_model_dir, "points3D.bin"))
-        #         ColmapDataParser.convert_points_to_ply(ply_path + ".tmp", xyz=xyz, rgb=rgb)
-        #         os.rename(ply_path + ".tmp", ply_path)
-        #         break
-        #     else:
-        #         # waiting ply
-        #         print("#{} waiting for {}".format(os.getpid(), ply_path))
-        #         time.sleep(1)
-        if self.params.points_from == "sfm":
-            print("loading colmap 3D points")
-            xyz, rgb, _ = ColmapDataParser.read_points3D_binary(
-                os.path.join(sparse_model_dir, "points3D.bin"),
-                selected_image_ids=selected_image_ids,
-            )
-        else:
-            # random points generated later
-            xyz = np.ones((1, 3))
-            rgb = np.ones((1, 3))
-
         loaded_mask_count = 0
         # initialize lists
         R_list = []
@@ -282,6 +295,9 @@ class ColmapDataParser(DataParser):
         image_name_list = []
         image_path_list = []
         mask_path_list = []
+
+        image_point_xys_list = []
+        image_point3D_ids_list = []
 
         # parse colmap sparse model
         for idx, key in enumerate(images):
@@ -338,12 +354,29 @@ class ColmapDataParser(DataParser):
             image_path_list.append(os.path.join(image_dir, extrinsics.name))
             mask_path_list.append(mask_path)
 
+            image_point_xys_list.append(extrinsics.xys)
+            image_point3D_ids_list.append(extrinsics.point3D_ids)
+
         # loaded mask must not be zero if self.params.mask_dir provided
         if self.params.mask_dir is not None and loaded_mask_count == 0:
             raise RuntimeError("not a mask was loaded from {}, "
                                "please remove the mask_dir parameter if this is a expected result".format(
-                self.params.mask_dir
-            ))
+                                   self.params.mask_dir
+                               ))
+
+        if self.params.points_from == "sfm":
+            print("loading colmap 3D points")
+            xyz, rgb, _ = ColmapDataParser.read_points3D_binary(
+                os.path.join(sparse_model_dir, "points3D.bin"),
+                selected_image_ids=selected_image_ids,
+                mask_path_list=mask_path_list,
+                image_point_xys_list=image_point_xys_list,
+                image_point3D_ids_list=image_point3D_ids_list,
+            )
+        else:
+            # random points generated later
+            xyz = np.ones((1, 3))
+            rgb = np.ones((1, 3))
 
         # calculate norm
         # norm = getNerfppNorm(R_list, T_list)
