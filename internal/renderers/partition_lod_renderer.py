@@ -5,10 +5,11 @@ import os
 
 import numpy as np
 import torch
+from pytorch3d.ops import box3d_overlap
 from tqdm.auto import tqdm
 
 from . import RendererOutputInfo
-from .gsplat_v1_renderer import GSplatV1Renderer
+from .gsplat_v1_renderer import GSplatV1Renderer, GSplatV1
 from .renderer import RendererConfig, Renderer
 from ..cameras import Camera
 from ..models.gaussian import GaussianModel
@@ -56,9 +57,16 @@ class PartitionLoDRendererModule(Renderer):
 
         partition_size = partitions["scene_config"]["partition_size"]
         self.partition_size = partition_size
+        if "size" not in partitions["partition_coordinates"]:
+            partitions["partition_coordinates"]["size"] = torch.full(
+                (partitions["partition_coordinates"]["xy"].shape[0], 2),
+                partition_size,
+                dtype=torch.float,
+                device=partitions["partition_coordinates"]["xy"].device,
+            )
 
         self.partition_coordinates = PartitionCoordinates(**partitions["partition_coordinates"])
-        self.partition_bounding_boxes = self.partition_coordinates.get_bounding_boxes(partition_size).to(device=device)
+        self.partition_bounding_boxes = self.partition_coordinates.get_bounding_boxes().to(device=device)
 
         # load partitions' models
         from internal.utils.gaussian_model_loader import GaussianModelLoader
@@ -123,19 +131,21 @@ class PartitionLoDRendererModule(Renderer):
             partition_xy = partition_xy.to(device=device)
             left_down = partition_xy
             left_top = partition_xy + torch.tensor([0., partition_size], device=device)
-            right_down = partition_xy + torch.tensor([partition_size, 0.], device=device)
             right_top = partition_xy + partition_size
+            right_down = partition_xy + torch.tensor([partition_size, 0.], device=device)
+            # clockwise
             partition_full_2d_bounding_box.append(torch.stack([
                 left_down,
                 left_top,
-                right_down,
                 right_top,
+                right_down,
             ]))
         partition_full_2d_bounding_box = torch.stack(partition_full_2d_bounding_box)  # [N_partitions, 4, 2]
         partition_min_max_z = partition_min_max_z[:, None, :].repeat(1, 4, 1)
+        # from top to bottom
         self.partition_full_3d_bounding_box = torch.concat([
-            torch.concat([partition_full_2d_bounding_box, partition_min_max_z[..., 0:1]], dim=-1),
             torch.concat([partition_full_2d_bounding_box, partition_min_max_z[..., 1:2]], dim=-1),
+            torch.concat([partition_full_2d_bounding_box, partition_min_max_z[..., 0:1]], dim=-1),
         ], dim=1) @ self.orientation_transform.T  # [N_partitions, 8, 3], in world space
         # print(self.partition_full_3d_bounding_box)
 
@@ -196,35 +206,46 @@ class PartitionLoDRendererModule(Renderer):
         # TODO: optimize visibility based filter, it does not correctly know whether a partition partly in front of the camera is invisible
         is_partition_visible = torch.ones_like(self.is_partition_visible)
         if self.config.visibility_filter:
-            full_perspective_projection = viewpoint_camera.get_full_perspective_projection()
-            partition_corners_in_image_space_in_homogeneous = self.partition_full_3d_bounding_box @ full_perspective_projection[:3, :3] + full_perspective_projection[3, :3]
-            partition_corners_in_image_space = partition_corners_in_image_space_in_homogeneous[..., :2] / (torch.abs(partition_corners_in_image_space_in_homogeneous[..., 2:3]) + 1e-6)  # [N_partitions, 8, 2]
+            # build view frustum
+            width = viewpoint_camera.width.item()
+            height = viewpoint_camera.height.item()
+            # clockwise
+            four_corners = torch.tensor([
+                # near panel
+                [0., 0., 1.,],  # left top
+                [width, 0., 1.,],  # right top
+                [width, height, 1.,],  # right down
+                [0., height, 1.,],  # right down
+                # far panel
+                [0., 0., 1.,],  # left top
+                [width, 0., 1.,],  # right top
+                [width, height, 1.,],  # right down
+                [0., height, 1.,],  # right down
+            ], dtype=torch.float, device=bg_color.device)
+            K = GSplatV1.get_intrinsics_matrix(
+                fx=viewpoint_camera.fx,
+                fy=viewpoint_camera.fy,
+                cx=viewpoint_camera.cx,
+                cy=viewpoint_camera.cy,
+                device=bg_color.device,
+            )
+            view_frustum = torch.matmul(four_corners, torch.linalg.inv(K).T)
+            view_frustum[:4] *= 0.1  # near
+            view_frustum[4:] *= 1.2 * torch.max(partition_distances)  # far, the `1.2` can be other number that > 1.
 
-            min_pixel_coor = torch.tensor([0., 0.], dtype=torch.float, device=partition_corners_in_image_space.device)
-            max_pixel_coor = torch.tensor([viewpoint_camera.width, viewpoint_camera.height], dtype=torch.float, device=partition_corners_in_image_space.device)
+            # transform partition bounding box to camera space
+            world2camera = viewpoint_camera.world_to_camera  # already transposed
+            partition_bounding_box_in_camera_spaces = self.partition_full_3d_bounding_box @ world2camera[:3, :3] + world2camera[3, :3]  # [N_partitions, 8]
 
-            is_behind_camera = partition_corners_in_image_space_in_homogeneous[..., -1:] <= 0.  # [N_partitions, 8, 1]
-            is_partition_behind_camera = torch.all(is_behind_camera.squeeze(-1), dim=1)  # [N_partition]
+            # calculate intersections
+            iset_vol, iou_3d = box3d_overlap(
+                view_frustum.unsqueeze(0),
+                partition_bounding_box_in_camera_spaces,
+            )
 
-            # move them into the image plane
-            # print("partition_corners_in_image_space[0]={}".format(partition_corners_in_image_space[0].cpu().numpy()))
-            partition_corners_in_image_space = torch.maximum(partition_corners_in_image_space, min_pixel_coor)
-            partition_corners_in_image_space = torch.minimum(partition_corners_in_image_space, max_pixel_coor)
-            # print("partition_corners_in_image_space[0]={}".format(partition_corners_in_image_space[0].cpu().numpy()))
-
-            # prevent selecting valid min and max values from corners behind camera by applying the `behind_camera_corner_xy_offset`
-            # behind_camera_corner_xy_offset = is_behind_camera * max_pixel_coor.max()
-            behind_camera_corner_xy_offset = 0.
-            partition_corners_min = torch.min(partition_corners_in_image_space + behind_camera_corner_xy_offset, dim=1).values  # [N_partitions, 2]
-            partition_corners_max = torch.max(partition_corners_in_image_space - behind_camera_corner_xy_offset, dim=1).values  # [N_partitions, 2]
-            # the results of (partition_corners_max - partition_corners_min) of corners behind camera will <= 0
-            partition_projection_area = torch.prod((partition_corners_max - partition_corners_min).clamp(min=0.), dim=-1)  # [N_partitions]
-            # print("partition_projection_area[0]={}".format(partition_projection_area[0].cpu().numpy()))
-
-            is_partition_visible = torch.gt(partition_projection_area, torch.tensor(0., device=partition_projection_area.device))
-            is_partition_visible = torch.logical_and(is_partition_visible, torch.logical_not(is_partition_behind_camera))
+            is_partition_visible = iset_vol[0] > 1e-8
+            # the closest one always visible
             is_partition_visible[torch.argmin(partition_distances)] = True
-            # print("is_partition_visible[0]={}".format(is_partition_visible[0]))
 
         if not self.config.freeze and (not torch.all(torch.eq(self.partition_lods, partition_lods)) or not torch.all(torch.eq(self.is_partition_visible, is_partition_visible))):
             # update stored lods
@@ -273,6 +294,7 @@ class PartitionLoDRendererModule(Renderer):
         return self.gsplat_renderer.get_available_outputs()
 
     def setup_web_viewer_tabs(self, viewer, server, tabs):
+        self.gsplat_renderer.setup_web_viewer_tabs(viewer, server, tabs)
         with tabs.add_tab("LoD"):
             self.viewer_options = ViewerOptions(self, viewer, server)
 
@@ -361,7 +383,7 @@ class ViewerOptions:
 
             return updater
 
-        for idx, (id, xy) in enumerate(self.renderer.partition_coordinates):
+        for idx, (id, xy, size) in enumerate(self.renderer.partition_coordinates):
             self.label_updaters.append(get_label_updater(
                 name="part/{}".format(idx),
                 text="#{}({},{})".format(idx, *id.tolist()),
