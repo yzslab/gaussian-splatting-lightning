@@ -86,6 +86,7 @@ class EstimatedDepthColmapDataParser(ColmapDataParser):
             depth_file_path, depth_scale, image_shape = depth_info
             depth = np.load(depth_file_path) * depth_scale["scale"] + depth_scale["offset"]
             depth = torch.tensor(depth, dtype=torch.float)
+            depth = torch.clamp_min(depth, min=0.)
 
             if depth.shape != image_shape:
                 assert allow_depth_interpolation, "the shape '{}' of depth map '{}' and '{}' of image not match, add the '--data.parser.allow_depth_interpolation=true' if you are sure this is expected".format(depth.shape, depth_file_path, image_shape)
