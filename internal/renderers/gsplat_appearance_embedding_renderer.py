@@ -31,7 +31,7 @@ class ModelConfig:
     normalize: bool = False
 
     tcnn: bool = False  # TODO: gradient scaling
-    """Speed up a little, but may sometimes reduce the metrics due to half-precision"""
+    """Speed up a little, but may sometimes reduce the metrics due to half-precision, and even NaN"""
 
 
 @dataclass
@@ -172,7 +172,14 @@ class GSplatAppearanceEmbeddingRendererModule(GSplatV1RendererModule):
         if self.opacity_offsets is None:
             return torch.tensor(0., dtype=torch.float, device=pl_module.device)
         opacity_offset_reg_loss = torch.mean(self.opacity_offsets)
-        pl_module.log("train/opacity_offset_reg", opacity_offset_reg_loss)
+        pl_module.log(
+            "train/opacity_offset_reg",
+            opacity_offset_reg_loss,
+            prog_bar=False,
+            on_step=True,
+            on_epoch=False,
+            batch_size=pl_module.batch_size,
+        )
         return opacity_offset_reg_loss * 0.02
 
     def sh(self, pc, dirs, mask=None):
