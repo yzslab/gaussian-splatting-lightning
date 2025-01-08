@@ -26,6 +26,8 @@ class HasInverseDepthMetrics(VanillaMetrics):
 
     depth_median_normalization: bool = False
 
+    depth_mean_normalization: bool = False
+
     depth_output_key: str = "inverse_depth"
 
     def instantiate(self, *args, **kwargs) -> "HasInverseDepthMetricsModule":
@@ -82,6 +84,10 @@ class HasInverseDepthMetricsModule(VanillaMetricsImpl):
             # TODO: normalize G.T. at load time
             gt_inverse_depth = gt_inverse_depth / median
             predicted_inverse_depth = predicted_inverse_depth / median
+        elif self.config.depth_mean_normalization:
+            mean_depth = torch.mean(gt_inverse_depth)
+            gt_inverse_depth = gt_inverse_depth / mean_depth
+            predicted_inverse_depth = predicted_inverse_depth / mean_depth
 
         if isinstance(gt_inverse_depth, tuple):
             gt_inverse_depth, gt_inverse_depth_mask = gt_inverse_depth
