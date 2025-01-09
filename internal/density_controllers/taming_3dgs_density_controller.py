@@ -111,7 +111,7 @@ class Taming3DGSDensityControllerModule(VanillaDensityControllerImpl):
     def on_train_start(self, gaussian_model, pl_module):
         assert pl_module.trainer.train_dataloader.max_cache_num < 0
 
-        self._densify_iter_num.fill_((max(pl_module.global_step - self.config.densify_from_iter, 0) // self.config.densification_interval) + 1)
+        self._densify_iter_num.fill_(max(pl_module.global_step // self.config.densification_interval - self.config.densify_from_iter // self.config.densification_interval, 0) + 1)
         print("densify_iter_num={}, budget={}\n".format(self.densify_iter_num, self.counts_array[self.densify_iter_num]))
 
         from tqdm.auto import tqdm
@@ -341,7 +341,7 @@ class Taming3DGSUtils:
         elif mode == "final_count":
             budget = multiplier
 
-        num_steps = ((densify_until_iter - densify_from_iter) // densification_interval)
+        num_steps = (densify_until_iter + densification_interval - 1) // densification_interval - densify_from_iter // densification_interval
 
         increasable = max(budget - start_count, 0)
         slope_lower_bound = increasable / num_steps
@@ -352,9 +352,6 @@ class Taming3DGSUtils:
         c = start_count
 
         values = [int(1 * a * (x**2) + (b * x) + c) for x in range(num_steps)]
-
-        # fix the edge case
-        values.append(values[-1])
 
         return values
 
