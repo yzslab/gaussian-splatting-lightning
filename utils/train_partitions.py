@@ -14,7 +14,7 @@ from tqdm.auto import tqdm
 from concurrent.futures import ThreadPoolExecutor
 from internal.utils.partitioning_utils import PartitionCoordinates
 from distibuted_tasks import get_task_list
-from auto_hyper_parameter import auto_hyper_parameter, to_command_args, SCALABEL_PARAMS, EXTRA_EPOCH_SCALABLE_STEP_PARAMS
+from auto_hyper_parameter import auto_hyper_parameter, to_command_args, get_default_scalable_params
 from argparser_utils import split_stoppable_args, parser_stoppable_args
 from distibuted_tasks import configure_arg_parser_v2
 
@@ -65,6 +65,7 @@ class PartitionTrainingConfig:
         parser.add_argument("--scalable-params", type=str, default=[], nargs="*", action="extend")
         parser.add_argument("--extra-epoch-scalable-params", type=str, default=[], nargs="*", action="extend")
         parser.add_argument("--scale-param-mode", type=str, default="linear")
+        parser.add_argument("--max-steps", type=int, default=30_000)
         parser.add_argument("--no-default-scalable", action="store_true")
         parser.add_argument("--dry-run", action="store_true")
         parser.add_argument("--name-suffix", type=str, default="")
@@ -75,19 +76,23 @@ class PartitionTrainingConfig:
     @staticmethod
     def parse_scalable_params(args):
         # parse scalable params
-        scalable_params = SCALABEL_PARAMS
-        extra_epoch_scalable_params = EXTRA_EPOCH_SCALABLE_STEP_PARAMS
+        scalable_params, extra_epoch_scalable_params = get_default_scalable_params(max_steps=args.max_steps)
         if args.no_default_scalable:
             scalable_params = {}
             extra_epoch_scalable_params = []
+
+        mode = args.scale_param_mode
 
         if args.scalable_config is not None:
             with open(args.scalable_config, "r") as f:
                 scalable_config = yaml.safe_load(f)
 
             for i in scalable_config.keys():
-                if i not in ["scalable", "extra_epoch_scalable", "no_default"]:
+                if i not in ["max_steps", "scalable", "extra_epoch_scalable", "no_default", "mode"]:
                     raise ValueError("Found an unexpected key '{}' in '{}'".format(i, args.scalable_yaml))
+
+            # Use `max_steps` provided in config file
+            scalable_params, extra_epoch_scalable_params = get_default_scalable_params(scalable_config.get("max_steps", args.max_steps))
 
             if scalable_config.get("no_default", False):
                 scalable_params = {}
@@ -96,13 +101,15 @@ class PartitionTrainingConfig:
             scalable_params.update(scalable_config.get("scalable", {}))
             extra_epoch_scalable_params += scalable_config.get("extra_epoch_scalable", [])
 
+            mode = scalable_config.get("mode", mode)
+
         for i in args.scalable_params:
             name, value = i.split("=", 1)
             value = int(value)
             scalable_params[name] = value
         extra_epoch_scalable_params += args.extra_epoch_scalable_params
 
-        return scalable_params, extra_epoch_scalable_params
+        return scalable_params, extra_epoch_scalable_params, mode
 
     @classmethod
     def get_extra_init_kwargs(cls, args) -> Dict[str, Any]:
@@ -110,7 +117,7 @@ class PartitionTrainingConfig:
 
     @classmethod
     def instantiate_with_args(cls, args, training_args, srun_args):
-        scalable_params, extra_epoch_scalable_params = cls.parse_scalable_params(args)
+        scalable_params, extra_epoch_scalable_params, scale_param_mode = cls.parse_scalable_params(args)
 
         return cls(
             partition_dir=args.partition_dir,
@@ -125,7 +132,7 @@ class PartitionTrainingConfig:
             t3dgs_densify=args.t3dgs_densify,
             scalable_params=scalable_params,
             extra_epoch_scalable_params=extra_epoch_scalable_params,
-            scale_param_mode=args.scale_param_mode,
+            scale_param_mode=scale_param_mode,
             partition_id_strs=args.parts,
             config_file=args.config,
             training_args=training_args,
