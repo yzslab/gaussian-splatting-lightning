@@ -6,6 +6,7 @@ import subprocess
 import numpy as np
 import torch
 import sqlite3
+from PIL import Image
 from internal.utils import colmap
 
 
@@ -20,6 +21,7 @@ def parse_args():
                         default=os.path.expanduser("~/.cache/colmap/vocab_tree_flickr100K_words256K.bin"))
     parser.add_argument("--refine", action="store_true",
                         help="Refine intrinsics and extrinsics")
+    parser.add_argument("--down-sample", type=int, default=None)
     args = parser.parse_args()
 
     assert os.path.exists(args.vocab_tree_path), "Vocabulary Tree not found, please download it from 'https://demuc.de/colmap/vocab_tree_flickr100K_words256K.bin', and provide it path via option '-v'"
@@ -37,6 +39,8 @@ def main():
     coordinates = torch.load(os.path.join(args.path, "coordinates.pt"), map_location="cpu")
 
     colmap_dir = os.path.join(args.path, "colmap")
+    if args.down_sample is not None:
+        colmap_dir = "{}_{}".format(colmap_dir, args.down_sample)
     os.makedirs(colmap_dir, exist_ok=True)
 
     image_metadata_pairs = []
@@ -53,10 +57,18 @@ def main():
     image_dir = os.path.join(colmap_dir, "images")
     os.makedirs(image_dir, exist_ok=True)
     for i, _, image_name, split in image_metadata_pairs:
-        try:
-            os.symlink(os.path.join("..", "..", split, "rgbs", image_name), os.path.join(image_dir, image_name))
-        except FileExistsError:
-            pass
+        if args.down_sample is None:
+            try:
+                os.symlink(os.path.join("..", "..", split, "rgbs", image_name), os.path.join(image_dir, image_name))
+            except FileExistsError:
+                pass
+        else:
+            with Image.open(i) as i:
+                width, height = i.size
+                new_width = width // args.down_sample
+                new_height = height // args.down_sample
+
+                i.resize((new_width, new_height)).save(os.path.join(image_dir, image_name), subsampling=0, quality=100)
 
     colmap_db_path = os.path.join(colmap_dir, "colmap.db")
     assert subprocess.call([
@@ -123,6 +135,11 @@ def main():
     ], dtype=torch.float)
     for _, metadata_path, image_name, _ in image_metadata_pairs:
         metadata = torch.load(metadata_path, map_location="cpu")
+        if args.down_sample is not None:
+            metadata["W"] //= args.down_sample
+            metadata["H"] //= args.down_sample
+            metadata["intrinsics"] /= args.down_sample
+
         image_id, camera_id = select_image(image_name)
 
         # share intrinsics if possible
