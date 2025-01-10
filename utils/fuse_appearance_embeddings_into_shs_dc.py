@@ -148,13 +148,13 @@ def average_color_fusing(
 
         input_features = torch.concat(appearance_model_input_feature_list, dim=-1).reshape((gaussian_model.n_gaussians * real_chunk_size, -1))
 
-        rgb_offset_for_each_camera[:, left:right, :] = renderer.model.network(input_features).reshape((gaussian_model.n_gaussians, real_chunk_size, -1)).to(device=device)
+        rgb_offset_for_each_camera[:, left:right, :] = renderer.model.network(input_features)[..., :3].reshape((gaussian_model.n_gaussians, real_chunk_size, -1)).to(device=device)
 
     # make sure all the elements are filled
     assert not torch.any(torch.isclose(rgb_offset_for_each_camera, torch.tensor(-1024., device=device)))
 
     weighted_rgb_offset_for_each_camera = rgb_offset_for_each_camera * visibility_score_pruned_top_k_pdf.unsqueeze(-1).to(device=device)
-    rgb_offset = torch.sum(weighted_rgb_offset_for_each_camera, dim=1)[:, :3]
+    rgb_offset = torch.sum(weighted_rgb_offset_for_each_camera, dim=1)
 
     return rgb_offset
 
@@ -180,6 +180,8 @@ def average_embedding_fusing(
         n_average_cameras,
         -1,
     ))  # [N_gaussians, n_average_cameras, N_embedding_dims]
+    if renderer.model.config.normalize:
+        appearance_embeddings = torch.nn.functional.normalize(appearance_embeddings, dim=-1)
 
     # multiply embeddings by camera weights
     weighted_appearance_embeddings = appearance_embeddings * visibility_score_pruned_top_k_pdf.unsqueeze(-1)

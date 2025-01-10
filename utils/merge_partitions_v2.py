@@ -54,7 +54,7 @@ def fuse_appearance_features(ckpt: dict, gaussian_model, cameras_json: list[dict
 
     cameras = [image_name_to_camera[i["img_name"]] for i in cameras_json]
 
-    from fuse_appearance_embeddings_into_shs_dc import prune_and_get_weights, average_embedding_fusing
+    from fuse_appearance_embeddings_into_shs_dc import prune_and_get_weights, average_color_fusing
     n_average_cameras = 32
     _, visibility_score_pruned_sorted_indices, visibility_score_pruned_top_k_pdf = prune_and_get_weights(
         gaussian_model=gaussian_model,
@@ -62,14 +62,15 @@ def fuse_appearance_features(ckpt: dict, gaussian_model, cameras_json: list[dict
         n_average_cameras=n_average_cameras,
         weight_device=cuda_device,
     )
-    rgb_offset = average_embedding_fusing(
+    rgb_offset = average_color_fusing(
         gaussian_model,
         renderer,
         n_average_cameras=n_average_cameras,
+        camera_chunk_size=8,
         cameras=cameras,
+        device=cuda_device,
         visibility_score_pruned_sorted_indices=visibility_score_pruned_sorted_indices,
         visibility_score_pruned_top_k_pdf=visibility_score_pruned_top_k_pdf,
-        view_dir_average_mode="view_direction",
     )
 
     from internal.utils.sh_utils import RGB2SH, C0
