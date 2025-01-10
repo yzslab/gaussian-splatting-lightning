@@ -26,6 +26,11 @@ def parse_args():
                         help="Project Name")
     parser.add_argument("--output_path", "-o", type=str, required=False)
     parser.add_argument("--min-images", type=int, default=32)
+    # ===== for evaluation ======
+    parser.add_argument("--retain-appearance", action="store_true", default=False)
+    parser.add_argument("--left-optimized", action="store_true", default=False)
+    parser.add_argument("--right-optimized", action="store_true", default=False)
+    # ===== for evaluation ======
     parser.add_argument("--preprocess", action="store_true")
     args = parser.parse_args()
 
@@ -73,17 +78,24 @@ def fuse_appearance_features(ckpt: dict, gaussian_model, cameras_json: list[dict
     gaussian_model.to(device=gaussian_device)
 
 
-def update_ckpt(ckpt, merged_gaussians, max_sh_degree):
-    # replace `AppearanceFeatureGaussian` with `VanillaGaussian`
-    ckpt["hyper_parameters"]["gaussian"] = VanillaGaussian(sh_degree=max_sh_degree)
+def update_ckpt(ckpt, merged_gaussians, max_sh_degree, retain_appearance: bool):
+    if retain_appearance:
+        from internal.models.appearance_feature_gaussian import AppearanceFeatureGaussian
+        ckpt["hyper_parameters"]["gaussian"] = AppearanceFeatureGaussian(
+            sh_degree=max_sh_degree,
+            appearance_feature_dims=ckpt["hyper_parameters"]["gaussian"].appearance_feature_dims,
+        )
+    else:
+        # replace `AppearanceFeatureGaussian` with `VanillaGaussian`
+        ckpt["hyper_parameters"]["gaussian"] = VanillaGaussian(sh_degree=max_sh_degree)
 
-    # remove `GSplatAppearanceEmbeddingRenderer`'s states from ckpt
-    state_dict_key_to_delete = []
-    for i in ckpt["state_dict"]:
-        if i.startswith("renderer."):
-            state_dict_key_to_delete.append(i)
-    for i in state_dict_key_to_delete:
-        del ckpt["state_dict"][i]
+        # remove `GSplatAppearanceEmbeddingRenderer`'s states from ckpt
+        state_dict_key_to_delete = []
+        for i in ckpt["state_dict"]:
+            if i.startswith("renderer."):
+                state_dict_key_to_delete.append(i)
+        for i in state_dict_key_to_delete:
+            del ckpt["state_dict"][i]
 
     # replace `GSplatAppearanceEmbeddingRenderer` with `GSPlatRenderer`
     anti_aliased = True
@@ -92,12 +104,23 @@ def update_ckpt(ckpt, merged_gaussians, max_sh_degree):
         anti_aliased = False
     elif isinstance(ckpt["hyper_parameters"]["renderer"], GSplatMipSplattingRendererV2) or ckpt["hyper_parameters"]["renderer"].__class__.__name__ == "GSplatAppearanceEmbeddingMipRenderer":
         kernel_size = ckpt["hyper_parameters"]["renderer"].filter_2d_kernel_size
-    ckpt["hyper_parameters"]["renderer"] = GSplatV1Renderer(
-        anti_aliased=anti_aliased,
-        filter_2d_kernel_size=kernel_size,
-        separate_sh=getattr(ckpt["hyper_parameters"]["renderer"], "separate_sh", True),
-        tile_based_culling=getattr(ckpt["hyper_parameters"]["renderer"], "tile_based_culling", False),
-    )
+
+    if retain_appearance:
+        from internal.renderers.gsplat_appearance_embedding_renderer import GSplatAppearanceEmbeddingRenderer
+        ckpt["hyper_parameters"]["renderer"] = GSplatAppearanceEmbeddingRenderer(
+            anti_aliased=anti_aliased,
+            filter_2d_kernel_size=kernel_size,
+            separate_sh=True,
+            tile_based_culling=getattr(ckpt["hyper_parameters"]["renderer"], "tile_based_culling", False),
+            model=ckpt["hyper_parameters"]["renderer"].model,
+        )
+    else:
+        ckpt["hyper_parameters"]["renderer"] = GSplatV1Renderer(
+            anti_aliased=anti_aliased,
+            filter_2d_kernel_size=kernel_size,
+            separate_sh=getattr(ckpt["hyper_parameters"]["renderer"], "separate_sh", True),
+            tile_based_culling=getattr(ckpt["hyper_parameters"]["renderer"], "tile_based_culling", False),
+        )
 
     # remove existing Gaussians from ckpt
     for i in list(ckpt["state_dict"].keys()):
@@ -124,6 +147,15 @@ def fuse_mip_filters(gaussian_model):
     gaussian_model.scales = gaussian_model.scale_inverse_activation(new_scales)
 
 
+def convert_to_embedding_optimized_ckpt_file_path(ckpt_file, side):
+    ckpt_filename = os.path.basename(ckpt_file)
+    return os.path.join(
+        os.path.dirname(os.path.dirname(ckpt_file)),
+        "embedding_optimization",
+        "{}-{}.ckpt".format(ckpt_filename[:ckpt_filename.rfind(".")], side),
+    )
+
+
 def main():
     """
     Overall pipeline:
@@ -147,6 +179,13 @@ def main():
 
     args = parse_args()
 
+    if args.retain_appearance:
+        assert args.preprocess
+    assert int(args.left_optimized) + int(args.right_optimized) != 2
+
+    if args.retain_appearance:
+        MERGABLE_PROPERTY_NAMES.append(AppearanceFeatureGaussianModel._appearance_feature_name)
+
     torch.autograd.set_grad_enabled(False)
 
     partition_training, mergable_partitions, orientation_transformation = get_trained_partitions(
@@ -162,17 +201,26 @@ def main():
     with tqdm(mergable_partitions, desc="Pre-processing") as t:
         for partition_idx, partition_id_str, ckpt_file, bounding_box in t:
             t.set_description("{}".format(partition_id_str))
-            t.set_postfix_str("Loading checkpoint...")
+
+            # ===== for evaluation =====
+            if args.left_optimized:
+                ckpt_file = convert_to_embedding_optimized_ckpt_file_path(ckpt_file, "left")
+            elif args.right_optimized:
+                ckpt_file = convert_to_embedding_optimized_ckpt_file_path(ckpt_file, "right")
+            # ===== for evaluation =====
+
+            t.write("Loading {}".format(ckpt_file))
+
             ckpt = torch.load(ckpt_file, map_location="cpu")
 
-            t.set_postfix_str("Splitting...")
+            t.write("Splitting...")
             gaussian_model, _, _ = split_partition_gaussians(
                 ckpt,
                 bounding_box,
                 orientation_transformation,
             )
 
-            if isinstance(gaussian_model, AppearanceFeatureGaussianModel):
+            if isinstance(gaussian_model, AppearanceFeatureGaussianModel) and not args.retain_appearance:
                 with open(os.path.join(
                         os.path.dirname(os.path.dirname(ckpt_file)),
                         "cameras.json"
@@ -181,7 +229,7 @@ def main():
 
                 # the dataset will only be loaded once
                 if image_name_to_camera is None:
-                    t.set_postfix_str("Loading colmap model...")
+                    t.write("Loading colmap model...")
 
                     dataparser_config = Colmap(
                         split_mode="reconstruction",
@@ -202,7 +250,7 @@ def main():
                         camera = dataparser_outputs.train_set.cameras[idx]
                         image_name_to_camera[image_name] = camera
 
-                t.set_postfix_str("Fusing...")
+                t.write("Fusing appearance features...")
                 fuse_appearance_features(
                     ckpt,
                     gaussian_model,
@@ -211,15 +259,26 @@ def main():
                 )
 
             if isinstance(gaussian_model, MipSplattingModelMixin):
-                t.set_postfix_str("Fusing MipSplatting filters...")
+                t.write("Fusing MipSplatting filters...")
                 fuse_mip_filters(gaussian_model)
 
             if args.preprocess:
-                update_ckpt(ckpt, {k: gaussian_model.get_property(k) for k in MERGABLE_PROPERTY_NAMES}, gaussian_model.max_sh_degree)
-                torch.save(ckpt, os.path.join(
+                update_ckpt(ckpt, {k: gaussian_model.get_property(k) for k in MERGABLE_PROPERTY_NAMES}, gaussian_model.max_sh_degree, retain_appearance=args.retain_appearance)
+
+                output_filename_suffix = ""
+                if args.retain_appearance:
+                    output_filename_suffix += "-retain_appearance"
+                if args.left_optimized:
+                    output_filename_suffix += "-left"
+                elif args.right_optimized:
+                    output_filename_suffix += "-right"
+
+                output_filename = os.path.join(
                     os.path.dirname(os.path.dirname(ckpt_file)),
-                    "preprocessed.ckpt",
-                ))
+                    "preprocessed{}.ckpt".format(output_filename_suffix),
+                )
+                torch.save(ckpt, output_filename)
+                t.write("Saved to {}".format(output_filename))
             else:
                 for i in MERGABLE_PROPERTY_NAMES:
                     gaussians_to_merge.setdefault(i, []).append(gaussian_model.get_property(i))
@@ -237,7 +296,7 @@ def main():
         gc.collect()
         torch.cuda.empty_cache()
 
-    update_ckpt(ckpt, merged_gaussians, gaussian_model.max_sh_degree)
+    update_ckpt(ckpt, merged_gaussians, gaussian_model.max_sh_degree, retain_appearance=args.retain_appearance)
 
     # save
     print("Saving...")
