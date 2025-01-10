@@ -67,9 +67,9 @@ def fuse_appearance_features(ckpt: dict, gaussian_model, cameras_json: list[dict
         view_dir_average_mode="view_direction",
     )
 
-    from internal.utils.sh_utils import RGB2SH
-    sh_offset = RGB2SH(rgb_offset)
-    gaussian_model.shs_dc = gaussian_model.shs_dc + sh_offset.unsqueeze(1).to(device=gaussian_model.shs_dc.device)
+    from internal.utils.sh_utils import RGB2SH, C0
+    sh_offsets = RGB2SH(rgb_offset * 2. - 1.)
+    gaussian_model.shs_dc = gaussian_model.shs_dc + sh_offsets.unsqueeze(1).to(device=gaussian_model.shs_dc.device) + 0.5 / C0
     gaussian_model.to(device=gaussian_device)
 
 

@@ -5,7 +5,7 @@ import argparse
 import torch
 from tqdm.auto import tqdm
 from internal.renderers.gsplat_hit_pixel_count_renderer import GSplatHitPixelCountRenderer
-from internal.utils.sh_utils import RGB2SH
+from internal.utils.sh_utils import RGB2SH, C0
 from internal.utils.gaussian_model_loader import GaussianModelLoader
 
 
@@ -154,7 +154,6 @@ def average_color_fusing(
     assert not torch.any(torch.isclose(rgb_offset_for_each_camera, torch.tensor(-1024., device=device)))
 
     weighted_rgb_offset_for_each_camera = rgb_offset_for_each_camera * visibility_score_pruned_top_k_pdf.unsqueeze(-1).to(device=device)
-    # TODO: should be rgb_offset * 2. - 1.
     rgb_offset = torch.sum(weighted_rgb_offset_for_each_camera, dim=1)[:, :3]
 
     return rgb_offset
@@ -224,7 +223,6 @@ def average_embedding_fusing(
         input_tensor_list.append(encoded_view_directions)
 
     input_tensor = torch.concat(input_tensor_list, dim=-1).to(cuda_device)
-    # TODO: should be rgb_offset * 2. - 1.
     rgb_offset = embedding_network(input_tensor)[:, :3]
 
     return rgb_offset
@@ -297,8 +295,8 @@ def fuse(
 
     # ===
 
-    sh_offset = RGB2SH(rgb_offset)
-    gaussian_model.shs_dc = gaussian_model.shs_dc + sh_offset.unsqueeze(1).to(device=gaussian_model.shs_dc.device)
+    sh_offsets = RGB2SH(rgb_offset * 2. - 1.)
+    gaussian_model.shs_dc = gaussian_model.shs_dc + sh_offsets.unsqueeze(1).to(device=gaussian_model.shs_dc.device) + 0.5 / C0
 
     return gaussian_model
 
