@@ -221,6 +221,8 @@ class Taming3DGSDensityControllerModule(VanillaDensityControllerImpl):
 
     def _densify_and_clone(self, scores, budget, filter, gaussian_model, optimizers):
         scores = scores * filter.float()
+        if scores.sum() == 0:
+            return
         n_init_points = gaussian_model.n_gaussians
         selected_pts_mask = torch.zeros((n_init_points,), dtype=torch.bool, device=scores.device)
 
@@ -237,6 +239,8 @@ class Taming3DGSDensityControllerModule(VanillaDensityControllerImpl):
 
     def _densify_and_split(self, scores, budget, filter, gaussian_model, optimizers, N: int = 2):
         scores = scores * filter.float()
+        if scores.sum() == 0:
+            return
         n_init_points = gaussian_model.n_gaussians
 
         padded_importance = torch.zeros((n_init_points,), dtype=scores.dtype, device=scores.device)
