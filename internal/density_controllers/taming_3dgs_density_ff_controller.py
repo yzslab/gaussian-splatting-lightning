@@ -37,10 +37,12 @@ class Taming3DGSDensityControllerFFModule(Taming3DGSDensityControllerModule):
         partition_size = partition_data["partition_coordinates"]["size"][self.config.partition_idx]
 
         if not torch.allclose(partition_size, torch.tensor(default_partition_size, dtype=partition_size.dtype, device=partition_size.device)):
-            size_factor = torch.prod(partition_size / default_partition_size).item()
+            size_factor = torch.prod(partition_size / default_partition_size)
             if size_factor > 1.:
-                self.config.budget *= size_factor
-                print("budget {}x increased to {}".format(size_factor, self.config.budget))
+                # since the merged partition are background areas, no need to increase the budget too much
+                actual_size_factor = torch.sqrt(size_factor).item()
+                self.config.budget *= actual_size_factor
+                print("budget {}x increased to {}".format(actual_size_factor, self.config.budget))
 
         # get transform matrix
         try:
