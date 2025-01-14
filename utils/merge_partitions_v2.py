@@ -199,10 +199,14 @@ def main():
 
     gaussians_to_merge = {}
 
+    partition_bounding_boxes = partition_training.partition_coordinates.get_bounding_boxes()
     scene_bounding_box = (
-        torch.min(partition_training.partition_coordinates.id, dim=0).values,
-        torch.max(partition_training.partition_coordinates.id, dim=0).values,
+        torch.min(partition_bounding_boxes.min, dim=0).values,
+        torch.max(partition_bounding_boxes.max, dim=0).values,
     )
+
+    def isclose(a, b):
+        return torch.isclose(a, b, atol=1e-4)
 
     with tqdm(mergable_partitions, desc="Pre-processing") as t:
         for partition_idx, partition_id_str, ckpt_file, bounding_box in t:
@@ -221,29 +225,28 @@ def main():
 
             t.write("Splitting...")
             # include background if the partition locates at the border
-            # TODO: deal with the merged partitions
-            partition_id = partition_training.partition_coordinates.id[partition_idx]
+            # TODO: deal with the non-rectangular case
             bounding_box_updated = False
-            if partition_id[0] == scene_bounding_box[0][0]:
+            if isclose(bounding_box.min[0], scene_bounding_box[0][0]):
                 # x == scene bbox x min -> bbox.x_min = -inf
                 bounding_box.min[0] = -torch.inf
                 bounding_box_updated = True
-            if partition_id[1] == scene_bounding_box[0][1]:
+            if isclose(bounding_box.min[1], scene_bounding_box[0][1]):
                 # y == scene bbox y min -> bbox.y_min = -inf
                 bounding_box.min[1] = -torch.inf
                 bounding_box_updated = True
-            if partition_id[0] == scene_bounding_box[1][0]:
+            if isclose(bounding_box.max[0], scene_bounding_box[1][0]):
                 # x == scene bbox x max -> bbox.x_max = inf
                 bounding_box.max[0] = torch.inf
                 bounding_box_updated = True
-            if partition_id[1] == scene_bounding_box[1][1]:
+            if isclose(bounding_box.max[1], scene_bounding_box[1][1]):
                 # x == scene bbox x max -> bbox.x_max = inf
                 bounding_box.max[1] = torch.inf
                 bounding_box_updated = True
 
             if bounding_box_updated:
                 t.write("[NOTE]bounding box of {} updated to {}".format(
-                    partition_id.tolist(),
+                    partition_training.partition_coordinates.id[partition_idx].tolist(),
                     bounding_box,
                 ))
 
