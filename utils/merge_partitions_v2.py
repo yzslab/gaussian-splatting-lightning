@@ -199,6 +199,11 @@ def main():
 
     gaussians_to_merge = {}
 
+    scene_bounding_box = (
+        torch.min(partition_training.partition_coordinates.id, dim=0).values,
+        torch.max(partition_training.partition_coordinates.id, dim=0).values,
+    )
+
     with tqdm(mergable_partitions, desc="Pre-processing") as t:
         for partition_idx, partition_id_str, ckpt_file, bounding_box in t:
             t.set_description("{}".format(partition_id_str))
@@ -215,6 +220,33 @@ def main():
             ckpt = torch.load(ckpt_file, map_location="cpu")
 
             t.write("Splitting...")
+            # include background if the partition locates at the border
+            # TODO: deal with the merged partitions
+            partition_id = partition_training.partition_coordinates.id[partition_idx]
+            bounding_box_updated = False
+            if partition_id[0] == scene_bounding_box[0][0]:
+                # x == scene bbox x min -> bbox.x_min = -inf
+                bounding_box.min[0] = -torch.inf
+                bounding_box_updated = True
+            if partition_id[1] == scene_bounding_box[0][1]:
+                # y == scene bbox y min -> bbox.y_min = -inf
+                bounding_box.min[1] = -torch.inf
+                bounding_box_updated = True
+            if partition_id[0] == scene_bounding_box[1][0]:
+                # x == scene bbox x max -> bbox.x_max = inf
+                bounding_box.max[0] = torch.inf
+                bounding_box_updated = True
+            if partition_id[1] == scene_bounding_box[1][1]:
+                # x == scene bbox x max -> bbox.x_max = inf
+                bounding_box.max[1] = torch.inf
+                bounding_box_updated = True
+
+            if bounding_box_updated:
+                t.write("[NOTE]bounding box of {} updated to {}".format(
+                    partition_id.tolist(),
+                    bounding_box,
+                ))
+
             gaussian_model, _, _ = split_partition_gaussians(
                 ckpt,
                 bounding_box,
@@ -270,9 +302,9 @@ def main():
                 if args.retain_appearance:
                     output_filename_suffix += "-retain_appearance"
                 if args.left_optimized:
-                    output_filename_suffix += "-left"
+                    output_filename_suffix += "-left_optimized"
                 elif args.right_optimized:
-                    output_filename_suffix += "-right"
+                    output_filename_suffix += "-right_optimized"
 
                 output_filename = os.path.join(
                     os.path.dirname(os.path.dirname(ckpt_file)),
