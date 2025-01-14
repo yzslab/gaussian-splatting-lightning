@@ -15,7 +15,7 @@ from utils.common import AsyncImageSaver
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("yaml")
-    parser.add_argument("--val-side", type=str, default=None)
+    parser.add_argument("--val-side", "--side", "--val-on", type=str, default="auto")
     parser.add_argument("--level", "-l", type=int, default=None)
     return parser.parse_args()
 
@@ -83,7 +83,7 @@ def validate(dataloader, renderer, metric_calculator, image_saver):
 
             all_metrics[name], (predicted, gt) = metric_calculator(outputs, (camera, (name, image, mask), extra_data))
 
-            image_saver({"render": predicted}, (camera, (name, gt, mask), extra_data))
+            image_saver(outputs, (camera, (name, image, mask), extra_data))
 
     return all_metrics
 
@@ -99,6 +99,30 @@ def main():
     if args.level is not None:
         config["names"] = config["names"][args.level:args.level + 1]
         level_name = "level_{}".format(args.level)
+
+    if args.val_side == "auto":
+        ckpt_name = config.get("ckpt_name", "")
+        if ckpt_name.endswith("retain_appearance-left_optimized"):
+            args.val_side = "right"
+        elif ckpt_name.endswith("retain_appearance-right_optimized"):
+            args.val_side = "left"
+        else:
+            args.val_side = None
+    elif args.val_side.lower() in ["none", "null", "all", "full"]:
+        args.val_side = None
+    elif args.val_side == "left":
+        config["ckpt_name"] = "preprocessed-retain_appearance-right_optimized"
+        print("Updated `ckpt_name` to {}".format(config["ckpt_name"]))
+    elif args.val_side == "right":
+        config["ckpt_name"] = "preprocessed-retain_appearance-left_optimized"
+        print("Updated `ckpt_name` to {}".format(config["ckpt_name"]))
+    else:
+        raise ValueError(args.val_side)
+
+    if args.val_side is None:
+        print("[WARNING]Full image validation")
+    else:
+        print("[WARNING]Validate on half of the image: {}".format(args.val_side))
 
     # setup renderer
     renderer = PartitionLoDRenderer(**config).instantiate()
@@ -153,7 +177,7 @@ def main():
         num_workers=2,
     )
 
-    output_dir = os.path.join(config["data"], "val-{}{}".format(level_name, "-{}".format(args.val_side) if args.val_side is not None else ""))
+    output_dir = os.path.join(config["data"], "val-{}-{}{}".format(os.path.basename(args.yaml), level_name, "-{}".format(args.val_side) if args.val_side is not None else ""))
 
     # image saver
     async_image_saver = AsyncImageSaver(is_rgb=True)
@@ -196,7 +220,7 @@ def main():
 
     metric_list_key_by_name = {}
     available_metric_keys = ["psnr", "ssim", "vgg_lpips", "alex_lpips"]
-    with open(os.path.join(output_dir, "metrics-{}.csv".format(os.path.basename(args.yaml))), "w") as f:
+    with open(os.path.join(output_dir, "metrics-{}.csv".format(os.path.basename(output_dir))), "w") as f:
         metrics_writer = csv.writer(f)
         metrics_writer.writerow(["name"] + available_metric_keys)
         for image_name, image_metrics in metrics.items():
