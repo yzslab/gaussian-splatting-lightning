@@ -2,7 +2,7 @@ import random
 from dataclasses import dataclass
 from typing import Any, Dict
 import os
-
+import time
 import numpy as np
 import torch
 from pytorch3d.ops.iou_box3d import _check_coplanar, _check_nonzero, _box3d_overlap
@@ -30,13 +30,26 @@ class PartitionLoDRenderer(RendererConfig):
     ckpt_name: str = "preprocessed.ckpt"
 
     def instantiate(self, *args, **kwargs) -> "PartitionLoDRendererModule":
+        if self.ckpt_name.endswith(".ckpt"):
+            self.ckpt_name = self.ckpt_name[:self.ckpt_name.rfind(".")]
+
         return PartitionLoDRendererModule(self)
 
 
 class PartitionLoDRendererModule(Renderer):
+    MODEL_PROPERTIES = [
+        "means",
+        "shs",
+        "opacities",
+        "scales",
+        "rotations",
+    ]
+
     def __init__(self, config) -> None:
         super().__init__()
         self.config = config
+
+        self.synchronized = False
 
         self.on_render_hooks = []
         self.on_model_updated_hooks = []
@@ -111,10 +124,10 @@ class PartitionLoDRendererModule(Renderer):
                         "outputs",
                         lod,
                         partition_training.get_experiment_name(partition_idx),
-                        self.config.ckpt_name,
+                        "{}.ckpt".format(self.config.ckpt_name),
                     ), map_location="cpu")
                 except:
-                    tqdm.write("[WARNING]Checkpoint of partition {} of not found in {}".format(partition_training.get_partition_id_str(partition_idx), lod))
+                    tqdm.write("[WARNING]Checkpoint '{}.ckpt' of partition {} of not found in {}".format(self.config.ckpt_name, partition_training.get_partition_id_str(partition_idx), lod))
                     continue
 
                 loaded_partition_idx_list.append(partition_idx)
@@ -208,6 +221,10 @@ class PartitionLoDRendererModule(Renderer):
         print(renderer_config)
         self.gsplat_renderer = renderer_config.instantiate()
         self.gsplat_renderer.setup(stage)
+
+    def cuda_synchronize(self):
+        if self.synchronized:
+            return torch.cuda.synchronize()
 
     @staticmethod
     def box3d_overlap(boxes1, boxes2):
@@ -304,10 +321,16 @@ class PartitionLoDRendererModule(Renderer):
             render_types: list = None,
             **kwargs,
     ):
+        self.cuda_synchronize()
+
+        pipeline_started_at = time.time()
         if self.has_appearance_model:
             if viewpoint_camera.appearance_id != self.previous_appearance_id:
                 with self.appearance_lock:
                     self.update_shs_dc(viewpoint_camera.appearance_id)
+            self.cuda_synchronize()
+
+        appearance_updated_at = time.time()
 
         partition_distances = self.get_partition_distances(viewpoint_camera.camera_center)
         # print((partition_distances == 0.).nonzero())
@@ -374,7 +397,7 @@ class PartitionLoDRendererModule(Renderer):
                     continue
 
                 lod_model_properties = self.lods[lod.item()][partition_idx].properties
-                for k in self.gaussian_model.property_names:
+                for k in self.MODEL_PROPERTIES:
                     v = lod_model_properties[k]
                     properties.setdefault(k, []).append(v)
 
@@ -389,6 +412,9 @@ class PartitionLoDRendererModule(Renderer):
         for i in self.on_render_hooks:
             i()
 
+        self.cuda_synchronize()
+
+        render_started_at = time.time()
         outputs = self.gsplat_renderer(
             viewpoint_camera,
             self.gaussian_model,
@@ -397,6 +423,10 @@ class PartitionLoDRendererModule(Renderer):
             render_types,
             **kwargs,
         )
+
+        self.cuda_synchronize()
+
+        finished_at = time.time()
         # if self.config.visibility_filter:
         #     for idx, corner in enumerate(partition_corners_in_image_space[0]):
         #         red_value = 1.
@@ -407,6 +437,12 @@ class PartitionLoDRendererModule(Renderer):
         #         box_max = torch.minimum(box_max, max_pixel_coor).to(torch.int)
         #         outputs["render"][1:3, box_min[1]:box_max[1], box_min[0]:box_max[0]] = (1 - red_value)
         #         outputs["render"][0, box_min[1]:box_max[1], box_min[0]:box_max[0]] = red_value
+
+        outputs["n_gaussians"] = self.gaussian_model.n_gaussians
+        outputs["time"] = finished_at - pipeline_started_at
+        outputs["render_time_with_lod_preprocess"] = finished_at - appearance_updated_at
+        outputs["render_time"] = finished_at - render_started_at
+
         return outputs
 
     def get_available_outputs(self) -> Dict[str, RendererOutputInfo]:
