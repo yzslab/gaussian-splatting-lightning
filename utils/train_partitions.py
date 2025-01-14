@@ -31,6 +31,8 @@ class PartitionTrainingConfig:
     name_suffix: str = ""
     ff_densify: bool = False
     t3dgs_densify: bool = False
+    max_steps: int = None
+    scale_base: int = None
     scalable_params: Optional[Dict[str, int]] = None
     extra_epoch_scalable_params: Optional[List[str]] = None
     scale_param_mode: Literal["linear", "sqrt", "none"] = "linear"
@@ -62,6 +64,7 @@ class PartitionTrainingConfig:
         parser.add_argument("--extra-epoches", "-e", type=int, default=extra_epoches)
         parser.add_argument("--scalable-config", type=str, default=None,
                             help="Load scalable params from a yaml file")
+        parser.add_argument("--scale-base", type=int, default=300)
         parser.add_argument("--scalable-params", type=str, default=[], nargs="*", action="extend")
         parser.add_argument("--extra-epoch-scalable-params", type=str, default=[], nargs="*", action="extend")
         parser.add_argument("--scale-param-mode", type=str, default="linear")
@@ -81,6 +84,8 @@ class PartitionTrainingConfig:
             scalable_params = {}
             extra_epoch_scalable_params = []
 
+        scale_base = args.scale_base
+        max_steps = args.max_steps
         mode = args.scale_param_mode
 
         if args.scalable_config is not None:
@@ -88,11 +93,13 @@ class PartitionTrainingConfig:
                 scalable_config = yaml.safe_load(f)
 
             for i in scalable_config.keys():
-                if i not in ["max_steps", "scalable", "extra_epoch_scalable", "no_default", "mode"]:
-                    raise ValueError("Found an unexpected key '{}' in '{}'".format(i, args.scalable_yaml))
+                if i not in ["base", "max_steps", "scalable", "extra_epoch_scalable", "no_default", "mode"]:
+                    raise ValueError("Found an unexpected key '{}' in '{}'".format(i, args.scalable_config))
 
-            # Use `max_steps` provided in config file
-            scalable_params, extra_epoch_scalable_params = get_default_scalable_params(scalable_config.get("max_steps", args.max_steps))
+            # Use values provided in config file
+            scale_base = scalable_config.get("base", scale_base)
+            max_steps = scalable_config.get("max_steps", max_steps)
+            scalable_params, extra_epoch_scalable_params = get_default_scalable_params(max_steps)
 
             if scalable_config.get("no_default", False):
                 scalable_params = {}
@@ -109,7 +116,7 @@ class PartitionTrainingConfig:
             scalable_params[name] = value
         extra_epoch_scalable_params += args.extra_epoch_scalable_params
 
-        return scalable_params, extra_epoch_scalable_params, mode
+        return scale_base, max_steps, scalable_params, extra_epoch_scalable_params, mode
 
     @classmethod
     def get_extra_init_kwargs(cls, args) -> Dict[str, Any]:
@@ -117,7 +124,7 @@ class PartitionTrainingConfig:
 
     @classmethod
     def instantiate_with_args(cls, args, training_args, srun_args):
-        scalable_params, extra_epoch_scalable_params, scale_param_mode = cls.parse_scalable_params(args)
+        scale_base, max_steps, scalable_params, extra_epoch_scalable_params, scale_param_mode = cls.parse_scalable_params(args)
 
         return cls(
             partition_dir=args.partition_dir,
@@ -130,6 +137,8 @@ class PartitionTrainingConfig:
             name_suffix=args.name_suffix,
             ff_densify=args.ff_densify,
             t3dgs_densify=args.t3dgs_densify,
+            max_steps=max_steps,
+            scale_base=scale_base,
             scalable_params=scalable_params,
             extra_epoch_scalable_params=extra_epoch_scalable_params,
             scale_param_mode=scale_param_mode,
@@ -285,10 +294,12 @@ class PartitionTraining:
         # scale hyper parameters
         max_steps, scaled_params, scale_up = auto_hyper_parameter(
             partition_image_number,
+            base=self.config.scale_base,
             extra_epoch=extra_epoches,
             scalable_params=scalable_params,
             extra_epoch_scalable_params=extra_epoch_scalable_params,
             scale_mode=self.config.scale_param_mode,
+            max_steps=self.config.max_steps,
         )
 
         # whether a trained partition
@@ -343,10 +354,10 @@ class PartitionTraining:
         experiment_name = self.get_experiment_name(partition_idx)
         args += [
             "-n={}".format(experiment_name),
-            "--data.path", self.dataset_path,
-            "--project", project_name,
-            "--output", project_output_dir,
-            "--logger", "wandb",
+            "--data.path={}".format(self.dataset_path),
+            "--project={}".format(project_name),
+            "--output={}".format(project_output_dir),
+            "--logger={}".format("wandb"),
         ]
 
         args += self.get_partition_specific_args(partition_idx)

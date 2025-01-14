@@ -73,12 +73,11 @@ def auto_hyper_parameter(
 
 def to_command_args(max_steps: int, scale_params):
     args = [
-        "--max_steps",
-        str(max_steps),
+        "--max_steps={}".format(max_steps)
     ]
 
     for i, v in scale_params.items():
-        args += ["--{}".format(i), "{}".format(v)]
+        args.append("--{}={}".format(i, v))
 
     return args
 
