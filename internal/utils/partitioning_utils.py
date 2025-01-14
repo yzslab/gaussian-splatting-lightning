@@ -24,6 +24,9 @@ class SceneConfig:
     visibility_based_distance: float = None
     """ enlarge bounding box by `partition_size * visibility_based_distance`, used for visibility based camera assignment """
 
+    visibility_based_partition_enlarge: float = None
+    """ enlarge bounding box by `partition_size * location_based_enlarge`, the points in this bounding box will be treated as inside partition """
+
     visibility_threshold: float = None
 
     visibility_based_distance_enlarge_on_no_location_based: float = 4.
@@ -171,6 +174,7 @@ class PartitionableScene:
             partition_coordinates=self.partition_coordinates,
             n_cameras=self.camera_centers.shape[0],
             point_getter=point_getter,
+            enlarge=self.scene_config.visibility_based_partition_enlarge,
             device=device,
         )
         return self.camera_visibilities
@@ -189,10 +193,7 @@ class PartitionableScene:
         return self.is_partitions_visible_to_cameras
 
     def merge_no_location_based_partitions(self, min_location_based: int = 32):
-        self.unmerge()
-
-        # restore
-        self.partition_coordinates, self.is_camera_in_partition, self.is_partitions_visible_to_cameras = self.unmerged
+        self.pre_merge()
 
         shape = self.scene_bounding_box.n_partitions[1], self.scene_bounding_box.n_partitions[0]
         n_location_based_assignments = self.is_camera_in_partition.sum(dim=-1).reshape(shape)  # [H, W]
@@ -390,18 +391,96 @@ class PartitionableScene:
         self.is_partitions_visible_to_cameras = torch.stack(is_partitions_visible_to_cameras)
 
         return self.partition_coordinates, self.is_camera_in_partition, self.is_partitions_visible_to_cameras
-    
-    def manual_merge(self):
-        # TODO
-        raise NotImplemented()
+
+    def manual_merge(self, merge_list: list):
+        self.pre_merge()
+
+        merged_ids_list = []
+        merged_xys_list = []
+        merged_sizes_list = []
+        merged_location_based_assignments_list = []
+        merged_visibility_based_assignments_list = []
+
+        area_before_merging = torch.sum(torch.prod(self.partition_coordinates.size, dim=-1))
+
+        merged_partition_idx_set = {}
+        for partition_idx_list in merge_list:
+            ids_list = []
+            xys_list = []
+            size_list = []
+            merged_location_based_assignments = torch.zeros_like(self.is_camera_in_partition[0], dtype=torch.bool)
+            merged_visibility_based_assignments = torch.zeros_like(self.is_partitions_visible_to_cameras[0], dtype=torch.bool)
+
+            for partition_idx in partition_idx_list:
+                assert partition_idx not in merged_partition_idx_set, partition_idx
+                merged_partition_idx_set[partition_idx] = True
+                ids_list.append(self.partition_coordinates.id[partition_idx])
+                xys_list.append(self.partition_coordinates.xy[partition_idx])
+                size_list.append(self.partition_coordinates.size[partition_idx])
+                merged_location_based_assignments |= self.is_camera_in_partition[partition_idx]
+                merged_visibility_based_assignments |= self.is_partitions_visible_to_cameras[partition_idx]
+
+            ids = torch.stack(ids_list)
+            xys = torch.stack(xys_list)
+            sizes = torch.stack(size_list)
+
+            area_of_pending_merging_partitions = torch.sum(torch.prod(sizes, dim=-1))
+
+            merged_id = torch.min(ids, dim=0).values
+            merged_xy = torch.min(xys, dim=0).values
+            merged_size = ((torch.max(ids, dim=0).values - merged_id) + 1) * self.scene_config.partition_size
+
+            area_of_merged_partition = torch.prod(merged_size)
+
+            assert torch.abs(area_of_pending_merging_partitions - area_of_merged_partition) < 1e-2, (area_of_pending_merging_partitions, area_of_merged_partition, partition_idx_list, merged_id, torch.max(ids, dim=0).values, sizes)
+
+            merged_visibility_based_assignments &= ~merged_location_based_assignments
+
+            merged_ids_list.append(merged_id)
+            merged_xys_list.append(merged_xy)
+            merged_sizes_list.append(merged_size)
+            merged_location_based_assignments_list.append(merged_location_based_assignments)
+            merged_visibility_based_assignments_list.append(merged_visibility_based_assignments)
+
+        for partition_idx in range(len(self.partition_coordinates)):
+            if partition_idx in merged_partition_idx_set:
+                continue
+            merged_ids_list.append(self.partition_coordinates.id[partition_idx])
+            merged_xys_list.append(self.partition_coordinates.xy[partition_idx])
+            merged_sizes_list.append(self.partition_coordinates.size[partition_idx])
+            merged_location_based_assignments_list.append(self.is_camera_in_partition[partition_idx])
+            merged_visibility_based_assignments_list.append(self.is_partitions_visible_to_cameras[partition_idx])
+
+        new_partition_coordinates = PartitionCoordinates(
+            id=torch.stack(merged_ids_list),
+            xy=torch.stack(merged_xys_list),
+            size=torch.stack(merged_sizes_list),
+        )
+        assert torch.abs(torch.sum(torch.prod(new_partition_coordinates.size, dim=-1)) - area_before_merging) < 1e-4
+
+        self.partition_coordinates = new_partition_coordinates
+        self.is_camera_in_partition = torch.stack(merged_location_based_assignments_list)
+        self.is_partitions_visible_to_cameras = torch.stack(merged_visibility_based_assignments_list)
+
+    def pre_merge(self):
+        self.unmerge()
+        self.save_unmerged()
+
+    def save_unmerged(self):
+        assert self.unmerged is None, "Please call `unmerge()` first"
+        self.unmerged = (
+            self.partition_coordinates,
+            self.is_camera_in_partition,
+            self.is_partitions_visible_to_cameras,
+        )
 
     def unmerge(self):
         if self.unmerged is None:
-            self.unmerged = (
-                self.partition_coordinates,
-                self.is_camera_in_partition,
-                self.is_partitions_visible_to_cameras,
-            )
+            return
+
+        # restore
+        self.partition_coordinates, self.is_camera_in_partition, self.is_partitions_visible_to_cameras = self.unmerged
+        self.unmerged = None
 
     def build_output_dirname(self):
         return "partitions-size_{}-enlarge_{}-{}_visibility_{}_{}".format(
@@ -448,13 +527,14 @@ class PartitionableScene:
         ))
         self.set_plot_ax_limit(ax)
 
-    def plot_partitions(self, ax=None, annotate_font_size: int = 5, annotate_position_x: float = 0.125, annotate_position_y: float = 0.25):
+    def plot_partitions(self, ax=None, annotate_font_size: int = 5, annotate_position_x: float = 0.125, annotate_position_y: float = 0.25, plot_cameras: bool = True):
         self.set_plot_ax_limit(ax)
         ax.set_aspect('equal', adjustable='box')
 
         colors = list(iter(cm.rainbow(np.linspace(0, 1, len(self.partition_coordinates)))))
         # random.shuffle(colors)
-        ax.scatter(self.camera_centers[:, 0], self.camera_centers[:, 1], s=0.2)
+        if plot_cameras:
+            ax.scatter(self.camera_centers[:, 0], self.camera_centers[:, 1], s=0.2)
 
         color_iter = iter(colors)
         idx = 0
@@ -489,7 +569,7 @@ class PartitionableScene:
 
         location_based_assignment = self.is_camera_in_partition[partition_idx]
         visibility_based_assignment = self.is_partitions_visible_to_cameras[partition_idx]
-        location_based_assignment.nonzero().squeeze(-1), visibility_based_assignment.nonzero().squeeze(-1)
+        n_assigned_cameras = (location_based_assignment | visibility_based_assignment).sum().item()
 
         ax.set_aspect('equal', adjustable='box')
         if point_xyzs is not None:
@@ -529,10 +609,11 @@ class PartitionableScene:
                    self.camera_centers[visibility_based_assignment.numpy(), 1], s=0.2, c="red")
 
         ax.annotate(
-            text="#{} ({}, {})".format(
+            text="#{} ({}, {}) - {}".format(
                 partition_idx,
                 self.partition_coordinates.id[partition_idx, 0].item(),
                 self.partition_coordinates.id[partition_idx, 1].item(),
+                n_assigned_cameras,
             ),
             xy=self.partition_coordinates.xy[partition_idx] + 0.05 * self.scene_config.partition_size,
             color="orange",
@@ -706,9 +787,10 @@ class Partitioning:
             partition_coordinates: PartitionCoordinates,
             n_cameras,
             point_getter: Callable[[int], Tuple[torch.Tensor, torch.Tensor, int]],
+            enlarge: float,
             device,
     ):
-        partition_bounding_boxes = partition_coordinates.get_bounding_boxes(enlarge=0.).to(device=device)
+        partition_bounding_boxes = partition_coordinates.get_bounding_boxes(enlarge=enlarge).to(device=device)
         all_visibilities = torch.ones((n_cameras, len(partition_coordinates)), device="cpu") * -255.  # [N_cameras, N_partitions]
 
         def calculate_visibilities(camera_idx: int):
