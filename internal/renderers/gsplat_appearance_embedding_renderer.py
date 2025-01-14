@@ -180,7 +180,7 @@ class GSplatAppearanceEmbeddingRendererModule(GSplatV1RendererModule):
             on_epoch=False,
             batch_size=pl_module.batch_size,
         )
-        return opacity_offset_reg_loss * 0.02
+        return opacity_offset_reg_loss * 0.05
 
     def sh(self, pc, dirs, mask=None):
         if pc.is_pre_activated:
