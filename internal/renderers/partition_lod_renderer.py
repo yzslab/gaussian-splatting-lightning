@@ -27,6 +27,9 @@ class PartitionLoDRenderer(RendererConfig):
     freeze: bool = False
     drop_shs_rest: bool = False
 
+    lod_distances: list[int] = None
+    """ i_distance = lod_distances[i] * default_partition_size, from finest to coarsest """
+
     ckpt_name: str = "preprocessed.ckpt"
 
     def instantiate(self, *args, **kwargs) -> "PartitionLoDRendererModule":
@@ -196,6 +199,15 @@ class PartitionLoDRendererModule(Renderer):
 
         # set default LoD distance thresholds
         self.lod_thresholds = (torch.arange(1, len(self.lods)) * 0.25 * default_partition_size).to(device=device)  # [N_lods - 1]
+        if self.config.lod_distances is not None:
+            assert len(self.config.lod_distances) == len(self.lods) - 1
+            previous = 0
+            for i in self.config.lod_distances:
+                assert i >= previous
+                previous = i
+
+            self.lod_thresholds = torch.tensor(self.config.lod_distances, dtype=torch.float, device=device) * self.default_partition_size
+            
 
         # initialize partition lod states
         self.n_partitions = len(self.lods[0])
