@@ -220,6 +220,8 @@ class Taming3DGSDensityControllerModule(VanillaDensityControllerImpl):
         )
 
     def _densify_and_clone(self, scores, budget, filter, gaussian_model, optimizers):
+        if budget <= 0:
+            return
         scores = scores * filter.float()
         if scores.sum() == 0:
             return
@@ -238,6 +240,8 @@ class Taming3DGSDensityControllerModule(VanillaDensityControllerImpl):
         self._densification_postfix(new_properties, gaussian_model, optimizers)
 
     def _densify_and_split(self, scores, budget, filter, gaussian_model, optimizers, N: int = 2):
+        if budget <= 0:
+            return
         scores = scores * filter.float()
         if scores.sum() == 0:
             return
