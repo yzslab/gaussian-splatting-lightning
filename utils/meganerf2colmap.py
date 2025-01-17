@@ -6,7 +6,9 @@ import subprocess
 import numpy as np
 import torch
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from PIL import Image
+from tqdm import tqdm
 from internal.utils import colmap
 
 
@@ -27,6 +29,16 @@ def parse_args():
     assert os.path.exists(args.vocab_tree_path), "Vocabulary Tree not found, please download it from 'https://demuc.de/colmap/vocab_tree_flickr100K_words256K.bin', and provide it path via option '-v'"
 
     return args
+
+
+def resize_image(input_path, output_path, down_sample_factor):
+    assert os.path.realpath(input_path) != os.path.realpath(output_path)
+    with Image.open(input_path) as i:
+        width, height = i.size
+        new_width = width // down_sample_factor
+        new_height = height // down_sample_factor
+
+        i.resize((new_width, new_height)).save(output_path, subsampling=0, quality=100)
 
 
 def main():
@@ -56,19 +68,21 @@ def main():
 
     image_dir = os.path.join(colmap_dir, "images")
     os.makedirs(image_dir, exist_ok=True)
-    for i, _, image_name, split in image_metadata_pairs:
-        if args.down_sample is None:
+
+    if args.down_sample is None or args.down_sample == 1:
+        for i, _, image_name, split in image_metadata_pairs:
             try:
                 os.symlink(os.path.join("..", "..", split, "rgbs", image_name), os.path.join(image_dir, image_name))
             except FileExistsError:
                 pass
-        else:
-            with Image.open(i) as i:
-                width, height = i.size
-                new_width = width // args.down_sample
-                new_height = height // args.down_sample
+    else:
+        with ThreadPoolExecutor() as tpe:
+            futures = []
+            for i, _, image_name, split in image_metadata_pairs:
+                futures.append(tpe.submit(resize_image, i, os.path.join(image_dir, image_name), args.down_sample))
 
-                i.resize((new_width, new_height)).save(os.path.join(image_dir, image_name), subsampling=0, quality=100)
+            for _ in tqdm(as_completed(futures), total=len(futures), desc="Resizing"):
+                pass
 
     colmap_db_path = os.path.join(colmap_dir, "colmap.db")
     assert subprocess.call([
