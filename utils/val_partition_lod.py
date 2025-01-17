@@ -99,6 +99,7 @@ def main():
     if args.level is not None:
         config["names"] = config["names"][args.level:args.level + 1]
         level_name = "level_{}".format(args.level)
+        config["lod_distances"] = None
 
     if args.val_side == "auto":
         ckpt_name = config.get("ckpt_name", "")
@@ -127,12 +128,11 @@ def main():
     # setup renderer
     renderer = PartitionLoDRenderer(**config).instantiate()
     renderer.setup("validation")
-    renderer.synchronized = True
 
     if len(config["names"]) > 1:
         renderer.config.visibility_filter = True
-        renderer.gsplat_renderer.runtime_options.radius_clip = 1.5
-        renderer.gsplat_renderer.runtime_options.radius_clip_from = 1.5 * renderer.default_partition_size
+        # renderer.gsplat_renderer.runtime_options.radius_clip = 1.5
+        # renderer.gsplat_renderer.runtime_options.radius_clip_from = 1.5 * renderer.default_partition_size
         print("Automatically enable visibility filter and radius clipping")
         print(renderer.gsplat_renderer.runtime_options)
 
@@ -197,15 +197,19 @@ def main():
     finally:
         async_image_saver.stop()
 
-    print("Repeat rendering for evaluating FPS...")
+    renderer.synchronized = True
     cameras = [camera for camera, _, _ in dataloader]
+    n_val_cameras = len(cameras)
+    # n_repeating = max((1024 + n_val_cameras - 1) // n_val_cameras, 8)
+    n_repeating = 8
+    print("Repeat rendering validation set {} times for evaluating FPS...".format(n_repeating))
     bg_color = torch.zeros((3,), dtype=torch.float, device=cameras[0].device)
     n_gaussian_list = []
     time_list = []
     render_time_list = []
     render_time_with_lod_preprocess_list = []
     n_rendered_frames = 0
-    for _ in range(8):
+    for _ in range(n_repeating):
         for camera in cameras:
             predicts = renderer(
                 camera,
