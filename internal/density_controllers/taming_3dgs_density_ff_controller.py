@@ -83,7 +83,7 @@ class Taming3DGSDensityControllerFFModule(Taming3DGSDensityControllerModule):
         super().setup(stage, pl_module)
 
         if stage == "fit":
-            start_count = (self._get_grad_decay_factors(pl_module.gaussian_model) == 1.).sum().item()
+            start_count = (self._get_grad_decay_factors(pl_module.gaussian_model)[1] == 0.).sum().item()
             self.counts_array = Taming3DGSUtils.get_count_array(
                 start_count=start_count,
                 multiplier=self.config.budget,
@@ -101,17 +101,18 @@ class Taming3DGSDensityControllerFFModule(Taming3DGSDensityControllerModule):
         dist_min2p = self.partition_bbox_min - transformed_means
         dist_p2max = transformed_means - self.partition_bbox_max
         dxy = torch.maximum(dist_min2p, dist_p2max)
+        distances = torch.sqrt(torch.pow(dxy.clamp(min=0.), 2).sum(dim=-1))
         return torch.clamp_max(
-            (torch.sqrt(torch.pow(dxy.clamp(min=0.), 2).sum(dim=-1)) / self.default_partition_size) / self.config.max_radius_factor,
+            (distances / self.default_partition_size) / self.config.max_radius_factor,
             max=1.,
-        ), transformed_means  # [N]
+        ), transformed_means, distances  # [N]
 
     def _get_grad_decay_factors(self, gaussian_model):
         # decay grads based on distance (xy only)
-        normalized_distances, _ = self._get_normalized_distance_to_bounding_box(gaussian_model)
+        normalized_distances, _, distances = self._get_normalized_distance_to_bounding_box(gaussian_model)
         decay_factors = (normalized_distances * (self.config.max_grad_decay_factor - 1)) + 1
 
-        return decay_factors
+        return decay_factors, distances
 
     def _densify_and_prune(self, max_screen_size, gaussian_model, optimizers):
         # calculate mean grads
@@ -119,10 +120,10 @@ class Taming3DGSDensityControllerFFModule(Taming3DGSDensityControllerModule):
         grads[grads.isnan()] = 0.0
         grads = grads.squeeze(-1)  # [N]
 
-        grad_decay_factor = self._get_grad_decay_factors(gaussian_model)
+        grad_decay_factor, distances = self._get_grad_decay_factors(gaussian_model)
         grads = grads / grad_decay_factor
 
-        n_inside_partition = (grad_decay_factor == 1.).sum()
+        n_inside_partition = (distances == 0.).sum()
         self.log_metric("n_inside_partition", n_inside_partition)
 
         pl_module = self.avoid_state_dict[0]
@@ -199,22 +200,20 @@ class Taming3DGSDensityControllerFFModule(Taming3DGSDensityControllerModule):
         clone_budget = ((budget - curr_points) * total_clones) // (total_clones + total_splits)
         split_budget = ((budget - curr_points) * total_splits) // (total_clones + total_splits)
 
-        if clone_budget > 0:
-            self.log_metric("clone_budget", clone_budget)
-            self._densify_and_clone(
-                scores,
-                clone_budget,
-                all_clones,
-                gaussian_model,
-                optimizers,
-            )
+        self.log_metric("clone_budget", clone_budget)
+        self._densify_and_clone(
+            scores,
+            clone_budget,
+            all_clones,
+            gaussian_model,
+            optimizers,
+        )
 
-        if split_budget > 0:
-            self.log_metric("split_budget", split_budget)
-            self._densify_and_split(
-                scores,
-                split_budget,
-                all_splits,
-                gaussian_model,
-                optimizers,
-            )
+        self.log_metric("split_budget", split_budget)
+        self._densify_and_split(
+            scores,
+            split_budget,
+            all_splits,
+            gaussian_model,
+            optimizers,
+        )
