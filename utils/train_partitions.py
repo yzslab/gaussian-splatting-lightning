@@ -164,6 +164,10 @@ class PartitionTraining:
     ):
         self.path = config.partition_dir
         self.config = config
+
+        if self.config.t3dgs_densify:
+            assert self.config.ff_densify, "'--t3dgs-densify' must present with '--ff-densify'"
+
         self.scene = torch.load(os.path.join(self.path, name), map_location="cpu")
 
         # conversion for previous version
