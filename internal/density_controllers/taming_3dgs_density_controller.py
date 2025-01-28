@@ -366,7 +366,7 @@ class Taming3DGSUtils:
     @staticmethod
     def compute_photometric_loss(a, b, lambda_dssim: float, mask=None):
         if mask is not None:
-            mask = mask.to(torch.uint8)
+            mask = mask.to(device=a.device, dtype=torch.uint8)
             a = a * mask
             b = b * mask
 
