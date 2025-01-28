@@ -149,13 +149,15 @@ class Taming3DGSDensityControllerFFModule(Taming3DGSDensityControllerModule):
             lambda_dssim=pl_module.metric.config.lambda_dssim,
         )
 
-        self._densify_and_prune_with_scores(
-            grads=grads,
-            scores=gaussian_importance,
-            gaussian_model=gaussian_model,
-            optimizers=optimizers,
-            n_inside_partition=n_inside_partition,
-        )
+        # must < 2^24
+        if gaussian_model.n_gaussians < 16_000_000:
+            self._densify_and_prune_with_scores(
+                grads=grads,
+                scores=gaussian_importance,
+                gaussian_model=gaussian_model,
+                optimizers=optimizers,
+                n_inside_partition=n_inside_partition,
+            )
 
         # prune
         self._opacity_culling(gaussian_importance, max_screen_size, gaussian_model, optimizers)
