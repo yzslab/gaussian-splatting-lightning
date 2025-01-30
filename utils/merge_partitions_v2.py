@@ -80,13 +80,7 @@ def fuse_appearance_features(ckpt: dict, gaussian_model, cameras_json: list[dict
 
 
 def update_ckpt(ckpt, merged_gaussians, max_sh_degree, retain_appearance: bool):
-    if retain_appearance:
-        from internal.models.appearance_feature_gaussian import AppearanceFeatureGaussian
-        ckpt["hyper_parameters"]["gaussian"] = AppearanceFeatureGaussian(
-            sh_degree=max_sh_degree,
-            appearance_feature_dims=ckpt["hyper_parameters"]["gaussian"].appearance_feature_dims,
-        )
-    else:
+    if not retain_appearance:
         # replace `AppearanceFeatureGaussian` with `VanillaGaussian`
         ckpt["hyper_parameters"]["gaussian"] = VanillaGaussian(sh_degree=max_sh_degree)
 
@@ -106,16 +100,7 @@ def update_ckpt(ckpt, merged_gaussians, max_sh_degree, retain_appearance: bool):
     elif isinstance(ckpt["hyper_parameters"]["renderer"], GSplatMipSplattingRendererV2) or ckpt["hyper_parameters"]["renderer"].__class__.__name__ == "GSplatAppearanceEmbeddingMipRenderer":
         kernel_size = ckpt["hyper_parameters"]["renderer"].filter_2d_kernel_size
 
-    if retain_appearance:
-        from internal.renderers.gsplat_appearance_embedding_renderer import GSplatAppearanceEmbeddingRenderer
-        ckpt["hyper_parameters"]["renderer"] = GSplatAppearanceEmbeddingRenderer(
-            anti_aliased=anti_aliased,
-            filter_2d_kernel_size=kernel_size,
-            separate_sh=True,
-            tile_based_culling=getattr(ckpt["hyper_parameters"]["renderer"], "tile_based_culling", False),
-            model=ckpt["hyper_parameters"]["renderer"].model,
-        )
-    else:
+    if not retain_appearance:
         ckpt["hyper_parameters"]["renderer"] = GSplatV1Renderer(
             anti_aliased=anti_aliased,
             filter_2d_kernel_size=kernel_size,
@@ -186,6 +171,8 @@ def main():
 
     if args.retain_appearance:
         MERGABLE_PROPERTY_NAMES.append(AppearanceFeatureGaussianModel._appearance_feature_name)
+        MERGABLE_PROPERTY_NAMES.append("filter_3d")
+        MERGABLE_PROPERTY_NAMES.append("opacity_max")
 
     torch.autograd.set_grad_enabled(False)
 
@@ -295,8 +282,14 @@ def main():
                 )
 
             if isinstance(gaussian_model, MipSplattingModelMixin):
-                t.write("Fusing MipSplatting filters...")
-                fuse_mip_filters(gaussian_model)
+                if not args.retain_appearance:
+                    t.write("Fusing MipSplatting filters...")
+                    fuse_mip_filters(gaussian_model)
+            else:
+                try:
+                    MERGABLE_PROPERTY_NAMES.remove("filter_3d")
+                except:
+                    pass
 
             if args.preprocess:
                 update_ckpt(ckpt, {k: gaussian_model.get_property(k) for k in MERGABLE_PROPERTY_NAMES}, gaussian_model.max_sh_degree, retain_appearance=args.retain_appearance)

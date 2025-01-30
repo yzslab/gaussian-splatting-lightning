@@ -135,7 +135,8 @@ class PartitionLoDRendererModule(Renderer):
 
                 loaded_partition_idx_list.append(partition_idx)
                 gaussian_model = GaussianModelLoader.initialize_model_from_checkpoint(ckpt, device)
-                if gaussian_model.__class__.__name__ == "AppearanceFeatureGaussianModel":
+                from internal.models.appearance_feature_gaussian import AppearanceFeatureGaussianModel
+                if isinstance(gaussian_model, AppearanceFeatureGaussianModel):
                     renderer = GaussianModelLoader.initialize_renderer_from_checkpoint(ckpt, "validate", device)
                     appearance_models.append(renderer.model)
                     gaussian_model.shs_dc_backup = gaussian_model.get_shs_dc()
@@ -150,6 +151,23 @@ class PartitionLoDRendererModule(Renderer):
                 gaussian_model.pre_activate_all_properties()
                 gaussian_model.freeze()
                 gaussian_model.to(device=device)
+
+                gaussian_model.opacity_comp = None
+                if hasattr(gaussian_model, "compute_3d_filter"):
+                    from internal.models.mip_splatting import MipSplattingUtils
+                    new_scales, opacity_comp = MipSplattingUtils.apply_3d_filter_on_scales(
+                        gaussian_model.get_3d_filter(),
+                        scales=gaussian_model.get_scales(),
+                        compute_opacity_compensation=gaussian_model.config.opacity_compensation,
+                    )
+                    gaussian_model.scales = gaussian_model.scale_inverse_activation(new_scales)
+                    gaussian_model.opacity_comp = opacity_comp
+
+                    new_names = list(gaussian_model.property_names)
+                    new_names.remove(gaussian_model._filter_3d_name)
+                    del gaussian_model.gaussians[gaussian_model._filter_3d_name]
+                    gaussian_model._names = tuple(new_names)
+
                 models.append(gaussian_model)
 
             lods.append(models)
@@ -207,7 +225,6 @@ class PartitionLoDRendererModule(Renderer):
                 previous = i
 
             self.lod_thresholds = torch.tensor(self.config.lod_distances, dtype=torch.float, device=device) * self.default_partition_size
-            
 
         # initialize partition lod states
         self.n_partitions = len(self.lods[0])
@@ -318,6 +335,8 @@ class PartitionLoDRendererModule(Renderer):
                 gaussian_model.gaussians["shs"][:, 0] = gaussian_model.shs_dc_backup.squeeze(1) + shs_dc + 0.5 / C0
                 if appearance_model.config.with_opacity:
                     gaussian_model.gaussians["opacities"] = torch.clamp_max(gaussian_model.opacities_backup + predicts[..., 3:], max=1.)
+                    if gaussian_model.opacity_comp is not None:
+                        gaussian_model.gaussians["opacities"] *= gaussian_model.opacity_comp.unsqueeze(-1)
 
         self.previous_appearance_id = appearance_id
 
