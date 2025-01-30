@@ -257,6 +257,9 @@ def main():
         use_distributed_sampler=False,
         log_every_n_steps=min(len(dataparser_outputs.val_set), 50),
     )
+    
+    dataparser_outputs.val_set.extra_data = [None] * len(dataparser_outputs.val_set)
+    dataparser_outputs.val_set.extra_data_processor = dataparser_outputs.val_set._return_input
 
     # setup dataloader
     dataloader = CacheDataLoader(
