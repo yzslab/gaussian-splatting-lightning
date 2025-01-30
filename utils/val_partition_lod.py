@@ -17,6 +17,7 @@ def parse_args():
     parser.add_argument("yaml")
     parser.add_argument("--val-side", "--side", "--val-on", type=str, default="auto")
     parser.add_argument("--level", "-l", type=int, default=None)
+    parser.add_argument("--disable-tbc", action="store_true", default=False)
     return parser.parse_args()
 
 
@@ -136,6 +137,12 @@ def main():
         print("Automatically enable visibility filter and radius clipping")
         print(renderer.gsplat_renderer.runtime_options)
 
+    if args.disable_tbc:
+        print("Disable tile-based culling")
+        from internal.renderers.gsplat_v1_renderer import GSplatV1
+        renderer.gsplat_renderer.config.tile_based_culling = False
+        renderer.gsplat_renderer.isect_encode = GSplatV1.isect_encode_with_unused_opacities
+
     # load validation set
     # load a config to get the test set list
     project_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "outputs", config["names"][0])
@@ -144,7 +151,7 @@ def main():
         training_config = yaml.safe_load(f)["data"]["parser"]["init_args"]
     dataparser_outputs = Colmap(
         image_dir=training_config["image_dir"],
-        mask_dir=training_config["mask_dir"],
+        mask_dir=os.path.join(os.path.dirname(config["data"]), os.path.basename(training_config["mask_dir"])) if training_config["mask_dir"] is not None else None,
         split_mode=training_config["split_mode"],
         eval_list=training_config["eval_list"],
         scene_scale=training_config["scene_scale"],
@@ -201,7 +208,7 @@ def main():
     cameras = [camera for camera, _, _ in dataloader]
     n_val_cameras = len(cameras)
     # n_repeating = max((1024 + n_val_cameras - 1) // n_val_cameras, 8)
-    n_repeating = 8
+    n_repeating = 3
     print("Repeat rendering validation set {} times for evaluating FPS...".format(n_repeating))
     bg_color = torch.zeros((3,), dtype=torch.float, device=cameras[0].device)
     n_gaussian_list = []
