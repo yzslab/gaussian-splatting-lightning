@@ -151,7 +151,7 @@ def main():
         training_config = yaml.safe_load(f)["data"]["parser"]["init_args"]
     dataparser_outputs = Colmap(
         image_dir=training_config["image_dir"],
-        mask_dir=os.path.join(os.path.dirname(config["data"]), os.path.basename(training_config["mask_dir"])) if training_config["mask_dir"] is not None else None,
+        mask_dir=training_config["mask_dir"],
         split_mode=training_config["split_mode"],
         eval_list=training_config["eval_list"],
         scene_scale=training_config["scene_scale"],
