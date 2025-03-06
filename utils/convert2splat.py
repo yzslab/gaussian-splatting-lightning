@@ -2,7 +2,7 @@ import add_pypath
 import argparse
 import numpy as np
 import lightning
-from internal.utils.gaussian_utils import Gaussian
+from internal.utils.gaussian_utils import GaussianPlyUtils as Gaussian
 from internal.utils.sh_utils import eval_sh
 
 
