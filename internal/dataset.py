@@ -533,6 +533,8 @@ class DataModule(LightningDataModule):
         )
 
     def on_after_batch_transfer(self, batch: Any, dataloader_idx: int) -> Any:
+        if batch[1][1] is None:
+            return batch
         if batch[1][1].dtype != torch.uint8:
             return batch
 
