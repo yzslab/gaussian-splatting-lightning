@@ -1,5 +1,5 @@
 import torch
-from gsplat import project_gaussians
+from gsplat.v0_interfaces import project_gaussians
 from gsplat.rasterize import rasterize_gaussians
 from gsplat.sh import spherical_harmonics
 from .renderer import *
