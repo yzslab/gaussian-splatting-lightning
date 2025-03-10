@@ -1,3 +1,4 @@
+from typing import Any
 from dataclasses import dataclass
 
 import torch
@@ -20,7 +21,7 @@ class MipSplattingRendererMixin:
 
         return scales, opacities.squeeze(-1)
 
-    def get_opacities(self, camera, gaussian_model: MipSplattingModel, projections, visibility_filter, status: torch.Any, **kwargs):
+    def get_opacities(self, camera, gaussian_model: MipSplattingModel, projections, visibility_filter, status: Any, **kwargs):
         return status, None
 
 
