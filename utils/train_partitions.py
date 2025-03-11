@@ -39,6 +39,7 @@ class PartitionTrainingConfig:
     partition_id_strs: Optional[List[str]] = None
     training_args: Union[Tuple, List] = None
     config_file: Optional[List[str]] = None
+    image_number_from: Optional[str] = None
     srun_args: List[str] = field(default_factory=lambda: [])
 
     def __post_init__(self):
@@ -74,6 +75,7 @@ class PartitionTrainingConfig:
         parser.add_argument("--name-suffix", type=str, default="")
         parser.add_argument("--ff-densify", action="store_true", default=False)
         parser.add_argument("--t3dgs-densify", action="store_true", default=False)
+        parser.add_argument("--image-number-from", type=str, default=None)
         configure_arg_parser_v2(parser)
 
     @staticmethod
@@ -144,6 +146,7 @@ class PartitionTrainingConfig:
             scale_param_mode=scale_param_mode,
             partition_id_strs=args.parts,
             config_file=args.config,
+            image_number_from=args.image_number_from,
             training_args=training_args,
             srun_args=srun_args,
             **cls.get_extra_init_kwargs(args),
@@ -181,6 +184,20 @@ class PartitionTraining:
 
         self.scene["partition_coordinates"] = PartitionCoordinates(**self.scene["partition_coordinates"])
         self.dataset_path = os.path.dirname(self.path.rstrip("/"))
+
+        self.image_number_from = None
+        if self.config.image_number_from is not None:
+            partition_data = torch.load(os.path.join(
+                self.config.image_number_from,
+                name,
+            ), map_location="cpu")
+            self.image_number_from = (
+                PartitionCoordinates(**partition_data["partition_coordinates"]),
+                partition_data["location_based_assignments"],
+                partition_data["visibility_based_assignments"],
+            )
+
+            assert torch.all(self.image_number_from[0].id == self.scene["partition_coordinates"].id)
 
     @property
     def partition_coordinates(self) -> PartitionCoordinates:
@@ -254,9 +271,15 @@ class PartitionTraining:
         return self.partition_coordinates.get_str_id(idx)
 
     def get_image_numbers(self) -> torch.Tensor:
+        if self.image_number_from is None:
+            return torch.logical_or(
+                self.scene["location_based_assignments"],
+                self.scene["visibility_based_assignments"],
+            ).sum(-1)
+
         return torch.logical_or(
-            self.scene["location_based_assignments"],
-            self.scene["visibility_based_assignments"],
+            self.image_number_from[1],
+            self.image_number_from[2],
         ).sum(-1)
 
     def get_trainable_partition_idx_list(
@@ -273,9 +296,15 @@ class PartitionTraining:
         return "{}-trained".format(self.get_experiment_name(partition_idx))
 
     def get_partition_image_number(self, partition_idx: int) -> int:
+        if self.image_number_from is None:
+            return torch.logical_or(
+                self.scene["location_based_assignments"][partition_idx],
+                self.scene["visibility_based_assignments"][partition_idx],
+            ).sum(-1).item()
+
         return torch.logical_or(
-            self.scene["location_based_assignments"][partition_idx],
-            self.scene["visibility_based_assignments"][partition_idx],
+            self.image_number_from[1][partition_idx],
+            self.image_number_from[2][partition_idx],
         ).sum(-1).item()
 
     def get_experiment_name(self, partition_idx: int) -> str:
