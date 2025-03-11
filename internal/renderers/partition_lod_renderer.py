@@ -26,6 +26,8 @@ class PartitionLoDRenderer(RendererConfig):
     visibility_filter: bool = False
     freeze: bool = False
     drop_shs_rest: bool = False
+    partition_size: float = None
+    """Re-divide partitions"""
 
     lod_distances: list[int] = None
     """ i_distance = lod_distances[i] * default_partition_size, from finest to coarsest """
@@ -35,6 +37,15 @@ class PartitionLoDRenderer(RendererConfig):
     def instantiate(self, *args, **kwargs) -> "PartitionLoDRendererModule":
         if self.ckpt_name.endswith(".ckpt"):
             self.ckpt_name = self.ckpt_name[:self.ckpt_name.rfind(".")]
+
+        # change at runtime
+        lod_appearance_side = os.environ.get("LOD_SIDE", "")
+        if lod_appearance_side == "left":
+            self.ckpt_name = "preprocessed-retain_appearance-right_optimized"
+            print("Updated `ckpt_name` to {}".format(self.ckpt_name))
+        elif lod_appearance_side == "right":
+            self.ckpt_name = "preprocessed-retain_appearance-left_optimized"
+            print("Updated `ckpt_name` to {}".format(self.ckpt_name))
 
         return PartitionLoDRendererModule(self)
 
@@ -101,6 +112,7 @@ class PartitionLoDRendererModule(Renderer):
         lods_appearance_models = []
 
         for lod in tqdm(self.config.names):
+            tqdm.write(lod)
             models = []
             appearance_models = []
 
@@ -122,13 +134,15 @@ class PartitionLoDRendererModule(Renderer):
             loaded_partition_idx_list = []
             for partition_idx in tqdm(trainable_partition_idx_list, leave=False):
                 try:
-                    ckpt = torch.load(os.path.join(
+                    ckpt_file = os.path.join(
                         os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
                         "outputs",
                         lod,
                         partition_training.get_experiment_name(partition_idx),
                         "{}.ckpt".format(self.config.ckpt_name),
-                    ), map_location="cpu")
+                    )
+                    tqdm.write("  {}/{}".format(*ckpt_file.split(os.path.sep)[-2:]))
+                    ckpt = torch.load(ckpt_file, map_location="cpu")
                 except:
                     tqdm.write("[WARNING]Checkpoint '{}.ckpt' of partition {} of not found in {}".format(self.config.ckpt_name, partition_training.get_partition_id_str(partition_idx), lod))
                     continue
@@ -150,7 +164,6 @@ class PartitionLoDRendererModule(Renderer):
                     gaussian_model.shs_rest = torch.empty((gaussian_model.n_gaussians, 0, 3), device=gaussian_model.shs_dc.device)
                 gaussian_model.pre_activate_all_properties()
                 gaussian_model.freeze()
-                gaussian_model.to(device=device)
 
                 gaussian_model.opacity_comp = None
                 if hasattr(gaussian_model, "compute_3d_filter"):
@@ -168,7 +181,10 @@ class PartitionLoDRendererModule(Renderer):
                     del gaussian_model.gaussians[gaussian_model._filter_3d_name]
                     gaussian_model._names = tuple(new_names)
 
+                if self.config.partition_size is not None:
+                    gaussian_model.to(device="cpu")
                 models.append(gaussian_model)
+                torch.cuda.empty_cache()
 
             lods.append(models)
             lods_appearance_models.append(appearance_models)
@@ -184,11 +200,170 @@ class PartitionLoDRendererModule(Renderer):
         self.partition_bounding_boxes.min = self.partition_bounding_boxes.min[trainable_partition_idx]
         self.partition_bounding_boxes.max = self.partition_bounding_boxes.max[trainable_partition_idx]
 
+        # re-divide partitions
+        if self.config.partition_size is not None:
+            print("Re-divide partitions, about {} partitions".format(
+                torch.prod((torch.max(self.partition_bounding_boxes.max, dim=0).values - torch.min(self.partition_bounding_boxes.min, dim=0).values) / self.config.partition_size, dim=-1)
+            ))
+            new_partition_bounding_box_min_list = []
+            new_partition_bounding_box_max_list = []
+            new_lods = [[] for _ in range(len(self.lods))]
+            new_lods_appearance_models = [[] for _ in range(len(self.lods))]
+            for partition_idx in range(self.partition_bounding_boxes.min.shape[0]):
+                partition_size = self.partition_coordinates.size[partition_idx]
+                partition_bbox_min = self.partition_bounding_boxes.min[partition_idx]
+                partition_bbox_max = self.partition_bounding_boxes.max[partition_idx]
+
+                if False and torch.any(partition_size <= self.config.partition_size):
+                    # no re-dividing
+                    new_partition_bounding_box_min_list.append(partition_bbox_min)
+                    new_partition_bounding_box_max_list.append(partition_bbox_max)
+                    for lod_level in range(len(self.lods)):
+                        new_lods[lod_level].append(self.lods[lod_level][partition_idx])
+                        new_lods_appearance_models[lod_level].append(self.lods_appearance_models[lod_level][partition_idx])
+                else:
+                    n_new_partitions = torch.ceil(partition_size / self.config.partition_size).to(torch.long)
+                    print("n_new_partitions={}".format(n_new_partitions))
+                    for i in range(n_new_partitions[0]):
+                        for j in range(n_new_partitions[1]):
+                            new_bbox_min = partition_bbox_min + torch.tensor([
+                                self.config.partition_size * i,
+                                self.config.partition_size * j,
+                            ], dtype=torch.float, device=partition_bbox_min.device)
+                            new_bbox_max = torch.minimum(new_bbox_min + self.config.partition_size, partition_bbox_max)
+
+                            if torch.any((new_bbox_max - new_bbox_min) < 1e-2):
+                                continue
+
+                            has_gaussians = False
+
+                            for lod_level in range(len(self.lods)):
+                                existing_model = self.lods[lod_level][partition_idx]
+                                existing_appearance_model = self.lods_appearance_models[lod_level][partition_idx]
+
+                                transformed_means = (existing_model.get_means().cuda() @ self.orientation_transform)[:, :2]
+                                in_new_bbox = torch.logical_and(
+                                    torch.prod(transformed_means >= new_bbox_min[None, :], dim=-1).bool(),
+                                    torch.prod(transformed_means < new_bbox_max[None, :], dim=-1).bool(),
+                                )
+                                if in_new_bbox.sum() == 0 and lod_level == 0:
+                                    break
+
+                                has_gaussians = True
+
+                                new_properties = {}
+                                for k, v in existing_model.properties.items():
+                                    new_properties[k] = v[in_new_bbox.to(device=v.device)]
+                                # instantiate new model
+                                new_model = existing_model.config.instantiate()
+                                new_model.setup_from_number(16)
+                                new_model.pre_activate_all_properties()
+                                new_model.freeze()
+
+                                new_model._names = existing_model._names
+                                new_model.update_properties(new_properties)
+
+                                # copy shs_dc and opacity backup
+                                if hasattr(existing_model, "shs_dc_backup"):
+                                    new_model.shs_dc_backup = existing_model.shs_dc_backup[in_new_bbox.to(device=existing_model.shs_dc_backup.device)].to(device)
+                                if hasattr(existing_model, "opacities_backup"):
+                                    new_model.opacities_backup = existing_model.opacities_backup[in_new_bbox.to(device=existing_model.opacities_backup.device)].to(device)
+
+                                # copy opacity comp
+                                new_model.opacity_comp = None
+                                if existing_model.opacity_comp is not None:
+                                    new_model.opacity_comp = existing_model.opacity_comp[in_new_bbox.to(device=existing_model.opacity_comp.device)].to(device)
+
+                                # append model
+                                new_model.to(device=device)
+                                new_lods[lod_level].append(new_model)
+                                new_lods_appearance_models[lod_level].append(existing_appearance_model)
+
+                            if has_gaussians:
+                                # append bounding box
+                                new_partition_bounding_box_min_list.append(new_bbox_min)
+                                new_partition_bounding_box_max_list.append(new_bbox_max)
+
+                            del new_bbox_min
+                            del new_bbox_max
+
+                    # background
+                    has_background = False
+                    for lod_level in range(len(self.lods)):
+                        existing_model = self.lods[lod_level][partition_idx]
+                        existing_appearance_model = self.lods_appearance_models[lod_level][partition_idx]
+
+                        transformed_means = (existing_model.get_means().cuda() @ self.orientation_transform)[:, :2]
+                        outside_bbox = torch.logical_not(torch.logical_and(
+                            torch.prod(transformed_means >= partition_bbox_min[None, :], dim=-1).bool(),
+                            torch.prod(transformed_means < partition_bbox_max[None, :], dim=-1).bool(),
+                        ))
+                        if outside_bbox.sum() == 0 and lod_level == 0:
+                            break
+
+                        has_background = True
+
+                        new_properties = {}
+                        for k, v in existing_model.properties.items():
+                            new_properties[k] = v[outside_bbox.to(device=v.device)]
+                        # instantiate new model
+                        new_model = existing_model.config.instantiate()
+                        new_model.setup_from_number(16)
+                        new_model.pre_activate_all_properties()
+                        new_model.freeze()
+
+                        new_model._names = existing_model._names
+                        new_model.update_properties(new_properties)
+
+                        # copy shs_dc and opacity backup
+                        if hasattr(existing_model, "shs_dc_backup"):
+                            new_model.shs_dc_backup = existing_model.shs_dc_backup[outside_bbox.to(device=existing_model.shs_dc_backup.device)].to(device)
+                        if hasattr(existing_model, "opacities_backup"):
+                            new_model.opacities_backup = existing_model.opacities_backup[outside_bbox.to(device=existing_model.opacities_backup.device)].to(device)
+
+                        # copy opacity comp
+                        new_model.opacity_comp = None
+                        if existing_model.opacity_comp is not None:
+                            new_model.opacity_comp = existing_model.opacity_comp[outside_bbox.to(device=existing_model.opacity_comp.device)].to(device)
+
+                        # append model
+                        new_model.to(device=device)
+                        new_lods[lod_level].append(new_model)
+                        new_lods_appearance_models[lod_level].append(existing_appearance_model)
+
+                    if has_background:
+                        new_partition_bounding_box_min_list.append(partition_bbox_min)
+                        new_partition_bounding_box_max_list.append(partition_bbox_max)
+
+            self.partition_bounding_boxes.min = torch.stack(new_partition_bounding_box_min_list)
+            self.partition_bounding_boxes.max = torch.stack(new_partition_bounding_box_max_list)
+            for i in torch.concat([
+                self.partition_bounding_boxes.min,
+                self.partition_bounding_boxes.max,
+            ], dim=-1):
+                print(i)
+            self.partition_coordinates.xy = self.partition_bounding_boxes.min
+            self.partition_coordinates.size = self.partition_bounding_boxes.max - self.partition_bounding_boxes.min
+            self.partition_coordinates.id = torch.arange(self.partition_coordinates.xy.shape[0])[None, :].repeat(self.partition_coordinates.xy.shape[0], 2)
+            self.lods = new_lods
+            self.lods_appearance_models = new_lods_appearance_models
+
+            # self.default_partition_size = self.config.partition_size
+
+            import gc
+            gc.collect()
+            torch.cuda.empty_cache()
+
         # get partition 3D bounding boxes
         partition_min_max_z = []
+        print(len(self.lods[0]))
+        print("self.partition_bounding_boxes.min.shape={}".format(self.partition_bounding_boxes.min.shape))
         for partition_model in self.lods[0]:
             partition_z_value = partition_model.get_means() @ self.orientation_transform[:, -1:]
-            partition_min_max_z.append(torch.stack([torch.quantile(partition_z_value, 0.005), torch.quantile(partition_z_value, 0.995)]))
+            partition_min_max_z.append(torch.stack([torch.quantile(partition_z_value, 0.005), torch.quantile(partition_z_value, 0.995)]) + torch.tensor([
+                -1e-3,
+                1e-3,
+            ], dtype=torch.float, device=self.orientation_transform.device))
         partition_min_max_z = torch.stack(partition_min_max_z)
         # print(partition_min_max_z)
         partition_full_2d_bounding_box = []
@@ -209,6 +384,8 @@ class PartitionLoDRendererModule(Renderer):
         partition_full_2d_bounding_box = torch.stack(partition_full_2d_bounding_box)  # [N_partitions, 4, 2]
         partition_min_max_z = partition_min_max_z[:, None, :].repeat(1, 4, 1)
         # from top to bottom
+        print(partition_full_2d_bounding_box.shape)
+        print(partition_min_max_z.shape)
         self.partition_full_3d_bounding_box = torch.concat([
             torch.concat([partition_full_2d_bounding_box, partition_min_max_z[..., 1:2]], dim=-1),
             torch.concat([partition_full_2d_bounding_box, partition_min_max_z[..., 0:1]], dim=-1),
@@ -573,7 +750,7 @@ class ViewerOptions:
             self.label_updaters.append(get_label_updater(
                 name="part/{}".format(idx),
                 text="#{}({},{})".format(idx, *id.tolist()),
-                position=(torch.concat([xy + 0.5 * self.renderer.default_partition_size, torch.tensor([0.])]).cuda() @ self.renderer.orientation_transform.T).cpu().numpy(),
+                position=(torch.concat([xy + 0.5 * self.renderer.default_partition_size, torch.tensor([0.], device=xy.device)]).cuda() @ self.renderer.orientation_transform.T).cpu().numpy(),
             ))
 
         self.renderer.on_render_hooks.append(self.update_labels)
