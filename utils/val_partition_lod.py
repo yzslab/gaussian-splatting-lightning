@@ -18,6 +18,7 @@ def parse_args():
     parser.add_argument("--val-side", "--side", "--val-on", type=str, default="auto")
     parser.add_argument("--level", "-l", type=int, default=None)
     parser.add_argument("--disable-tbc", action="store_true", default=False)
+    parser.add_argument("--down-sample", type=int, default=None)
     return parser.parse_args()
 
 
@@ -157,7 +158,7 @@ def main():
         scene_scale=training_config["scene_scale"],
         reorient=training_config["reorient"],
         appearance_groups=training_config["appearance_groups"],
-        down_sample_factor=training_config["down_sample_factor"],
+        down_sample_factor=training_config["down_sample_factor"] if args.down_sample is None else args.down_sample,
         down_sample_rounding_mode=training_config["down_sample_rounding_mode"],
 
         # CHANGED
@@ -184,7 +185,12 @@ def main():
         num_workers=2,
     )
 
-    output_dir = os.path.join(config["data"], "val-{}-{}{}".format(os.path.basename(args.yaml), level_name, "-{}".format(args.val_side) if args.val_side is not None else ""))
+    output_dir = os.path.join(config["data"], "val-{}-{}{}{}".format(
+        os.path.basename(args.yaml),
+        level_name,
+        "-ds_{}".format(args.down_sample) if args.down_sample is not None else "",
+        "-{}".format(args.val_side) if args.val_side is not None else ""),
+    )
 
     # image saver
     async_image_saver = AsyncImageSaver(is_rgb=True)
@@ -251,6 +257,7 @@ def main():
         metrics_writer.writerow(mean_row)
 
         average_n_gaussians = torch.mean(torch.tensor(n_gaussian_list, dtype=torch.float)).item()
+        peak_n_gaussians = torch.tensor(n_gaussian_list, dtype=torch.float).max().item()
         fps = n_rendered_frames / torch.sum(torch.tensor(time_list, dtype=torch.float))
         render_fps = n_rendered_frames / torch.sum(torch.tensor(render_time_list, dtype=torch.float))
         render_fps_with_lod_preprocess = n_rendered_frames / torch.sum(torch.tensor(render_time_with_lod_preprocess_list, dtype=torch.float))
@@ -258,9 +265,10 @@ def main():
         metrics_writer.writerow(["RenderFPS", "{}".format(render_fps)])
         metrics_writer.writerow(["RenderFPSwithLOD", "{}".format(render_fps_with_lod_preprocess)])
         metrics_writer.writerow(["AverageNGaussians", "{}".format(average_n_gaussians)])
+        metrics_writer.writerow(["PeakNGaussians", "{}".format(peak_n_gaussians)])
 
         print(mean_row)
-        print("FPS={}, RenderFPS={}, RenderFPSwithLOD={}, AverageNGaussians={}".format(fps, render_fps, render_fps_with_lod_preprocess, average_n_gaussians))
+        print("FPS={}, RenderFPS={}, RenderFPSwithLOD={}, (Average, Peak)NGaussians=({}, {})".format(fps, render_fps, render_fps_with_lod_preprocess, average_n_gaussians, peak_n_gaussians))
 
 
 main()
