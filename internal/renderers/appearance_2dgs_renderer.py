@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List
+from typing import List, Any
 import torch
 import lightning
 from gsplat import spherical_harmonics
@@ -32,7 +32,7 @@ class Appearance2DGSRendererModule(Vanilla2DGSRenderer):
         super().__init__(config.depth_ratio)
         self.config = config
 
-    def setup(self, stage: str, *args: torch.Any, **kwargs: torch.Any) -> torch.Any:
+    def setup(self, stage: str, *args: Any, **kwargs: Any) -> Any:
         super().setup(stage, *args, **kwargs)
 
         lightning_module = kwargs.get("lightning_module", None)
