@@ -44,7 +44,7 @@ class GSplatV1Renderer(RendererConfig):
 class RuntimeOptions:
     radius_clip: float = 0.
 
-    radius_clip_from: float = 0.
+    # radius_clip_from: float = 0.
 
     camera_model: Literal["pinhole", "ortho", "fisheye"] = "pinhole"
 
@@ -147,7 +147,7 @@ class GSplatV1RendererModule(Renderer):
             eps2d=self.config.filter_2d_kernel_size,
             anti_aliased=self.config.anti_aliased,
             radius_clip=self.runtime_options.radius_clip,
-            radius_clip_from=self.runtime_options.radius_clip_from,
+            # radius_clip_from=self.runtime_options.radius_clip_from,
             camera_model=self.runtime_options.camera_model,
         )
         radii, means2d, depths, conics, compensations = projections
@@ -592,19 +592,19 @@ class GSplatV1ViewerOptions:
             options.radius_clip = self.radius_clip_number.value
             viewer.rerender_for_all_client()
 
-        # radius clip from
-        self.radius_clip_from_number = server.gui.add_number(
-            label="Radius Clip From",
-            initial_value=options.radius_clip_from,
-            step=0.01,
-            min=0.,
-            max=65535.,
-        )
+        # # radius clip from
+        # self.radius_clip_from_number = server.gui.add_number(
+        #     label="Radius Clip From",
+        #     initial_value=options.radius_clip_from,
+        #     step=0.01,
+        #     min=0.,
+        #     max=65535.,
+        # )
 
-        @self.radius_clip_from_number.on_update
-        def _(_):
-            options.radius_clip_from = self.radius_clip_from_number.value
-            viewer.rerender_for_all_client()
+        # @self.radius_clip_from_number.on_update
+        # def _(_):
+        #     options.radius_clip_from = self.radius_clip_from_number.value
+        #     viewer.rerender_for_all_client()
 
         # camera model
         self.camera_model_dropdown = server.gui.add_dropdown(
