@@ -35,6 +35,8 @@ class Config:
 
     remove_image_list: bool = False
 
+    lpips: Literal["vgg", "alex", "squeeze"] = "vgg"
+
     seed: int = 42
 
     lr_init: float = 1e-2
@@ -76,7 +78,7 @@ class AppearanceEmbeddingOptimizer(lightning.LightningModule):
 
         self.gaussian_model = model
         self.renderer = renderer
-        self.metric = VanillaMetrics().instantiate()
+        self.metric = VanillaMetrics(lpips_net_type=self.config.lpips).instantiate()
         self.metric.setup(stage, self)
 
         self.register_buffer("background_color", torch.zeros(3, dtype=torch.float, device=self.device))
@@ -213,6 +215,17 @@ def main():
 
     # load checkpoint
     ckpt_file = GaussianModelLoader.search_load_file(config.model)
+    if config.val_only:
+        ckpt_dir = os.path.dirname(os.path.dirname(ckpt_file))
+        ckpt_basename = os.path.basename(ckpt_file)
+        ckpt_file = os.path.join(
+            ckpt_dir,
+            "embedding_optimization",
+            "{}-{}.ckpt".format(
+                ckpt_basename[:ckpt_basename.rfind(".")],
+                config.optimize_on,
+            ),
+        )
     print(ckpt_file)
     ckpt = torch.load(ckpt_file, map_location="cpu")
 
@@ -257,7 +270,7 @@ def main():
         use_distributed_sampler=False,
         log_every_n_steps=min(len(dataparser_outputs.val_set), 50),
     )
-    
+
     dataparser_outputs.val_set.extra_data = [None] * len(dataparser_outputs.val_set)
     dataparser_outputs.val_set.extra_data_processor = dataparser_outputs.val_set._return_input
 
