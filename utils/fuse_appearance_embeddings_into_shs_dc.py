@@ -5,7 +5,7 @@ import argparse
 import torch
 from tqdm.auto import tqdm
 from internal.renderers.gsplat_hit_pixel_count_renderer import GSplatHitPixelCountRenderer
-from internal.utils.sh_utils import RGB2SH
+from internal.utils.sh_utils import RGB2SH, C0
 from internal.utils.gaussian_model_loader import GaussianModelLoader
 
 
@@ -148,7 +148,7 @@ def average_color_fusing(
 
         input_features = torch.concat(appearance_model_input_feature_list, dim=-1).reshape((gaussian_model.n_gaussians * real_chunk_size, -1))
 
-        rgb_offset_for_each_camera[:, left:right, :] = renderer.model.network(input_features).reshape((gaussian_model.n_gaussians, real_chunk_size, -1)).to(device=device)
+        rgb_offset_for_each_camera[:, left:right, :] = renderer.model.network(input_features)[..., :3].reshape((gaussian_model.n_gaussians, real_chunk_size, -1)).to(device=device)
 
     # make sure all the elements are filled
     assert not torch.any(torch.isclose(rgb_offset_for_each_camera, torch.tensor(-1024., device=device)))
@@ -180,6 +180,8 @@ def average_embedding_fusing(
         n_average_cameras,
         -1,
     ))  # [N_gaussians, n_average_cameras, N_embedding_dims]
+    if renderer.model.config.normalize:
+        appearance_embeddings = torch.nn.functional.normalize(appearance_embeddings, dim=-1)
 
     # multiply embeddings by camera weights
     weighted_appearance_embeddings = appearance_embeddings * visibility_score_pruned_top_k_pdf.unsqueeze(-1)
@@ -223,7 +225,7 @@ def average_embedding_fusing(
         input_tensor_list.append(encoded_view_directions)
 
     input_tensor = torch.concat(input_tensor_list, dim=-1).to(cuda_device)
-    rgb_offset = embedding_network(input_tensor).clamp(min=0., max=1.)
+    rgb_offset = embedding_network(input_tensor)[:, :3]
 
     return rgb_offset
 
@@ -295,8 +297,8 @@ def fuse(
 
     # ===
 
-    sh_offset = RGB2SH(rgb_offset)
-    gaussian_model.shs_dc = gaussian_model.shs_dc + sh_offset.unsqueeze(1).to(device=gaussian_model.shs_dc.device)
+    sh_offsets = RGB2SH(rgb_offset * 2. - 1.)
+    gaussian_model.shs_dc = gaussian_model.shs_dc + sh_offsets.unsqueeze(1).to(device=gaussian_model.shs_dc.device) + 0.5 / C0
 
     return gaussian_model
 

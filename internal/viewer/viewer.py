@@ -108,6 +108,15 @@ class Viewer:
             renderer = PartitionLoDRenderer(**lod_config).instantiate()
             renderer.setup("validation")
             training_output_base_dir = os.getcwd()
+            from glob import glob
+            appearance_group_ids_file_list = list(glob(os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                "outputs",
+                lod_config["names"][0],
+                "**/appearance_group_ids.json",
+            ), recursive=True))
+            if len(appearance_group_ids_file_list) > 0:
+                training_output_base_dir = os.path.dirname(appearance_group_ids_file_list[0])
             dataset_type = "Colmap"
         else:
             load_from = self._search_load_file(model_paths[0])

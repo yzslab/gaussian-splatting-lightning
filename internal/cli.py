@@ -1,5 +1,6 @@
 import os.path
 import internal.utils.fix_lightning_save_hyperparameters
+import internal.utils.wandb_logger_patch
 import torch
 import jsonargparse
 from jsonargparse import Namespace

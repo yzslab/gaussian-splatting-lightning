@@ -29,12 +29,13 @@ def get_trained_partitions(
         process_id=process_id,
     )
 
-    partition_bounding_boxes = partition_training.partition_coordinates.get_bounding_boxes(partition_training.scene["scene_config"]["partition_size"])
+    partition_bounding_boxes = partition_training.partition_coordinates.get_bounding_boxes()
 
     # ensure that all required partitions exist
     trained_partitions = []
     for partition_idx in tqdm(trainable_partition_idx_list, desc="Searching checkpoints"):
         partition_id_str = partition_training.get_partition_id_str(partition_idx)
+        assert os.path.exists(os.path.join(partition_training.project_output_dir, partition_training.get_partition_trained_step_filename(partition_idx))), "partition {} not trained".format(partition_id_str)
         model_dir = os.path.join(partition_training.project_output_dir, partition_id_str)
         ckpt_file = GaussianModelLoader.search_load_file(model_dir)
         assert ckpt_file.endswith(".ckpt"), "checkpoint of partition #{} ({}) can not be found in {}".format(partition_idx, partition_id_str, partition_training.project_output_dir)

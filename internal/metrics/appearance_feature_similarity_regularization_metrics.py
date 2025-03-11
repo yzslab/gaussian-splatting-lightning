@@ -40,7 +40,7 @@ class Euclidean(Similarity):
 
 @dataclass
 class SimilarityRegularizationConfigMixin:
-    n_appearance_samples: int = 51_200
+    n_appearance_samples: int = 20_480
 
     n_appearance_nn: int = 16
 

@@ -24,6 +24,10 @@ class HasInverseDepthMetrics(VanillaMetrics):
 
     depth_normalized: bool = False
 
+    depth_median_normalization: bool = False
+
+    depth_mean_normalization: bool = False
+
     depth_output_key: str = "inverse_depth"
 
     def instantiate(self, *args, **kwargs) -> "HasInverseDepthMetricsModule":
@@ -64,9 +68,7 @@ class HasInverseDepthMetricsModule(VanillaMetricsImpl):
         pass
 
     def get_inverse_depth_metric(self, batch, outputs):
-        # TODO: apply mask
-
-        camera, _, gt_inverse_depth = batch
+        camera, image_info, gt_inverse_depth = batch
 
         if gt_inverse_depth is None:
             return torch.tensor(0., device=camera.device)
@@ -77,12 +79,27 @@ class HasInverseDepthMetricsModule(VanillaMetricsImpl):
                 max_depth = predicted_inverse_depth.max()
                 min_depth = predicted_inverse_depth.min()
             predicted_inverse_depth = (predicted_inverse_depth - min_depth) / (max_depth - min_depth + 1e-8)
+        elif self.config.depth_median_normalization:
+            median = torch.median(gt_inverse_depth)
+            # TODO: normalize G.T. at load time
+            gt_inverse_depth = gt_inverse_depth / median
+            predicted_inverse_depth = predicted_inverse_depth / median
+        elif self.config.depth_mean_normalization:
+            mean_depth = torch.mean(gt_inverse_depth)
+            gt_inverse_depth = gt_inverse_depth / mean_depth
+            predicted_inverse_depth = predicted_inverse_depth / mean_depth
 
         if isinstance(gt_inverse_depth, tuple):
             gt_inverse_depth, gt_inverse_depth_mask = gt_inverse_depth
 
             gt_inverse_depth = gt_inverse_depth * gt_inverse_depth_mask
             predicted_inverse_depth = predicted_inverse_depth * gt_inverse_depth_mask
+
+        # mask
+        if image_info[-1] is not None:
+            mask = image_info[-1].to(torch.uint8)
+            gt_inverse_depth = gt_inverse_depth * mask
+            predicted_inverse_depth = predicted_inverse_depth * mask
 
         return self._get_inverse_depth_loss(gt_inverse_depth, predicted_inverse_depth)
 

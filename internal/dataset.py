@@ -31,6 +31,7 @@ class Dataset(torch.utils.data.Dataset):
             camera_device: torch.device = None,
             image_device: torch.device = None,
             image_uint8: bool = False,
+            allow_mask_interpolation: bool = False,
     ) -> None:
         super().__init__()
         self.image_set = image_set
@@ -43,6 +44,7 @@ class Dataset(torch.utils.data.Dataset):
         self.camera_device = camera_device
         self.image_device = image_device
         self.image_uint8 = image_uint8
+        self.allow_mask_interpolation = allow_mask_interpolation
 
         self.image_cameras: list[Camera] = [i.to_device(camera_device) for i in image_set.cameras]  # store undistorted camera
 
@@ -120,9 +122,18 @@ class Dataset(torch.utils.data.Dataset):
             # mask must be single channel
             assert len(mask.shape) == 2, "the mask image must be single channel"
             # the shape of the mask must match to the image
-            assert mask.shape[:2] == image.shape[:2], \
-                "the shape of mask {} doesn't match to the image {}".format(mask.shape[:2], image.shape[:2])
-            mask = (mask == 0).unsqueeze(-1).expand(*image.shape)  # True is the masked pixels
+            if not mask.shape[:2] == image.shape[:2]:
+                if not self.allow_mask_interpolation:
+                    raise RuntimeError("The shape of mask {} doesn't match to the image {}. Add '--data.allow_mask_interpolation=true' if you are sure this is expected".format(mask.shape[:2], image.shape[:2]))
+
+                mask = (torch.nn.functional.interpolate(
+                    mask[None, None, ...].float(),
+                    image.shape[:2],
+                    mode="bilinear",
+                    align_corners=True,
+                )[0, 0] > 0.5).to(dtype=torch.uint8)
+
+            mask = (mask != 0).unsqueeze(-1).repeat(1, 1, image.shape[-1])  # False is the masked pixels
             mask = mask.permute(2, 0, 1).to(self.image_device)  # [channel, height, width]
 
         image = image.permute(2, 0, 1).to(self.image_device)  # [channel, height, width]
@@ -317,6 +328,7 @@ class DataModule(LightningDataModule):
             image_on_cpu: bool = True,
             image_uint8: bool = False,
             async_caching: bool = False,
+            allow_mask_interpolation: bool = False,
     ) -> None:
         r"""Load dataset
 
@@ -485,6 +497,7 @@ class DataModule(LightningDataModule):
                 camera_device=self.camera_device,
                 image_device=self.image_device,
                 image_uint8=self.hparams["image_uint8"],
+                allow_mask_interpolation=self.hparams["allow_mask_interpolation"],
             ),
             max_cache_num=self.hparams["train_max_num_images_to_cache"],
             shuffle=True,
@@ -508,6 +521,7 @@ class DataModule(LightningDataModule):
                 camera_device=self.camera_device,
                 image_device=self.image_device,
                 image_uint8=self.hparams["image_uint8"],
+                allow_mask_interpolation=self.hparams["allow_mask_interpolation"],
             ),
             max_cache_num=self.hparams["test_max_num_images_to_cache"],
             shuffle=False,
@@ -526,6 +540,7 @@ class DataModule(LightningDataModule):
                 camera_device=self.camera_device,
                 image_device=self.image_device,
                 image_uint8=self.hparams["image_uint8"],
+                allow_mask_interpolation=self.hparams["allow_mask_interpolation"],
             ),
             max_cache_num=self.hparams["val_max_num_images_to_cache"],
             shuffle=False,

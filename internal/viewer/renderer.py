@@ -17,6 +17,9 @@ class ViewerRenderer:
         self.renderer = renderer
         self.background_color = background_color
 
+        self.max_depth = 0.
+        self.depth_map_color_map = "turbo"
+
         # TODO: initial value should get from renderer
         self.output_info: Tuple[str, renderers.RendererOutputInfo, renderers.RendererOutputVisualizer] = (
             "rgb",
@@ -39,7 +42,7 @@ class ViewerRenderer:
     def _setup_depth_map_options(self, viewer, server):
         self.max_depth_gui_number = server.gui.add_number(
             label="Max Clamp",
-            initial_value=0.,
+            initial_value=self.max_depth,
             min=0.,
             step=0.01,
             hint="value=0 means that no max clamping, value will be normalized based on the maximum one",
@@ -48,7 +51,7 @@ class ViewerRenderer:
         self.depth_map_color_map_dropdown = server.gui.add_dropdown(
             label="Color Map",
             options=["turbo", "viridis", "magma", "inferno", "cividis", "gray"],
-            initial_value="turbo",
+            initial_value=self.depth_map_color_map,
             visible=False,
         )
 
@@ -56,9 +59,13 @@ class ViewerRenderer:
         @self.depth_map_color_map_dropdown.on_update
         def _(event):
             with server.atomic():
+                self.max_depth = self.max_depth_gui_number.value
+                self.depth_map_color_map = self.depth_map_color_map_dropdown.value
                 viewer.rerender_for_all_client()
 
     def _set_depth_map_option_visibility(self, visible: bool):
+        if getattr(self, "max_depth_gui_number", None) is None:
+            return
         self.max_depth_gui_number.visible = visible
         self.depth_map_color_map_dropdown.visible = visible
 
@@ -135,14 +142,14 @@ class ViewerRenderer:
 
     def depth_map_processor(self, depth_map, *args, **kwargs):
         # TODO: the pixels not covered by any Gaussian (alpha==0), should be 1. after normalization
-        max_depth = self.max_depth_gui_number.value
+        max_depth = self.max_depth
         if max_depth == 0:
             max_depth = depth_map.max()
         # normalize raw depth_map
         depth_map = depth_map - torch.minimum(depth_map.min(), torch.tensor(0., dtype=torch.float, device=depth_map.device))  # avoid negative values
         depth_map = (depth_map / (max_depth + 1e-8)).clamp(max=1.)
         # apply colormap
-        return Visualizers.float_colormap(depth_map, self.depth_map_color_map_dropdown.value)
+        return Visualizers.float_colormap(depth_map, self.depth_map_color_map)
 
     def normal_map_processor(self, normal_map, *args, **kwargs):
         return Visualizers.normal_map_colormap(normal_map)

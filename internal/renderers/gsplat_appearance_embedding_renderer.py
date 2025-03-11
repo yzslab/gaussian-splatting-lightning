@@ -26,10 +26,12 @@ class ModelConfig:
     n_layers: int = 3
     skip_layers: List[int] = field(default_factory=lambda: [])
 
+    with_opacity: bool = False
+
     normalize: bool = False
 
     tcnn: bool = False  # TODO: gradient scaling
-    """Speed up a little, but may sometimes reduce the metrics due to half-precision"""
+    """Speed up a little, but may sometimes reduce the metrics due to half-precision, and even NaN"""
 
 
 @dataclass
@@ -52,6 +54,8 @@ class Model(nn.Module):
         self._setup()
 
     def _setup(self):
+        self.n_output_dims = 4 if self.config.with_opacity else 3
+
         self.embedding = nn.Embedding(
             num_embeddings=self.config.n_appearances,
             embedding_dim=self.config.n_appearance_embedding_dims,
@@ -62,7 +66,7 @@ class Model(nn.Module):
             n_input_dims += self.view_direction_encoding.get_output_n_channels()
         self.network = NetworkFactory(tcnn=self.config.tcnn).get_network_with_skip_layers(
             n_input_dims=n_input_dims,
-            n_output_dims=3,
+            n_output_dims=self.n_output_dims,
             n_layers=self.config.n_layers,
             n_neurons=self.config.n_neurons,
             activation="ReLU",
@@ -73,7 +77,7 @@ class Model(nn.Module):
     def forward(self, gaussian_features, appearance, view_dirs):
         if gaussian_features.shape[0] == 0:
             return torch.zeros(
-                (gaussian_features.shape[0], 3),
+                (gaussian_features.shape[0], self.n_output_dims),
                 dtype=gaussian_features.dtype,
                 device=gaussian_features.device,
             )
@@ -159,7 +163,24 @@ class GSplatAppearanceEmbeddingRendererModule(GSplatV1RendererModule):
             warm_up=self.config.optimization.warm_up,
         )
 
+        if self.config.model.with_opacity:
+            module.extra_train_metrics.append(self.opacity_offset_reg)
+
         return [embedding_optimizer, network_optimizer], [embedding_scheduler, network_scheduler]
+
+    def opacity_offset_reg(self, outputs, batch, gaussian_model, global_step, pl_module):
+        if self.opacity_offsets is None:
+            return torch.tensor(0., dtype=torch.float, device=pl_module.device)
+        opacity_offset_reg_loss = torch.mean(self.opacity_offsets)
+        pl_module.log(
+            "train/opacity_offset_reg",
+            opacity_offset_reg_loss,
+            prog_bar=False,
+            on_step=True,
+            on_epoch=False,
+            batch_size=pl_module.batch_size,
+        )
+        return opacity_offset_reg_loss * 0.05
 
     def sh(self, pc, dirs, mask=None):
         if pc.is_pre_activated:
@@ -191,6 +212,19 @@ class GSplatAppearanceEmbeddingRendererModule(GSplatV1RendererModule):
             coeffs=pc.get_shs_rest()[mask],
         )
 
+    def get_opacities(self, camera, gaussian_model, projections: Tuple, visibility_filter, status: Any, **kwargs) -> Tuple[torch.Tensor, Any]:
+        rgbs, opacities, opacity_offsets = self._get_rgbs_and_opacities(
+            camera,
+            gaussian_model,
+            projections,
+            visibility_filter,
+            status,
+            **kwargs,
+        )
+        if self.training:
+            self.opacity_offsets = opacity_offsets
+        return opacities, rgbs
+
     def get_rgbs(
         self,
         viewpoint_camera,
@@ -200,6 +234,19 @@ class GSplatAppearanceEmbeddingRendererModule(GSplatV1RendererModule):
         status: Any,
         **kwargs,
     ):
+        return status
+
+    def _get_rgbs_and_opacities(
+        self,
+        viewpoint_camera,
+        pc,
+        projections: Tuple,
+        visibility_filter,
+        status: Any,
+        **kwargs,
+    ):
+        raw_opacities = pc.get_opacities().squeeze(-1)
+
         if kwargs.get("warm_up", False):
             return torch.clamp(
                 self.sh(
@@ -208,7 +255,7 @@ class GSplatAppearanceEmbeddingRendererModule(GSplatV1RendererModule):
                     visibility_filter,
                 ) + 0.5,
                 min=0.,
-            )
+            ), raw_opacities, None
 
         # calculate normalized view directions
         detached_xyz = pc.get_xyz.detach()[visibility_filter]
@@ -221,13 +268,15 @@ class GSplatAppearanceEmbeddingRendererModule(GSplatV1RendererModule):
             visibility_filter,
         ) + 0.5
 
-        rgb_offsets = self.model(
+        model_predicts = self.model(
             pc.get_appearance_features()[visibility_filter],
             viewpoint_camera.appearance_id,
             view_directions,
-        ) * 2 - 1.
+        )
 
         means2d = projections[1]
+
+        rgb_offsets = model_predicts[:, :3] * 2 - 1.
         rgbs = torch.zeros((pc.n_gaussians, 3), dtype=means2d.dtype, device=means2d.device)
         rgbs[visibility_filter] = torch.clamp(
             base_rgbs + rgb_offsets,
@@ -235,7 +284,15 @@ class GSplatAppearanceEmbeddingRendererModule(GSplatV1RendererModule):
             max=1.,
         )
 
-        return rgbs
+        opacity_offsets = None
+        opacities = raw_opacities
+        if self.config.model.with_opacity:
+            opacities = torch.zeros_like(raw_opacities)
+            opacity_offsets = model_predicts[:, 3].float()
+            opacities[visibility_filter] = opacity_offsets
+            opacities = torch.clamp_max(opacities + raw_opacities, max=1.)
+
+        return rgbs, opacities, opacity_offsets
 
     def training_forward(self, step: int, module: lightning.LightningModule, viewpoint_camera: Camera, pc: GaussianModel, bg_color: torch.Tensor, scaling_modifier=1.0, **kwargs):
         return self.forward(viewpoint_camera, pc, bg_color, scaling_modifier, warm_up=step < self.config.optimization.warm_up, **kwargs)
@@ -276,5 +333,29 @@ class GSplatAppearanceEmbeddingMipRenderer(GSplatAppearanceEmbeddingRenderer):
         return GSplatAppearanceEmbeddingMipRendererModule(self)
 
 
-class GSplatAppearanceEmbeddingMipRendererModule(MipSplattingRendererMixin, GSplatAppearanceEmbeddingRendererModule):
-    pass
+from internal.models.mip_splatting import MipSplattingUtils
+
+
+class GSplatAppearanceEmbeddingMipRendererModule(GSplatAppearanceEmbeddingRendererModule):
+    def get_scales(self, camera, gaussian_model, **kwargs):
+        return MipSplattingUtils.apply_3d_filter_on_scales(
+            gaussian_model.get_3d_filter(),
+            scales=gaussian_model.get_scales(),
+            compute_opacity_compensation=gaussian_model.config.opacity_compensation,
+        )
+
+    def get_opacities(self, camera, gaussian_model, projections, visibility_filter, status: torch.Any, **kwargs):
+        opacity_compensation = status
+        opacities, new_status = super().get_opacities(
+            camera,
+            gaussian_model,
+            projections,
+            visibility_filter,
+            None,
+            **kwargs,
+        )
+
+        if gaussian_model.config.opacity_compensation:
+            opacities = opacities * opacity_compensation
+
+        return opacities, new_status

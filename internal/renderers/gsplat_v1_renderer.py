@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Union, Tuple, Any
+from typing import Union, Tuple, Literal, Any
 import math
 import torch
 from .renderer import RendererConfig, Renderer, RendererOutputInfo, RendererOutputTypes
@@ -33,8 +33,20 @@ class GSplatV1Renderer(RendererConfig):
     tile_based_culling: bool = False
     """Tile-based culling, from StopThePop [Radl et al. 2024]"""
 
+    max_viewspace_grad_scale: float = 65535.
+    """ 1600 is recommended """
+
     def instantiate(self, *args, **kwargs) -> "GSplatV1RendererModule":
         return GSplatV1RendererModule(self)
+
+
+@dataclass
+class RuntimeOptions:
+    radius_clip: float = 0.
+
+    # radius_clip_from: float = 0.
+
+    camera_model: Literal["pinhole", "ortho", "fisheye"] = "pinhole"
 
 
 class GSplatV1RendererModule(Renderer):
@@ -65,6 +77,7 @@ class GSplatV1RendererModule(Renderer):
     def __init__(self, config: GSplatV1Renderer):
         super().__init__()
         self.config = config
+        self.runtime_options = RuntimeOptions()
 
         self.isect_encode = GSplatV1.isect_encode_with_unused_opacities
         if self.config.tile_based_culling:
@@ -133,6 +146,9 @@ class GSplatV1RendererModule(Renderer):
             pc.get_rotations(),
             eps2d=self.config.filter_2d_kernel_size,
             anti_aliased=self.config.anti_aliased,
+            radius_clip=self.runtime_options.radius_clip,
+            # radius_clip_from=self.runtime_options.radius_clip_from,
+            camera_model=self.runtime_options.camera_model,
         )
         radii, means2d, depths, conics, compensations = projections
 
@@ -181,6 +197,7 @@ class GSplatV1RendererModule(Renderer):
 
         # rgb
         rgb = None
+        acc_vis = None
         if self.is_type_required(render_type_bits, self._RGB_REQUIRED):
             rgbs = self.get_rgbs(
                 viewpoint_camera,
@@ -191,6 +208,8 @@ class GSplatV1RendererModule(Renderer):
                 **kwargs,
             )
             rgb = rasterize(rgbs, bg_color).permute(2, 0, 1)
+            # avoid overriding by hard depth
+            acc_vis = means2d.has_hit_any_pixels
 
         alpha = None
         acc_depth_im = None
@@ -277,14 +296,19 @@ class GSplatV1RendererModule(Renderer):
             "hard_inverse_depth": hard_inverse_depth_im,
             "inv_depth_alt": inv_depth_alt,
             "viewspace_points": means2d,
-            "viewspace_points_grad_scale": 0.5 * torch.tensor([preprocessed_camera[-1]]).to(means2d),
+            "viewspace_points_grad_scale": 0.5 * torch.tensor([preprocessed_camera[-1]]).to(means2d).clamp_(max=self.config.max_viewspace_grad_scale),
             "visibility_filter": visibility_filter,
+            "acc_vis": acc_vis,
             "radii": radii_squeezed,
             "scales": scales,
             "opacities": opacities[0],
             "projections": projections,
             "isects": isects,
         }
+
+    def setup_web_viewer_tabs(self, viewer, server, tabs):
+        with tabs.add_tab("gsplat"):
+            self._viewer_options = GSplatV1ViewerOptions(viewer, server, self.runtime_options)
 
     def get_available_outputs(self):
         return {
@@ -543,3 +567,53 @@ class GSplatV1:
         K[0, 2] = cx
         K[1, 2] = cy
         return K
+
+
+from viser import ViserServer
+
+
+class GSplatV1ViewerOptions:
+    def __init__(self, viewer, server: ViserServer, options: RuntimeOptions):
+        self.viewer = viewer
+        self.server = server
+        self.options = options
+
+        # radius clip
+        self.radius_clip_number = server.gui.add_number(
+            label="Radius Clip",
+            initial_value=options.radius_clip,
+            step=0.1,
+            min=0.,
+            max=65535.,
+        )
+
+        @self.radius_clip_number.on_update
+        def _(_):
+            options.radius_clip = self.radius_clip_number.value
+            viewer.rerender_for_all_client()
+
+        # # radius clip from
+        # self.radius_clip_from_number = server.gui.add_number(
+        #     label="Radius Clip From",
+        #     initial_value=options.radius_clip_from,
+        #     step=0.01,
+        #     min=0.,
+        #     max=65535.,
+        # )
+
+        # @self.radius_clip_from_number.on_update
+        # def _(_):
+        #     options.radius_clip_from = self.radius_clip_from_number.value
+        #     viewer.rerender_for_all_client()
+
+        # camera model
+        self.camera_model_dropdown = server.gui.add_dropdown(
+            label="Camera Model",
+            options=["pinhole", "ortho", "fisheye"],
+            initial_value=options.camera_model,
+        )
+
+        @self.camera_model_dropdown.on_update
+        def _(_):
+            options.camera_model = self.camera_model_dropdown.value
+            viewer.rerender_for_all_client()

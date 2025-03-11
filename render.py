@@ -221,6 +221,7 @@ if __name__ == "__main__":
     parser.add_argument("model_paths", type=str, nargs="+")
     parser.add_argument("--camera-path-filename", type=str, required=True)
     parser.add_argument("--output-path", type=str, required=True)
+    parser.add_argument("--type", type=str, required=False, default=None)
     parser.add_argument("--save-images", "--save-image", "--save_image", "--save-frames", action="store_true",
                         help="Whether save each frame to an image file")
     parser.add_argument("--image-save-batch", "-b", type=int, default=8,
@@ -251,6 +252,9 @@ if __name__ == "__main__":
         renderer_override=renderer_override,
         device=device,
     )
+
+    if args.type is not None:
+        renderer._set_output_type(args.type, renderer.renderer.get_available_outputs()[args.type])
 
     # load cameras
     cameras = parse_camera_poses(camera_path)

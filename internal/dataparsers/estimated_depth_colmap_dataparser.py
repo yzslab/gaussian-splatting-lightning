@@ -33,7 +33,14 @@ class EstimatedDepthColmapDataParser(ColmapDataParser):
             with open(os.path.join(self.path, self.params.depth_scale_name + ".json"), "r") as f:
                 depth_scales = json.load(f)
 
-            median_scale = np.median(np.asarray([i["scale"] for i in depth_scales.values()]))
+            image_name_set = {image_name: True for image_name in dataparser_outputs.train_set.image_names + dataparser_outputs.val_set.image_names}
+            depth_scale_list = []
+            for image_name, image_depth_scale in depth_scales.items():
+                if image_name not in image_name_set:
+                    continue
+                depth_scale_list.append(image_depth_scale["scale"])
+
+            median_scale = np.median(np.asarray(depth_scale_list))
 
         loaded_depth_count = 0
         for image_set in [dataparser_outputs.train_set, dataparser_outputs.val_set]:
@@ -53,7 +60,12 @@ class EstimatedDepthColmapDataParser(ColmapDataParser):
                         print("[WARNING {} does not have a depth scale]".format(image_name))
                         continue
                     if depth_scale["scale"] < self.params.depth_scale_lower_bound * median_scale or depth_scale["scale"] > self.params.depth_scale_upper_bound * median_scale:
-                        print("[WARNING depth scale of {} out of bound]".format(image_name))
+                        print("[WARNING depth scale '{}' of '{}' out of bound '({}, {})']".format(
+                            depth_scale["scale"],
+                            image_name,
+                            self.params.depth_scale_lower_bound * median_scale,
+                            self.params.depth_scale_upper_bound * median_scale,
+                        ))
                         continue
 
                 image_set.extra_data[idx] = (depth_file_path, depth_scale, (image_set.cameras[idx].height.item(), image_set.cameras[idx].width.item()))
@@ -64,7 +76,7 @@ class EstimatedDepthColmapDataParser(ColmapDataParser):
         print("found {} depth maps".format(loaded_depth_count))
 
         return dataparser_outputs
-    
+
     @staticmethod
     def get_depth_loader(allow_depth_interpolation: bool):
         def load_depth(depth_info):
@@ -74,6 +86,7 @@ class EstimatedDepthColmapDataParser(ColmapDataParser):
             depth_file_path, depth_scale, image_shape = depth_info
             depth = np.load(depth_file_path) * depth_scale["scale"] + depth_scale["offset"]
             depth = torch.tensor(depth, dtype=torch.float)
+            depth = torch.clamp_min(depth, min=0.)
 
             if depth.shape != image_shape:
                 assert allow_depth_interpolation, "the shape '{}' of depth map '{}' and '{}' of image not match, add the '--data.parser.allow_depth_interpolation=true' if you are sure this is expected".format(depth.shape, depth_file_path, image_shape)
@@ -85,5 +98,5 @@ class EstimatedDepthColmapDataParser(ColmapDataParser):
                 )[0, 0]
 
             return depth
-        
+
         return load_depth

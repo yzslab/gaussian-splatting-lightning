@@ -26,6 +26,11 @@ def parse_args():
                         help="Project Name")
     parser.add_argument("--output_path", "-o", type=str, required=False)
     parser.add_argument("--min-images", type=int, default=32)
+    # ===== for evaluation ======
+    parser.add_argument("--retain-appearance", action="store_true", default=False)
+    parser.add_argument("--left-optimized", action="store_true", default=False)
+    parser.add_argument("--right-optimized", action="store_true", default=False)
+    # ===== for evaluation ======
     parser.add_argument("--preprocess", action="store_true")
     args = parser.parse_args()
 
@@ -49,7 +54,7 @@ def fuse_appearance_features(ckpt: dict, gaussian_model, cameras_json: list[dict
 
     cameras = [image_name_to_camera[i["img_name"]] for i in cameras_json]
 
-    from fuse_appearance_embeddings_into_shs_dc import prune_and_get_weights, average_embedding_fusing
+    from fuse_appearance_embeddings_into_shs_dc import prune_and_get_weights, average_color_fusing
     n_average_cameras = 32
     _, visibility_score_pruned_sorted_indices, visibility_score_pruned_top_k_pdf = prune_and_get_weights(
         gaussian_model=gaussian_model,
@@ -57,33 +62,35 @@ def fuse_appearance_features(ckpt: dict, gaussian_model, cameras_json: list[dict
         n_average_cameras=n_average_cameras,
         weight_device=cuda_device,
     )
-    rgb_offset = average_embedding_fusing(
+    rgb_offset = average_color_fusing(
         gaussian_model,
         renderer,
         n_average_cameras=n_average_cameras,
+        camera_chunk_size=8,
         cameras=cameras,
+        device=cuda_device,
         visibility_score_pruned_sorted_indices=visibility_score_pruned_sorted_indices,
         visibility_score_pruned_top_k_pdf=visibility_score_pruned_top_k_pdf,
-        view_dir_average_mode="view_direction",
     )
 
-    from internal.utils.sh_utils import RGB2SH
-    sh_offset = RGB2SH(rgb_offset)
-    gaussian_model.shs_dc = gaussian_model.shs_dc + sh_offset.unsqueeze(1).to(device=gaussian_model.shs_dc.device)
+    from internal.utils.sh_utils import RGB2SH, C0
+    sh_offsets = RGB2SH(rgb_offset * 2. - 1.)
+    gaussian_model.shs_dc = gaussian_model.shs_dc + sh_offsets.unsqueeze(1).to(device=gaussian_model.shs_dc.device) + 0.5 / C0
     gaussian_model.to(device=gaussian_device)
 
 
-def update_ckpt(ckpt, merged_gaussians, max_sh_degree):
-    # replace `AppearanceFeatureGaussian` with `VanillaGaussian`
-    ckpt["hyper_parameters"]["gaussian"] = VanillaGaussian(sh_degree=max_sh_degree)
+def update_ckpt(ckpt, merged_gaussians, max_sh_degree, retain_appearance: bool):
+    if not retain_appearance:
+        # replace `AppearanceFeatureGaussian` with `VanillaGaussian`
+        ckpt["hyper_parameters"]["gaussian"] = VanillaGaussian(sh_degree=max_sh_degree)
 
-    # remove `GSplatAppearanceEmbeddingRenderer`'s states from ckpt
-    state_dict_key_to_delete = []
-    for i in ckpt["state_dict"]:
-        if i.startswith("renderer."):
-            state_dict_key_to_delete.append(i)
-    for i in state_dict_key_to_delete:
-        del ckpt["state_dict"][i]
+        # remove `GSplatAppearanceEmbeddingRenderer`'s states from ckpt
+        state_dict_key_to_delete = []
+        for i in ckpt["state_dict"]:
+            if i.startswith("renderer."):
+                state_dict_key_to_delete.append(i)
+        for i in state_dict_key_to_delete:
+            del ckpt["state_dict"][i]
 
     # replace `GSplatAppearanceEmbeddingRenderer` with `GSPlatRenderer`
     anti_aliased = True
@@ -92,12 +99,14 @@ def update_ckpt(ckpt, merged_gaussians, max_sh_degree):
         anti_aliased = False
     elif isinstance(ckpt["hyper_parameters"]["renderer"], GSplatMipSplattingRendererV2) or ckpt["hyper_parameters"]["renderer"].__class__.__name__ == "GSplatAppearanceEmbeddingMipRenderer":
         kernel_size = ckpt["hyper_parameters"]["renderer"].filter_2d_kernel_size
-    ckpt["hyper_parameters"]["renderer"] = GSplatV1Renderer(
-        anti_aliased=anti_aliased,
-        filter_2d_kernel_size=kernel_size,
-        separate_sh=getattr(ckpt["hyper_parameters"]["renderer"], "separate_sh", True),
-        tile_based_culling=getattr(ckpt["hyper_parameters"]["renderer"], "tile_based_culling", False),
-    )
+
+    if not retain_appearance:
+        ckpt["hyper_parameters"]["renderer"] = GSplatV1Renderer(
+            anti_aliased=anti_aliased,
+            filter_2d_kernel_size=kernel_size,
+            separate_sh=getattr(ckpt["hyper_parameters"]["renderer"], "separate_sh", True),
+            tile_based_culling=getattr(ckpt["hyper_parameters"]["renderer"], "tile_based_culling", False),
+        )
 
     # remove existing Gaussians from ckpt
     for i in list(ckpt["state_dict"].keys()):
@@ -124,6 +133,15 @@ def fuse_mip_filters(gaussian_model):
     gaussian_model.scales = gaussian_model.scale_inverse_activation(new_scales)
 
 
+def convert_to_embedding_optimized_ckpt_file_path(ckpt_file, side):
+    ckpt_filename = os.path.basename(ckpt_file)
+    return os.path.join(
+        os.path.dirname(os.path.dirname(ckpt_file)),
+        "embedding_optimization",
+        "{}-{}.ckpt".format(ckpt_filename[:ckpt_filename.rfind(".")], side),
+    )
+
+
 def main():
     """
     Overall pipeline:
@@ -147,6 +165,15 @@ def main():
 
     args = parse_args()
 
+    if args.retain_appearance:
+        assert args.preprocess
+    assert int(args.left_optimized) + int(args.right_optimized) != 2
+
+    if args.retain_appearance:
+        MERGABLE_PROPERTY_NAMES.append(AppearanceFeatureGaussianModel._appearance_feature_name)
+        MERGABLE_PROPERTY_NAMES.append("filter_3d")
+        MERGABLE_PROPERTY_NAMES.append("opacity_max")
+
     torch.autograd.set_grad_enabled(False)
 
     partition_training, mergable_partitions, orientation_transformation = get_trained_partitions(
@@ -159,20 +186,64 @@ def main():
 
     gaussians_to_merge = {}
 
+    partition_bounding_boxes = partition_training.partition_coordinates.get_bounding_boxes()
+    scene_bounding_box = (
+        torch.min(partition_bounding_boxes.min, dim=0).values,
+        torch.max(partition_bounding_boxes.max, dim=0).values,
+    )
+
+    def isclose(a, b):
+        return torch.isclose(a, b, atol=1e-4)
+
     with tqdm(mergable_partitions, desc="Pre-processing") as t:
         for partition_idx, partition_id_str, ckpt_file, bounding_box in t:
             t.set_description("{}".format(partition_id_str))
-            t.set_postfix_str("Loading checkpoint...")
+
+            # ===== for evaluation =====
+            if args.left_optimized:
+                ckpt_file = convert_to_embedding_optimized_ckpt_file_path(ckpt_file, "left")
+            elif args.right_optimized:
+                ckpt_file = convert_to_embedding_optimized_ckpt_file_path(ckpt_file, "right")
+            # ===== for evaluation =====
+
+            t.write("Loading {}".format(ckpt_file))
+
             ckpt = torch.load(ckpt_file, map_location="cpu")
 
-            t.set_postfix_str("Splitting...")
+            t.write("Splitting...")
+            # include background if the partition locates at the border
+            # TODO: deal with the non-rectangular case
+            bounding_box_updated = False
+            if isclose(bounding_box.min[0], scene_bounding_box[0][0]):
+                # x == scene bbox x min -> bbox.x_min = -inf
+                bounding_box.min[0] = -torch.inf
+                bounding_box_updated = True
+            if isclose(bounding_box.min[1], scene_bounding_box[0][1]):
+                # y == scene bbox y min -> bbox.y_min = -inf
+                bounding_box.min[1] = -torch.inf
+                bounding_box_updated = True
+            if isclose(bounding_box.max[0], scene_bounding_box[1][0]):
+                # x == scene bbox x max -> bbox.x_max = inf
+                bounding_box.max[0] = torch.inf
+                bounding_box_updated = True
+            if isclose(bounding_box.max[1], scene_bounding_box[1][1]):
+                # x == scene bbox x max -> bbox.x_max = inf
+                bounding_box.max[1] = torch.inf
+                bounding_box_updated = True
+
+            if bounding_box_updated:
+                t.write("[NOTE]bounding box of {} updated to {}".format(
+                    partition_training.partition_coordinates.id[partition_idx].tolist(),
+                    bounding_box,
+                ))
+
             gaussian_model, _, _ = split_partition_gaussians(
                 ckpt,
                 bounding_box,
                 orientation_transformation,
             )
 
-            if isinstance(gaussian_model, AppearanceFeatureGaussianModel):
+            if isinstance(gaussian_model, AppearanceFeatureGaussianModel) and not args.retain_appearance:
                 with open(os.path.join(
                         os.path.dirname(os.path.dirname(ckpt_file)),
                         "cameras.json"
@@ -181,7 +252,7 @@ def main():
 
                 # the dataset will only be loaded once
                 if image_name_to_camera is None:
-                    t.set_postfix_str("Loading colmap model...")
+                    t.write("Loading colmap model...")
 
                     dataparser_config = Colmap(
                         split_mode="reconstruction",
@@ -202,7 +273,7 @@ def main():
                         camera = dataparser_outputs.train_set.cameras[idx]
                         image_name_to_camera[image_name] = camera
 
-                t.set_postfix_str("Fusing...")
+                t.write("Fusing appearance features...")
                 fuse_appearance_features(
                     ckpt,
                     gaussian_model,
@@ -211,15 +282,32 @@ def main():
                 )
 
             if isinstance(gaussian_model, MipSplattingModelMixin):
-                t.set_postfix_str("Fusing MipSplatting filters...")
-                fuse_mip_filters(gaussian_model)
+                if not args.retain_appearance:
+                    t.write("Fusing MipSplatting filters...")
+                    fuse_mip_filters(gaussian_model)
+            else:
+                try:
+                    MERGABLE_PROPERTY_NAMES.remove("filter_3d")
+                except:
+                    pass
 
             if args.preprocess:
-                update_ckpt(ckpt, {k: gaussian_model.get_property(k) for k in MERGABLE_PROPERTY_NAMES}, gaussian_model.max_sh_degree)
-                torch.save(ckpt, os.path.join(
+                update_ckpt(ckpt, {k: gaussian_model.get_property(k) for k in MERGABLE_PROPERTY_NAMES}, gaussian_model.max_sh_degree, retain_appearance=args.retain_appearance)
+
+                output_filename_suffix = ""
+                if args.retain_appearance:
+                    output_filename_suffix += "-retain_appearance"
+                if args.left_optimized:
+                    output_filename_suffix += "-left_optimized"
+                elif args.right_optimized:
+                    output_filename_suffix += "-right_optimized"
+
+                output_filename = os.path.join(
                     os.path.dirname(os.path.dirname(ckpt_file)),
-                    "preprocessed.ckpt",
-                ))
+                    "preprocessed{}.ckpt".format(output_filename_suffix),
+                )
+                torch.save(ckpt, output_filename)
+                t.write("Saved to {}".format(output_filename))
             else:
                 for i in MERGABLE_PROPERTY_NAMES:
                     gaussians_to_merge.setdefault(i, []).append(gaussian_model.get_property(i))
@@ -237,7 +325,7 @@ def main():
         gc.collect()
         torch.cuda.empty_cache()
 
-    update_ckpt(ckpt, merged_gaussians, gaussian_model.max_sh_degree)
+    update_ckpt(ckpt, merged_gaussians, gaussian_model.max_sh_degree, retain_appearance=args.retain_appearance)
 
     # save
     print("Saving...")
@@ -247,7 +335,7 @@ def main():
     viewer_args = ["python", "viewer.py", args.output_path]
     if orientation_transformation is not None:
         viewer_args += ["--up"]
-        viewer_args += ["{:.4f}".format(i) for i in (-1. * partition_training.scene["extra_data"]["up"]).tolist()]
+        viewer_args += ["{:.4f}".format(i) for i in (partition_training.scene["extra_data"]["up"]).tolist()]
     print("The command to start web viewer:"
           " {}".format(" ".join(viewer_args)))
 

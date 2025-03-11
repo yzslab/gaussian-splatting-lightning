@@ -97,6 +97,7 @@ class GaussianSplatting(LightningModule):
         self.on_train_start_hooks: List[Callable[[GaussianModel, Self], None]] = []
         self.on_after_backward_hooks: List[Callable[[Dict, Any, GaussianModel, int, Self], None]] = []
         self.on_train_batch_end_hooks: List[Callable[[Dict, Any, GaussianModel, int, Self], None]] = []
+        self.extra_train_metrics: List[Callable[[Dict, Any, GaussianModel, int, Self], torch.Tensor]] = []
 
     def log_metrics(
             self,
@@ -352,6 +353,9 @@ class GaussianSplatting(LightningModule):
         # metrics
         metrics, prog_bar = self.metric.get_train_metrics(self, self.gaussian_model, global_step, batch, outputs)
         self.log_metrics(metrics, prog_bar, prefix="train", on_step=True, on_epoch=False)
+
+        for i in self.extra_train_metrics:
+            metrics["loss"] = metrics["loss"] + i(outputs, batch, self.gaussian_model, global_step, self)
 
         # log learning rate and gaussian count every 100 iterations (without plus one step)
         if self.trainer.global_step % 100 == 0:

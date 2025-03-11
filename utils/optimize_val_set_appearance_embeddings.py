@@ -33,6 +33,10 @@ class Config:
 
     optimize_on: Literal["left", "right"] = "left"
 
+    remove_image_list: bool = False
+
+    lpips: Literal["vgg", "alex", "squeeze"] = "vgg"
+
     seed: int = 42
 
     lr_init: float = 1e-2
@@ -74,7 +78,7 @@ class AppearanceEmbeddingOptimizer(lightning.LightningModule):
 
         self.gaussian_model = model
         self.renderer = renderer
-        self.metric = VanillaMetrics().instantiate()
+        self.metric = VanillaMetrics(lpips_net_type=self.config.lpips).instantiate()
         self.metric.setup(stage, self)
 
         self.register_buffer("background_color", torch.zeros(3, dtype=torch.float, device=self.device))
@@ -92,6 +96,9 @@ class AppearanceEmbeddingOptimizer(lightning.LightningModule):
         image_name, gt_image, mask = image_info
 
         outputs = self(camera)
+
+        if outputs["visibility_filter"].sum() == 0:
+            return torch.tensor(0, dtype=torch.float, device=self.device, requires_grad=True) + 0.
 
         image_width = gt_image.shape[-1]
         half_width = image_width // 2
@@ -208,11 +215,26 @@ def main():
 
     # load checkpoint
     ckpt_file = GaussianModelLoader.search_load_file(config.model)
+    if config.val_only:
+        ckpt_dir = os.path.dirname(os.path.dirname(ckpt_file))
+        ckpt_basename = os.path.basename(ckpt_file)
+        ckpt_file = os.path.join(
+            ckpt_dir,
+            "embedding_optimization",
+            "{}-{}.ckpt".format(
+                ckpt_basename[:ckpt_basename.rfind(".")],
+                config.optimize_on,
+            ),
+        )
     print(ckpt_file)
     ckpt = torch.load(ckpt_file, map_location="cpu")
 
     # load dataset
-    dataparser_outputs = ckpt["datamodule_hyper_parameters"]["parser"].instantiate(
+    dataparser_config = ckpt["datamodule_hyper_parameters"]["parser"]
+    dataparser_config.points_from = "random"
+    if config.remove_image_list:
+        dataparser_config.image_list = None
+    dataparser_outputs = dataparser_config.instantiate(
         ckpt["datamodule_hyper_parameters"]["path"] if config.data is None else config.data,
         os.getcwd(),
         0,
@@ -242,12 +264,15 @@ def main():
             name=experiment_name,
             project="Embedding",
         ) if not config.val_only else None,
-        callbacks=[ProgressBar(), ValidateOnTrainEnd()],
+        callbacks=[ProgressBar(refresh_rate=10), ValidateOnTrainEnd()],
         # profiler="simple",
         enable_checkpointing=False,
         use_distributed_sampler=False,
         log_every_n_steps=min(len(dataparser_outputs.val_set), 50),
     )
+
+    dataparser_outputs.val_set.extra_data = [None] * len(dataparser_outputs.val_set)
+    dataparser_outputs.val_set.extra_data_processor = dataparser_outputs.val_set._return_input
 
     # setup dataloader
     dataloader = CacheDataLoader(
@@ -256,6 +281,7 @@ def main():
             undistort_image=False,
             camera_device=trainer.strategy.root_device,
             image_device=trainer.strategy.root_device,
+            allow_mask_interpolation=True,
         ),
         max_cache_num=-1,
         shuffle=True,

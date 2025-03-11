@@ -14,7 +14,7 @@ from tqdm.auto import tqdm
 from concurrent.futures import ThreadPoolExecutor
 from internal.utils.partitioning_utils import PartitionCoordinates
 from distibuted_tasks import get_task_list
-from auto_hyper_parameter import auto_hyper_parameter, to_command_args, SCALABEL_PARAMS, EXTRA_EPOCH_SCALABLE_STEP_PARAMS
+from auto_hyper_parameter import auto_hyper_parameter, to_command_args, get_default_scalable_params
 from argparser_utils import split_stoppable_args, parser_stoppable_args
 from distibuted_tasks import configure_arg_parser_v2
 
@@ -30,12 +30,16 @@ class PartitionTrainingConfig:
     extra_epoches: int
     name_suffix: str = ""
     ff_densify: bool = False
+    t3dgs_densify: bool = False
+    max_steps: int = None
+    scale_base: int = None
     scalable_params: Optional[Dict[str, int]] = None
     extra_epoch_scalable_params: Optional[List[str]] = None
     scale_param_mode: Literal["linear", "sqrt", "none"] = "linear"
     partition_id_strs: Optional[List[str]] = None
     training_args: Union[Tuple, List] = None
-    config_file: Optional[str] = None
+    config_file: Optional[List[str]] = None
+    image_number_from: Optional[str] = None
     srun_args: List[str] = field(default_factory=lambda: [])
 
     def __post_init__(self):
@@ -56,36 +60,48 @@ class PartitionTrainingConfig:
                             help="Project name")
         parser.add_argument("--min-images", "-m", type=int, default=32,
                             help="Ignore partitions with image number less than this value")
-        parser.add_argument("--config", "-c", type=str, default=None)
+        parser.add_argument("--config", "-c", type=str, nargs="*", default=None)
         parser.add_argument("--parts", default=None, nargs="*", action="extend")
         parser.add_argument("--extra-epoches", "-e", type=int, default=extra_epoches)
         parser.add_argument("--scalable-config", type=str, default=None,
                             help="Load scalable params from a yaml file")
+        parser.add_argument("--scale-base", type=int, default=300)
         parser.add_argument("--scalable-params", type=str, default=[], nargs="*", action="extend")
         parser.add_argument("--extra-epoch-scalable-params", type=str, default=[], nargs="*", action="extend")
         parser.add_argument("--scale-param-mode", type=str, default="linear")
+        parser.add_argument("--max-steps", type=int, default=30_000)
         parser.add_argument("--no-default-scalable", action="store_true")
         parser.add_argument("--dry-run", action="store_true")
         parser.add_argument("--name-suffix", type=str, default="")
         parser.add_argument("--ff-densify", action="store_true", default=False)
+        parser.add_argument("--t3dgs-densify", action="store_true", default=False)
+        parser.add_argument("--image-number-from", type=str, default=None)
         configure_arg_parser_v2(parser)
 
     @staticmethod
     def parse_scalable_params(args):
         # parse scalable params
-        scalable_params = SCALABEL_PARAMS
-        extra_epoch_scalable_params = EXTRA_EPOCH_SCALABLE_STEP_PARAMS
+        scalable_params, extra_epoch_scalable_params = get_default_scalable_params(max_steps=args.max_steps)
         if args.no_default_scalable:
             scalable_params = {}
             extra_epoch_scalable_params = []
+
+        scale_base = args.scale_base
+        max_steps = args.max_steps
+        mode = args.scale_param_mode
 
         if args.scalable_config is not None:
             with open(args.scalable_config, "r") as f:
                 scalable_config = yaml.safe_load(f)
 
             for i in scalable_config.keys():
-                if i not in ["scalable", "extra_epoch_scalable", "no_default"]:
-                    raise ValueError("Found an unexpected key '{}' in '{}'".format(i, args.scalable_yaml))
+                if i not in ["base", "max_steps", "scalable", "extra_epoch_scalable", "no_default", "mode"]:
+                    raise ValueError("Found an unexpected key '{}' in '{}'".format(i, args.scalable_config))
+
+            # Use values provided in config file
+            scale_base = scalable_config.get("base", scale_base)
+            max_steps = scalable_config.get("max_steps", max_steps)
+            scalable_params, extra_epoch_scalable_params = get_default_scalable_params(max_steps)
 
             if scalable_config.get("no_default", False):
                 scalable_params = {}
@@ -94,13 +110,15 @@ class PartitionTrainingConfig:
             scalable_params.update(scalable_config.get("scalable", {}))
             extra_epoch_scalable_params += scalable_config.get("extra_epoch_scalable", [])
 
+            mode = scalable_config.get("mode", mode)
+
         for i in args.scalable_params:
             name, value = i.split("=", 1)
             value = int(value)
             scalable_params[name] = value
         extra_epoch_scalable_params += args.extra_epoch_scalable_params
 
-        return scalable_params, extra_epoch_scalable_params
+        return scale_base, max_steps, scalable_params, extra_epoch_scalable_params, mode
 
     @classmethod
     def get_extra_init_kwargs(cls, args) -> Dict[str, Any]:
@@ -108,7 +126,7 @@ class PartitionTrainingConfig:
 
     @classmethod
     def instantiate_with_args(cls, args, training_args, srun_args):
-        scalable_params, extra_epoch_scalable_params = cls.parse_scalable_params(args)
+        scale_base, max_steps, scalable_params, extra_epoch_scalable_params, scale_param_mode = cls.parse_scalable_params(args)
 
         return cls(
             partition_dir=args.partition_dir,
@@ -120,11 +138,15 @@ class PartitionTrainingConfig:
             extra_epoches=args.extra_epoches,
             name_suffix=args.name_suffix,
             ff_densify=args.ff_densify,
+            t3dgs_densify=args.t3dgs_densify,
+            max_steps=max_steps,
+            scale_base=scale_base,
             scalable_params=scalable_params,
             extra_epoch_scalable_params=extra_epoch_scalable_params,
-            scale_param_mode=args.scale_param_mode,
+            scale_param_mode=scale_param_mode,
             partition_id_strs=args.parts,
             config_file=args.config,
+            image_number_from=args.image_number_from,
             training_args=training_args,
             srun_args=srun_args,
             **cls.get_extra_init_kwargs(args),
@@ -145,9 +167,37 @@ class PartitionTraining:
     ):
         self.path = config.partition_dir
         self.config = config
+
+        if self.config.t3dgs_densify:
+            assert self.config.ff_densify, "'--t3dgs-densify' must present with '--ff-densify'"
+
         self.scene = torch.load(os.path.join(self.path, name), map_location="cpu")
+
+        # conversion for previous version
+        if "size" not in self.scene["partition_coordinates"]:
+            self.scene["partition_coordinates"]["size"] = torch.full(
+                (self.scene["partition_coordinates"]["xy"].shape[0], 2),
+                self.scene["scene_config"]["partition_size"],
+                dtype=torch.float,
+                device=self.scene["partition_coordinates"]["xy"].device,
+            )
+
         self.scene["partition_coordinates"] = PartitionCoordinates(**self.scene["partition_coordinates"])
         self.dataset_path = os.path.dirname(self.path.rstrip("/"))
+
+        self.image_number_from = None
+        if self.config.image_number_from is not None:
+            partition_data = torch.load(os.path.join(
+                self.config.image_number_from,
+                name,
+            ), map_location="cpu")
+            self.image_number_from = (
+                PartitionCoordinates(**partition_data["partition_coordinates"]),
+                partition_data["location_based_assignments"],
+                partition_data["visibility_based_assignments"],
+            )
+
+            assert torch.all(self.image_number_from[0].id == self.scene["partition_coordinates"].id)
 
     @property
     def partition_coordinates(self) -> PartitionCoordinates:
@@ -195,8 +245,11 @@ class PartitionTraining:
     def get_overridable_partition_specific_args(self, partition_idx: int) -> list[str]:
         args = []
         if self.config.ff_densify:
+            density_controller = "internal.density_controllers.foreground_first_density_controller.ForegroundFirstDensityController"
+            if self.config.t3dgs_densify:
+                density_controller = "internal.density_controllers.taming_3dgs_density_ff_controller.Taming3DGSDensityFFController"
             args += [
-                "--model.density=internal.density_controllers.foreground_first_density_controller.ForegroundFirstDensityController",
+                "--model.density={}".format(density_controller),
                 "--model.density.partition={}".format(self.path),
                 "--model.density.partition_idx={}".format(partition_idx),
             ]
@@ -208,13 +261,25 @@ class PartitionTraining:
     def get_location_based_assignment_numbers(self) -> torch.Tensor:
         return self.scene["location_based_assignments"].sum(-1)
 
+    def get_visibility_based_assignment_numbers(self) -> torch.Tensor:
+        return self.scene["visibility_based_assignments"].sum(-1)
+
+    def get_assigned_camera_numbers(self) -> torch.Tensor:
+        return self.get_location_based_assignment_numbers() + self.get_visibility_based_assignment_numbers()
+
     def get_partition_id_str(self, idx: int) -> str:
         return self.partition_coordinates.get_str_id(idx)
 
     def get_image_numbers(self) -> torch.Tensor:
+        if self.image_number_from is None:
+            return torch.logical_or(
+                self.scene["location_based_assignments"],
+                self.scene["visibility_based_assignments"],
+            ).sum(-1)
+
         return torch.logical_or(
-            self.scene["location_based_assignments"],
-            self.scene["visibility_based_assignments"],
+            self.image_number_from[1],
+            self.image_number_from[2],
         ).sum(-1)
 
     def get_trainable_partition_idx_list(
@@ -223,17 +288,23 @@ class PartitionTraining:
             n_processes: int,
             process_id: int,
     ) -> list[int]:
-        location_based_numbers = self.get_location_based_assignment_numbers()
-        all_trainable_partition_indices = torch.ge(location_based_numbers, min_images).nonzero().squeeze(-1).tolist()
+        assigned_camera_numbers = self.get_assigned_camera_numbers()
+        all_trainable_partition_indices = torch.ge(assigned_camera_numbers, min_images).nonzero().squeeze(-1).tolist()
         return get_task_list(n_processors=n_processes, current_processor_id=process_id, all_tasks=all_trainable_partition_indices)
 
     def get_partition_trained_step_filename(self, partition_idx: int):
         return "{}-trained".format(self.get_experiment_name(partition_idx))
 
     def get_partition_image_number(self, partition_idx: int) -> int:
+        if self.image_number_from is None:
+            return torch.logical_or(
+                self.scene["location_based_assignments"][partition_idx],
+                self.scene["visibility_based_assignments"][partition_idx],
+            ).sum(-1).item()
+
         return torch.logical_or(
-            self.scene["location_based_assignments"][partition_idx],
-            self.scene["visibility_based_assignments"][partition_idx],
+            self.image_number_from[1][partition_idx],
+            self.image_number_from[2][partition_idx],
         ).sum(-1).item()
 
     def get_experiment_name(self, partition_idx: int) -> str:
@@ -256,10 +327,12 @@ class PartitionTraining:
         # scale hyper parameters
         max_steps, scaled_params, scale_up = auto_hyper_parameter(
             partition_image_number,
+            base=self.config.scale_base,
             extra_epoch=extra_epoches,
             scalable_params=scalable_params,
             extra_epoch_scalable_params=extra_epoch_scalable_params,
             scale_mode=self.config.scale_param_mode,
+            max_steps=self.config.max_steps,
         )
 
         # whether a trained partition
@@ -297,7 +370,8 @@ class PartitionTraining:
 
         # config file
         if config_file is not None:
-            args.append("--config={}".format(config_file))
+            for i in config_file:
+                args.append("--config={}".format(i))
 
         args += self.get_overridable_partition_specific_args(partition_idx)
 
@@ -313,10 +387,10 @@ class PartitionTraining:
         experiment_name = self.get_experiment_name(partition_idx)
         args += [
             "-n={}".format(experiment_name),
-            "--data.path", self.dataset_path,
-            "--project", project_name,
-            "--output", project_output_dir,
-            "--logger", "wandb",
+            "--data.path={}".format(self.dataset_path),
+            "--project={}".format(project_name),
+            "--output={}".format(project_output_dir),
+            "--logger={}".format("wandb"),
         ]
 
         args += self.get_partition_specific_args(partition_idx)

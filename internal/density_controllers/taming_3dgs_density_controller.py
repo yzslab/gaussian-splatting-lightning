@@ -48,6 +48,8 @@ class Taming3DGSDensityController(DensityController):
     cull_opacity_threshold: float = 0.005
     """threshold of opacity for culling gaussians."""
 
+    cull_by_max_opacity: bool = False
+
     camera_extent_factor: float = 1.
 
     scene_extent_override: float = -1.
@@ -98,8 +100,19 @@ class Taming3DGSDensityControllerModule(VanillaDensityControllerImpl):
 
             self.avoid_state_dict = (pl_module,)
 
+    def log_metric(self, name, value):
+        self.avoid_state_dict[0].logger.log_metrics(
+            {
+                "density/{}".format(name): value,
+            },
+            step=self.avoid_state_dict[0].trainer.global_step,
+        )
+
     def on_train_start(self, gaussian_model, pl_module):
         assert pl_module.trainer.train_dataloader.max_cache_num < 0
+
+        self._densify_iter_num.fill_(max(pl_module.global_step // self.config.densification_interval - self.config.densify_from_iter // self.config.densification_interval, 0) + 1)
+        print("densify_iter_num={}, budget={}\n".format(self.densify_iter_num, self.counts_array[self.densify_iter_num]))
 
         from tqdm.auto import tqdm
 
@@ -207,7 +220,11 @@ class Taming3DGSDensityControllerModule(VanillaDensityControllerImpl):
         )
 
     def _densify_and_clone(self, scores, budget, filter, gaussian_model, optimizers):
+        if budget <= 0:
+            return
         scores = scores * filter.float()
+        if scores.sum() == 0:
+            return
         n_init_points = gaussian_model.n_gaussians
         selected_pts_mask = torch.zeros((n_init_points,), dtype=torch.bool, device=scores.device)
 
@@ -223,7 +240,11 @@ class Taming3DGSDensityControllerModule(VanillaDensityControllerImpl):
         self._densification_postfix(new_properties, gaussian_model, optimizers)
 
     def _densify_and_split(self, scores, budget, filter, gaussian_model, optimizers, N: int = 2):
+        if budget <= 0:
+            return
         scores = scores * filter.float()
+        if scores.sum() == 0:
+            return
         n_init_points = gaussian_model.n_gaussians
 
         padded_importance = torch.zeros((n_init_points,), dtype=scores.dtype, device=scores.device)
@@ -254,10 +275,24 @@ class Taming3DGSDensityControllerModule(VanillaDensityControllerImpl):
         if self.densify_iter_num >= self.config.cull_opacity_until:
             return
 
-        prune_mask = (gaussian_model.get_opacities() < self.config.cull_opacity_threshold).squeeze()
+        if self.config.cull_by_max_opacity:
+            prune_mask = torch.logical_and(
+                gaussian_model.get_opacity_max() >= 0.,
+                gaussian_model.get_opacity_max() < self.config.cull_opacity_threshold,
+            )
+            gaussian_model.reset_opacity_max()
+        else:
+            prune_mask = (gaussian_model.get_opacities() < self.config.cull_opacity_threshold).squeeze()
+
+        max_scales = gaussian_model.get_scales().max(dim=1).values
+
+        # small scale and opacity
+        small_scale_mask = max_scales < 1e-2
+        must_prune_mask = torch.logical_and(prune_mask, small_scale_mask)
+
         if max_screen_size:
             big_points_vs = self.max_radii2D > max_screen_size
-            big_points_ws = gaussian_model.get_scales().max(dim=1).values > 0.1 * self.prune_extent
+            big_points_ws = max_scales > 0.1 * self.prune_extent
             prune_mask = torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws)
 
         to_remove = torch.sum(prune_mask)
@@ -274,13 +309,16 @@ class Taming3DGSDensityControllerModule(VanillaDensityControllerImpl):
         sampled_indices = torch.multinomial(padded_importance, remove_budget, replacement=False)
         selected_pts_mask[sampled_indices] = True
         final_prune = torch.logical_and(prune_mask, selected_pts_mask)
+        final_prune = torch.logical_or(final_prune, must_prune_mask)
+
+        self.log_metric("pruned", final_prune.sum())
 
         self._prune_points(final_prune, gaussian_model, optimizers)
 
     def update_states(self, outputs):
         viewspace_point_tensor, visibility_filter = outputs["viewspace_points"], outputs["visibility_filter"]
         if self.config.acc_vis:
-            visibility_filter = viewspace_point_tensor.has_hit_any_pixels
+            visibility_filter = outputs["acc_vis"]
         # retrieve viewspace_points_grad_scale if provided
         viewspace_points_grad_scale = outputs.get("viewspace_points_grad_scale", None)
 
@@ -311,11 +349,13 @@ class Taming3DGSUtils:
         elif mode == "final_count":
             budget = multiplier
 
-        num_steps = ((densify_until_iter - densify_from_iter) // densification_interval)
-        slope_lower_bound = (budget - start_count) / num_steps
+        num_steps = (densify_until_iter + densification_interval - 1) // densification_interval - densify_from_iter // densification_interval
+
+        increasable = max(budget - start_count, 0)
+        slope_lower_bound = increasable / num_steps
 
         k = 2 * slope_lower_bound
-        a = (budget - start_count - k * num_steps) / (num_steps * num_steps)
+        a = (increasable - k * num_steps) / (num_steps * num_steps)
         b = k
         c = start_count
 
@@ -325,7 +365,10 @@ class Taming3DGSUtils:
 
     @staticmethod
     def compute_photometric_loss(a, b, lambda_dssim: float, mask=None):
-        assert mask is None  # TODO: mask
+        if mask is not None:
+            mask = mask.to(device=a.device, dtype=torch.uint8)
+            a = a * mask
+            b = b * mask
 
         l1 = torch.abs(a - b).mean()
         ssim = fused_ssim(a.unsqueeze(0), b.unsqueeze(0), train=False)
@@ -444,6 +487,7 @@ class Taming3DGSUtils:
                 render_image,
                 gt_image,
                 lambda_dssim,
+                masked_pixels,
             )
             pixel_weights = cls.get_loss_map(render_image, gt_image, score_coeffs, edge_losses[camera_idx].to(device=bg_color.device))  # [H, W]
 
