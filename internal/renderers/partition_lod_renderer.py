@@ -39,6 +39,13 @@ class PartitionLoDRenderer(RendererConfig):
             self.ckpt_name = self.ckpt_name[:self.ckpt_name.rfind(".")]
 
         # change at runtime
+
+        level = os.environ.get("LOD_LEVEL", None)
+        if level is not None:
+            level = int(level)
+            self.names = self.names[level:level + 1]
+            self.lod_distances = []
+
         lod_appearance_side = os.environ.get("LOD_SIDE", "")
         if lod_appearance_side == "left":
             self.ckpt_name = "preprocessed-retain_appearance-right_optimized"
