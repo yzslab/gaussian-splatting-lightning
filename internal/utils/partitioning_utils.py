@@ -639,10 +639,12 @@ class Partitioning:
     @staticmethod
     def get_bounding_box_by_camera_centers(camera_centers: torch.Tensor, enlarge: float = 0.) -> MinMaxBoundingBox:
         xyz_min = torch.min(camera_centers, dim=0)[0]
-        xyz_min -= xyz_min * enlarge
-
         xyz_max = torch.max(camera_centers, dim=0)[0]
-        xyz_max += xyz_max * enlarge
+
+        size = xyz_max - xyz_min
+
+        xyz_min -= size * enlarge
+        xyz_max += size * enlarge
 
         return MinMaxBoundingBox(
             min=xyz_min,
