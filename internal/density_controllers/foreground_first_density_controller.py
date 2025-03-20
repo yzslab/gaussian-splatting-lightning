@@ -17,9 +17,9 @@ class ForegroundFirstDensityController(DensityController):
 
     partition_idx: int
 
-    max_grad_decay_factor: float = 2
+    max_grad_decay_factor: float = 4
 
-    max_radius_factor: float = 1.5
+    max_radius_factor: float = 1.0
     """for those 'distance >= max_radius_factor * radius', 'grad = grad / max_grad_decay_factor'"""
 
     percent_dense: float = 0.01
@@ -53,7 +53,7 @@ class ForegroundFirstDensityControllerModule(DensityControllerImpl):
     def setup(self, stage: str, pl_module: LightningModule) -> None:
         super().setup(stage, pl_module)
 
-        self.avoid_state_dict = {"pl": pl_module} 
+        self.avoid_state_dict = {"pl": pl_module}
 
         if stage == "fit":
             self.cameras_extent = pl_module.trainer.datamodule.dataparser_outputs.camera_extent * self.config.camera_extent_factor
@@ -71,12 +71,15 @@ class ForegroundFirstDensityControllerModule(DensityControllerImpl):
             self.config.partition,
             "partitions.pt",
         ))
-        partition_size = torch.max(partition_data["partition_coordinates"]["size"][self.config.partition_idx])
+
+        default_partition_size = partition_data["scene_config"]["partition_size"]
         self.register_buffer(
-            "partition_radius",
-            torch.sqrt((torch.tensor(partition_size * 0.5, dtype=torch.float) ** 2) * 2),
+            "default_partition_size",
+            torch.tensor(default_partition_size, dtype=torch.float),
             persistent=False,
         )
+        partition_size = partition_data["partition_coordinates"]["size"][self.config.partition_idx]
+
         # get transform matrix
         try:
             rotation_transform = partition_data["extra_data"]["rotation_transform"]
@@ -88,24 +91,22 @@ class ForegroundFirstDensityControllerModule(DensityControllerImpl):
             rotation_transform,
             persistent=False,
         )
-        # get bounding box
-        partition_center = partition_data["partition_coordinates"]["xy"][self.config.partition_idx] + partition_size * 0.5
-        self.register_buffer(
-            "partition_center",
-            partition_center,
-            persistent=False,
-        )
-        # partition_bbox_min = partition_center - partition_size
-        # partition_bbox_max = partition_center + partition_size
-        # self.register_buffer("partition_bbox_min", partition_bbox_min, persistent=False)
-        # self.register_buffer("partition_bbox_max", partition_bbox_max, persistent=False)
 
-        print("partition_idx=#{}, id={}, transform={}, center={}, radius={}".format(
+        # get bounding box
+        partition_bbox_min = partition_data["partition_coordinates"]["xy"][self.config.partition_idx]
+        partition_bbox_max = partition_bbox_min + partition_size
+
+        self.register_buffer("partition_bbox_min", partition_bbox_min, persistent=False)
+        self.register_buffer("partition_bbox_max", partition_bbox_max, persistent=False)
+
+        print("partition_idx=#{}, id={}, transform={}, default_size={}, partition_size={}, bbox=(\n  {}, \n  {}\n)".format(
             self.config.partition_idx,
             partition_data["partition_coordinates"]["id"][self.config.partition_idx],
             self.rotation_transform.tolist(),
-            self.partition_center.tolist(),
-            self.partition_radius.item(),
+            default_partition_size,
+            partition_size.tolist(),
+            self.partition_bbox_min.tolist(),
+            self.partition_bbox_max.tolist(),
         ))
 
     def log_metric(self, name, value):
@@ -179,25 +180,25 @@ class ForegroundFirstDensityControllerModule(DensityControllerImpl):
         self.xyz_gradient_accum[update_filter] += grad_norm
         self.denom[update_filter] += 1
 
-    def _get_grad_decay_factors(self, gaussian_model):
-        # TODO: bounding box based distance
-        
-        # decay grads based on distance (xy only)
+    def _get_normalized_distance_to_bounding_box(self, gaussian_model):
         # transform 3D means
-        transformed_means = gaussian_model.get_means() @ self.rotation_transform[:2, :3].T + self.rotation_transform[:2, 3]
-        # calculate distances
-        distance_to_partition_center = torch.norm(transformed_means - self.partition_center, dim=-1)
+        transformed_means = gaussian_model.get_means() @ self.rotation_transform[:2, :3].T + self.rotation_transform[:2, 3]  # [N, 2]
 
-        distance_radius_factor = distance_to_partition_center / self.partition_radius
-        distance_radius_factor_normalized = torch.clamp_max((distance_radius_factor - 1) / (self.config.max_radius_factor - 1), max=1.)
-        decay_factors = (distance_radius_factor_normalized * (self.config.max_grad_decay_factor - 1)) + 1
-        where_inside_partition = distance_to_partition_center <= self.partition_radius
-        decay_factors[where_inside_partition] = 1.
+        dist_min2p = self.partition_bbox_min - transformed_means
+        dist_p2max = transformed_means - self.partition_bbox_max
+        dxy = torch.maximum(dist_min2p, dist_p2max)
+        distances = torch.sqrt(torch.pow(dxy.clamp(min=0.), 2).sum(dim=-1))
+        return torch.clamp_max(
+            (distances / self.default_partition_size) / self.config.max_radius_factor,
+            max=1.,
+        ), transformed_means, distances  # [N]
 
-        assert torch.all(decay_factors >= 1.)
+    def _get_grad_decay_factors(self, gaussian_model):
+        # decay grads based on distance (xy only)
+        normalized_distances, _, distances = self._get_normalized_distance_to_bounding_box(gaussian_model)
+        decay_factors = (normalized_distances * (self.config.max_grad_decay_factor - 1)) + 1
 
-        return decay_factors
-
+        return decay_factors, distances
 
     def _densify_and_prune(self, max_screen_size, gaussian_model: VanillaGaussianModel, optimizers: List):
         min_opacity = self.config.cull_opacity_threshold
@@ -207,7 +208,7 @@ class ForegroundFirstDensityControllerModule(DensityControllerImpl):
         grads = self.xyz_gradient_accum / self.denom
         grads[grads.isnan()] = 0.0
 
-        grads = grads / self._get_grad_decay_factors(gaussian_model=gaussian_model).unsqueeze(-1)
+        grads = grads / self._get_grad_decay_factors(gaussian_model=gaussian_model)[0].unsqueeze(-1)
 
         # densify
         self._densify_and_clone(grads, gaussian_model, optimizers)
