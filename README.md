@@ -3,6 +3,17 @@
 * <a href="#2-training">Training</a>
 * <a href="#4-web-viewer">Web Viewer</a>
 * <a href="https://github.com/yzslab/gaussian-splatting-lightning/releases">Changelog</a>
+
+# Rishabh's Fork for Gaussian Splatting PyTorch Lightning Implementation
+
+Used in 3DGS_Alignment project to scale and transform Gaussian splats. Sample commands to transform and scale Gaussian splats are as follows:
+
+1. Scaling Gaussian splats:
+```bash
+python gaussian_transform.py /home/rishabh/projects/gaussian-splatting/output/table_2/point_cloud/iteration_30000/point_cloud.ply /home/rishabh/projects/gaussian-splatting/output/table_2/point_cloud/iteration_30000/scaled_point_cloud.ply --scale 1.29560000
+```
+
+
 ## Known issues
 * ~~Multi-GPU training can only be enabled after densification~~ (Try <a href="#216-new-multiple-gpu-training-strategy">2.16. New Multiple GPU training strategy</a>)
 ## Features
