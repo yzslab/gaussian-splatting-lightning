@@ -1,7 +1,7 @@
 # Rishabh's Fork for Gaussian Splatting PyTorch Lightning Implementation
-Test
+
 * Used in 3DGS_Alignment project to scale and transform Gaussian splats. Sample commands to transform and scale Gaussian splats are as follows:
-* Run `apply_transform.py` to apply the transformation to the Gaussian splats. The transformation is applied to the Gaussian splats in the `input` directory and the transformed Gaussian splats are saved in the `output` directory. The transformations are defined by the files created by 3DGS_Alignment project.
+* Run `apply_transform.py` to apply the transformation to the Gaussian splats. The transformation is applied to the Gaussian splats in the `input` directory and the transformed Gaussian splats are saved in the `output` directory. The transformations are defined by the files created by [3DGS_Alignment project](https://github.com/RishabhBajaj25/3DGS_Alignment).
 
 
 * <a href="#1-installation">Installation</a>
