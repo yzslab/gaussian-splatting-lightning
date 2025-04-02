@@ -1,13 +1,13 @@
-# Gaussian Splatting PyTorch Lightning Implementation
-* <a href="#1-installation">Installation</a>
-* <a href="#2-training">Training</a>
-* <a href="#4-web-viewer">Web Viewer</a>
-* <a href="https://github.com/yzslab/gaussian-splatting-lightning/releases">Changelog</a>
-
 # Rishabh's Fork for Gaussian Splatting PyTorch Lightning Implementation
 
 * Used in 3DGS_Alignment project to scale and transform Gaussian splats. Sample commands to transform and scale Gaussian splats are as follows:
 * Run `apply_transform.py` to apply the transformation to the Gaussian splats. The transformation is applied to the Gaussian splats in the `input` directory and the transformed Gaussian splats are saved in the `output` directory. The transformations are defined by the files created by 3DGS_Alignment project.
+
+
+* <a href="#1-installation">Installation</a>
+* <a href="#2-training">Training</a>
+* <a href="#4-web-viewer">Web Viewer</a>
+* <a href="https://github.com/yzslab/gaussian-splatting-lightning/releases">Changelog</a>
 
 ## Known issues
 * ~~Multi-GPU training can only be enabled after densification~~ (Try <a href="#216-new-multiple-gpu-training-strategy">2.16. New Multiple GPU training strategy</a>)
