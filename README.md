@@ -33,7 +33,7 @@
   * <a href="#28-absgs--efficientgs">AbsGS / EfficientGS (2.8.)</a>
   * <a href="#29-2d-gaussian-splatting">2D Gaussian Splatting (2.9.)</a>
   * <a href="#210-segment-any-3d-gaussians">Segment Any 3D Gaussians (2.10.)</a>
-  * Large-scale scene reconstruction with partitioning and LoD <a href="#211-large-scale-scene-reconstruction-with-partitioning-and-lod"> (2.11.)</a>
+  <!-- * Large-scale scene reconstruction with partitioning and LoD <a href="#211-large-scale-scene-reconstruction-with-partitioning-and-lod"> (2.11.)</a> -->
   * <a href="#212-appearance-model">New Appearance Model (2.12.)</a>: improve the quality when images have various appearances
   * <a href="#213-3dgs-mcmc">3D Gaussian Splatting as Markov Chain Monte Carlo (2.13.)</a>
   * <a href="#214-feature-distillation">Feature distillation (2.14.)</a>
@@ -364,7 +364,7 @@ python utils/fuse_mip_filter.py \
   ```
   <video src="https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/0b98a8ed-77d7-436d-b9f8-c5b51af5ba52"></video>
 
-### 2.11. Large-scale scene reconstruction with partitioning and LoD
+<!-- ### 2.11. Large-scale scene reconstruction with partitioning and LoD
 | Baseline | Partitioning |
 | --- | --- |
 | ![image](https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/d3cb7d1a-f319-4315-bfa3-b56e3a98b19e) | ![image](https://github.com/yzslab/gaussian-splatting-lightning/assets/564361/12f930ee-eb5d-41c6-9fb7-6d043122a91c) |
@@ -566,7 +566,7 @@ There is no single script to finish the whole pipeline. Please refer to below co
 * Train/finetune a partition with multiple GPUs
   * Training only works with the <a href="#216-new-multiple-gpu-training-strategy">strategy introduced in 2.16.</a>
   * Finetune only works with <a href="#24-multi-gpu-training-ddp">DDP</a>
-
+ -->
 
 ### 2.12. Appearance Model
 With appearance model, the reconstruction quality can be improved when your images have various appearance, such as different exposure, white balance, contrast and even day and night.
