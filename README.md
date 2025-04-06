@@ -33,7 +33,7 @@
   * <a href="#28-absgs--efficientgs">AbsGS / EfficientGS (2.8.)</a>
   * <a href="#29-2d-gaussian-splatting">2D Gaussian Splatting (2.9.)</a>
   * <a href="#210-segment-any-3d-gaussians">Segment Any 3D Gaussians (2.10.)</a>
-  <!-- * Large-scale scene reconstruction with partitioning and LoD <a href="#211-large-scale-scene-reconstruction-with-partitioning-and-lod"> (2.11.)</a> -->
+  * ~~Large-scale scene reconstruction with partitioning and LoD <a href="#211-large-scale-scene-reconstruction-with-partitioning-and-lod"> (2.11.)</a>~~
   * <a href="#212-appearance-model">New Appearance Model (2.12.)</a>: improve the quality when images have various appearances
   * <a href="#213-3dgs-mcmc">3D Gaussian Splatting as Markov Chain Monte Carlo (2.13.)</a>
   * <a href="#214-feature-distillation">Feature distillation (2.14.)</a>
