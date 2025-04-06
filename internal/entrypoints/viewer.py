@@ -20,6 +20,8 @@ def cli():
     parser.add_argument("--enable_transform", "--enable-transform",
                         action="store_true", default=False,
                         help="Enable transform options on Web UI. May consume more memory")
+    parser.add_argument("--enable_measurement", "--enable-measurement", "--measure",
+                        action="store_true", default=False)
     parser.add_argument("--show_cameras", "--show-cameras",
                         action="store_true")
     parser.add_argument("--cameras-json", "--cameras_json", type=str, default=None)

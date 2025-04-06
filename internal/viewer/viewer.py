@@ -31,6 +31,7 @@ class Viewer:
             reorient: Literal["auto", "enable", "disable"] = "auto",
             sh_degree: int = 3,
             enable_transform: bool = False,
+            enable_measurement: bool = False,
             show_cameras: bool = False,
             cameras_json: str = None,
             vanilla_deformable: bool = False,
@@ -59,6 +60,7 @@ class Viewer:
         self.image_format = image_format
         self.sh_degree = sh_degree
         self.enable_transform = enable_transform
+        self.enable_measurement = enable_measurement
         self.show_cameras = show_cameras
         self.extra_video_render_args = []
 
@@ -663,6 +665,15 @@ class Viewer:
                     background_color=self.background_color,
                     sh_degree=self.sh_degree,
                     extra_args=self.extra_video_render_args,
+                )
+
+        if self.enable_measurement:
+            with tabs.add_tab("Measure") as tab:
+                from internal.viewer.ui.distance_measurement import DistanceMeasurementPanel
+                self.measure_panel = DistanceMeasurementPanel(
+                    viewer=self,
+                    server=server,
+                    tab=tab,
                 )
 
         if enable_renderer_options is True:
