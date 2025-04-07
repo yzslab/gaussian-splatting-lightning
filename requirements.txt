@@ -1,1 +1,1 @@
--r requirements/lightning23.txt
+-r requirements/lightning25.txt
