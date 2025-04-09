@@ -126,7 +126,7 @@ class DistanceMeasurementPanel:
                 self.save_button.disabled = False
 
         def get_file_list():
-            file_list = []
+            file_list = [""]
             for i in os.scandir(save_dir):
                 if i.name.endswith(".pt"):
                     file_list.append(i.name)
@@ -147,6 +147,8 @@ class DistanceMeasurementPanel:
 
             @self.load_button.on_click
             def _(_):
+                if self.file_list.value == "":
+                    return
                 loaded = torch.load(os.path.join(save_dir, self.file_list.value))
                 for idx, index in enumerate(self.used_point_indices):
                     self.update_point(index, xyz=loaded[idx])
