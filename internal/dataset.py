@@ -320,10 +320,12 @@ class DataModule(LightningDataModule):
             num_workers: int = 2,
             add_background_sphere: bool = False,
             background_sphere_center: Literal["points", "cameras"] = "points",
+            background_sphere_scene_center: Tuple[float, float, float] = None,
             background_sphere_distance: float = 2.2,
             background_sphere_points: int = 204_800,
             background_sphere_color: Literal["random", "white"] = "random",
             background_sphere_min_altitude: float = -math.inf,
+            background_sphere_up: Tuple[float, float, float] = None,
             camera_on_cpu: bool = False,
             image_on_cpu: bool = True,
             image_uint8: bool = False,
@@ -391,11 +393,18 @@ class DataModule(LightningDataModule):
         # add background sphere: https://github.com/graphdeco-inria/gaussian-splatting/issues/300#issuecomment-1756073909
         if self.hparams["add_background_sphere"] is True:
             # find the scene center and size
+            scene_center = None
+            if self.hparams["background_sphere_scene_center"] is not None:
+                scene_center = np.asarray(self.hparams["background_sphere_scene_center"])
             if self.hparams["background_sphere_center"] == "points":
-                scene_center = self.dataparser_outputs.point_cloud.xyz.mean(axis=0)
+                if scene_center is None:
+                    scene_center = self.dataparser_outputs.point_cloud.xyz.mean(axis=0)
                 scene_radius = np.percentile(np.linalg.norm(self.dataparser_outputs.point_cloud.xyz - scene_center, axis=-1), 99.9).item()
             else:
-                scene_center = self.dataparser_outputs.train_set.cameras.camera_center.mean(dim=0)
+                if scene_center is None:
+                    scene_center = self.dataparser_outputs.train_set.cameras.camera_center.mean(dim=0)
+                else:
+                    scene_center = torch.from_numpy(scene_center)
                 scene_radius_from_cameras = torch.norm(self.dataparser_outputs.train_set.cameras.camera_center - scene_center, dim=-1).max().item()
 
                 scene_center = scene_center.numpy()
@@ -417,8 +426,12 @@ class DataModule(LightningDataModule):
             # build background sphere
             background_sphere_point_xyz = (unit_sphere_points * scene_radius * self.hparams["background_sphere_distance"]) + scene_center
             # simply delete those under min altitude
-            # TODO: custom up direction
-            background_sphere_point_xyz = background_sphere_point_xyz[background_sphere_point_xyz[:, -1] >= self.hparams["background_sphere_min_altitude"]]
+            if self.hparams["background_sphere_up"] is not None:
+                up_direction = np.asarray(self.hparams["background_sphere_up"], dtype=np.float64)
+                background_sphere_point_z = np.dot(background_sphere_point_xyz, (up_direction / np.linalg.norm(up_direction)))
+            else:
+                background_sphere_point_z = background_sphere_point_xyz[:, -1]
+            background_sphere_point_xyz = background_sphere_point_xyz[background_sphere_point_z >= self.hparams["background_sphere_min_altitude"]]
             if self.hparams["background_sphere_color"] == "random":
                 background_sphere_point_rgb = np.asarray(np.random.random(background_sphere_point_xyz.shape) * 255, dtype=np.uint8)
             else:
