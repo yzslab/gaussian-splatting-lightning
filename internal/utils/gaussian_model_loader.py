@@ -115,7 +115,15 @@ class GaussianModelLoader:
         hparams = checkpoint["hyper_parameters"]
         # extract state dict of renderer
         renderer = hparams["renderer"]
-        renderer_state_dict = cls.filter_state_dict_by_prefix(checkpoint["state_dict"], "renderer.", device=device)
+        if renderer.__class__.__name__ == "GSPlatRenderer":
+            from internal.renderers.gsplat_v1_renderer import GSplatV1Renderer
+            renderer = GSplatV1Renderer(
+                anti_aliased=renderer.anti_aliased,
+                filter_2d_kernel_size=getattr(renderer, "filter_2d_kernel_size", 0.3),
+            )
+            renderer_state_dict = {}
+        else:
+            renderer_state_dict = cls.filter_state_dict_by_prefix(checkpoint["state_dict"], "renderer.", device=device)
         # load state dict of renderer
         if isinstance(renderer, RendererConfig):
             renderer = renderer.instantiate()
