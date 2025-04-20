@@ -19,6 +19,7 @@ parser.add_argument("--images", default=None, type=str)
 parser.add_argument("--up", nargs="+", required=False, type=float, default=None)
 parser.add_argument("--camera-scale", type=float, default=0.002)
 parser.add_argument("--point-size", type=float, default=0.002)
+parser.add_argument("--scale", type=float, default=1.)
 args = parser.parse_args()
 
 pcd = None
@@ -64,7 +65,7 @@ camera_centers = torch.tensor([i["position"] for i in camera_poses])
 camera_center_min = torch.min(camera_centers, dim=0).values
 camera_center_max = torch.max(camera_centers, dim=0).values
 scene_scale = torch.norm(camera_center_max - camera_center_min)
-camera_scale = scene_scale.item() * args.camera_scale
+camera_scale = scene_scale.item() * args.camera_scale * args.scale
 print("scene_scale={}, auto_camera_scale={}".format(scene_scale, camera_scale))
 
 
@@ -82,6 +83,9 @@ for camera in tqdm(camera_poses, leave=False, desc="Loading images"):
     c2w[:3, 3] = np.asarray(camera["position"])
     c2w[:3, 1:3] *= -1
     c2w = np.matmul(camera_pose_transform, c2w)
+
+    if args.scale != 1.:
+        c2w[:3, 3] *= args.scale
 
     R = vtf.SO3.from_matrix(c2w[:3, :3])
     R = R @ vtf.SO3.from_x_radians(np.pi)
@@ -130,6 +134,8 @@ if args.points is not None:
 
     pcd = fetch_ply_without_rgb_normalization(args.points)
 if pcd is not None:
+    if args.scale != 1.:
+        pcd.points *= args.scale
     viser_server.scene.add_point_cloud(
         "points",
         pcd.points[::args.point_sparsify],
