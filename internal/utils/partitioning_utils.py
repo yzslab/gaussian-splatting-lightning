@@ -482,8 +482,9 @@ class PartitionableScene:
         self.partition_coordinates, self.is_camera_in_partition, self.is_partitions_visible_to_cameras = self.unmerged
         self.unmerged = None
 
-    def build_output_dirname(self):
-        return "partitions-size_{}-enlarge_{}-{}_visibility_{}_{}".format(
+    def build_output_dirname(self, name: str = None):
+        return "partitions{}-size_{}-enlarge_{}-{}_visibility_{}_{}".format(
+            "-{}".format(name) if name is not None else "",
             self.scene_config.partition_size,
             self.scene_config.location_based_enlarge,
             "convex_hull" if self.scene_config.convex_hull_based_visibility else "point",
