@@ -36,6 +36,8 @@ class Colmap(DataParserConfig):
 
     mask_dir: str = None
 
+    sparse_dir: str = None
+
     split_mode: Literal["reconstruction", "experiment"] = "reconstruction"
 
     eval_image_select_mode: Literal["step", "ratio", "list", "list-optional"] = "step"
@@ -82,9 +84,12 @@ class ColmapDataParser(DataParser):
         return torch.floor(i + 0.5)
 
     def detect_sparse_model_dir(self) -> str:
-        if os.path.isdir(os.path.join(self.path, "sparse", "0")):
-            return os.path.join(self.path, "sparse", "0")
-        return os.path.join(self.path, "sparse")
+        sparse_dir = "sparse"
+        if self.params.sparse_dir is not None:
+            sparse_dir = self.params.sparse_dir
+        if os.path.isdir(os.path.join(self.path, sparse_dir, "0")):
+            return os.path.join(self.path, sparse_dir, "0")
+        return os.path.join(self.path, sparse_dir)
 
     def get_image_dir(self) -> str:
         if self.params.image_dir is None:
