@@ -210,9 +210,11 @@ def main():
     finally:
         async_image_saver.stop()
 
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats()
+
     renderer.synchronized = True
     cameras = [camera for camera, _, _ in dataloader]
-    n_val_cameras = len(cameras)
     # n_repeating = max((1024 + n_val_cameras - 1) // n_val_cameras, 8)
     n_repeating = 3
     print("Repeat rendering validation set {} times for evaluating FPS...".format(n_repeating))
@@ -234,6 +236,10 @@ def main():
             render_time_list.append(predicts["render_time"])
             render_time_with_lod_preprocess_list.append(predicts["render_time_with_lod_preprocess"])
             n_rendered_frames += 1
+
+            # torch.cuda.empty_cache()
+
+    max_memory_usage = torch.cuda.max_memory_allocated() / (1024. * 1024.)
 
     metric_list_key_by_name = {}
     available_metric_keys = ["psnr", "ssim", "vgg_lpips", "alex_lpips"]
@@ -266,9 +272,10 @@ def main():
         metrics_writer.writerow(["RenderFPSwithLOD", "{}".format(render_fps_with_lod_preprocess)])
         metrics_writer.writerow(["AverageNGaussians", "{}".format(average_n_gaussians)])
         metrics_writer.writerow(["PeakNGaussians", "{}".format(peak_n_gaussians)])
+        metrics_writer.writerow(["MaxMem", "{}".format(max_memory_usage)])
 
         print(mean_row)
-        print("FPS={}, RenderFPS={}, RenderFPSwithLOD={}, (Average, Peak)NGaussians=({}, {})".format(fps, render_fps, render_fps_with_lod_preprocess, average_n_gaussians, peak_n_gaussians))
+        print("FPS={}, RenderFPS={}, RenderFPSwithLOD={}, (Average, Peak)NGaussians=({}, {}), MaxMem={}".format(fps, render_fps, render_fps_with_lod_preprocess, average_n_gaussians, peak_n_gaussians, max_memory_usage))
 
 
 main()
