@@ -127,9 +127,12 @@ class DistanceMeasurementPanel:
 
         def get_file_list():
             file_list = [""]
-            for i in os.scandir(save_dir):
-                if i.name.endswith(".pt"):
-                    file_list.append(i.name)
+            try:
+                for i in os.scandir(save_dir):
+                    if i.name.endswith(".pt"):
+                        file_list.append(i.name)
+            except:
+                pass
             return file_list
 
         # load
