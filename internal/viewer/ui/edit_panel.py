@@ -95,7 +95,7 @@ class EditPanel:
         self.grid_folders = {}
 
         # create panel(grid)
-        def new_grid(idx):
+        def new_grid(idx, event):
             with self.server.gui.add_folder("Grid {}".format(idx)) as folder:
                 self.grid_folders[idx] = folder
 
@@ -106,6 +106,7 @@ class EditPanel:
                     "/grid/{}".format(idx),
                     height=grid_size.value[0],
                     width=grid_size.value[1],
+                    position=event.client.camera.look_at,
                 )
                 grid_transform = server.add_transform_controls(
                     "/grid_transform_control/{}".format(idx),
@@ -151,9 +152,9 @@ class EditPanel:
         # setup callbacks
 
         @add_grid_button.on_click
-        def _(_):
+        def _(event):
             with server.atomic():
-                new_grid(self.grid_idx)
+                new_grid(self.grid_idx, event)
                 self.grid_idx += 1
 
         @self.delete_gaussians_button.on_click
