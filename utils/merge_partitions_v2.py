@@ -32,6 +32,8 @@ def parse_args():
     parser.add_argument("--right-optimized", action="store_true", default=False)
     # ===== for evaluation ======
     parser.add_argument("--preprocess", action="store_true")
+    parser.add_argument("--ckpt-name", "--name", type=str, default="preprocessed")
+    parser.add_argument("--without-bkg", action="store_true", default=False)
     args = parser.parse_args()
 
     if args.output_path is None:
@@ -194,9 +196,24 @@ def main():
 
     def isclose(a, b):
         return torch.isclose(a, b, atol=1e-4)
+    
+    output_filename_suffix = ""
+    if args.retain_appearance:
+        output_filename_suffix += "-retain_appearance"
+    if args.left_optimized:
+        output_filename_suffix += "-left_optimized"
+    elif args.right_optimized:
+        output_filename_suffix += "-right_optimized"
 
     with tqdm(mergable_partitions, desc="Pre-processing") as t:
         for partition_idx, partition_id_str, ckpt_file, bounding_box in t:
+            if args.preprocess and os.path.exists(os.path.join(
+                os.path.dirname(os.path.dirname(ckpt_file)),
+                "{}{}.ckpt".format(args.ckpt_name, output_filename_suffix)),
+            ):
+                t.write("Skip {}".format(partition_id_str))
+                continue
+
             t.set_description("{}".format(partition_id_str))
 
             # ===== for evaluation =====
@@ -214,22 +231,23 @@ def main():
             # include background if the partition locates at the border
             # TODO: deal with the non-rectangular case
             bounding_box_updated = False
-            if isclose(bounding_box.min[0], scene_bounding_box[0][0]):
-                # x == scene bbox x min -> bbox.x_min = -inf
-                bounding_box.min[0] = -torch.inf
-                bounding_box_updated = True
-            if isclose(bounding_box.min[1], scene_bounding_box[0][1]):
-                # y == scene bbox y min -> bbox.y_min = -inf
-                bounding_box.min[1] = -torch.inf
-                bounding_box_updated = True
-            if isclose(bounding_box.max[0], scene_bounding_box[1][0]):
-                # x == scene bbox x max -> bbox.x_max = inf
-                bounding_box.max[0] = torch.inf
-                bounding_box_updated = True
-            if isclose(bounding_box.max[1], scene_bounding_box[1][1]):
-                # x == scene bbox x max -> bbox.x_max = inf
-                bounding_box.max[1] = torch.inf
-                bounding_box_updated = True
+            if not args.without_bkg:
+                if isclose(bounding_box.min[0], scene_bounding_box[0][0]):
+                    # x == scene bbox x min -> bbox.x_min = -inf
+                    bounding_box.min[0] = -torch.inf
+                    bounding_box_updated = True
+                if isclose(bounding_box.min[1], scene_bounding_box[0][1]):
+                    # y == scene bbox y min -> bbox.y_min = -inf
+                    bounding_box.min[1] = -torch.inf
+                    bounding_box_updated = True
+                if isclose(bounding_box.max[0], scene_bounding_box[1][0]):
+                    # x == scene bbox x max -> bbox.x_max = inf
+                    bounding_box.max[0] = torch.inf
+                    bounding_box_updated = True
+                if isclose(bounding_box.max[1], scene_bounding_box[1][1]):
+                    # x == scene bbox x max -> bbox.x_max = inf
+                    bounding_box.max[1] = torch.inf
+                    bounding_box_updated = True
 
             if bounding_box_updated:
                 t.write("[NOTE]bounding box of {} updated to {}".format(
@@ -294,17 +312,9 @@ def main():
             if args.preprocess:
                 update_ckpt(ckpt, {k: gaussian_model.get_property(k) for k in MERGABLE_PROPERTY_NAMES}, gaussian_model.max_sh_degree, retain_appearance=args.retain_appearance)
 
-                output_filename_suffix = ""
-                if args.retain_appearance:
-                    output_filename_suffix += "-retain_appearance"
-                if args.left_optimized:
-                    output_filename_suffix += "-left_optimized"
-                elif args.right_optimized:
-                    output_filename_suffix += "-right_optimized"
-
                 output_filename = os.path.join(
                     os.path.dirname(os.path.dirname(ckpt_file)),
-                    "preprocessed{}.ckpt".format(output_filename_suffix),
+                    "{}{}.ckpt".format(args.ckpt_name, output_filename_suffix),
                 )
                 torch.save(ckpt, output_filename)
                 t.write("Saved to {}".format(output_filename))
