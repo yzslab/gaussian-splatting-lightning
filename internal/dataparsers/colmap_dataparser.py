@@ -62,6 +62,8 @@ class Colmap(DataParserConfig):
 
     points_from: Literal["sfm", "random", "ply"] = "sfm"
 
+    max_point_error: float = None
+
     ply_file: str = None
 
     n_random_points: int = 100_000
@@ -371,13 +373,18 @@ class ColmapDataParser(DataParser):
 
         if self.params.points_from == "sfm":
             print("loading colmap 3D points")
-            xyz, rgb, _ = ColmapDataParser.read_points3D_binary(
+            xyz, rgb, point_errors = ColmapDataParser.read_points3D_binary(
                 os.path.join(sparse_model_dir, "points3D.bin"),
                 selected_image_ids=selected_image_ids,
                 mask_path_list=mask_path_list,
                 image_point_xys_list=image_point_xys_list,
                 image_point3D_ids_list=image_point3D_ids_list,
             )
+            if self.params.max_point_error is not None and self.params.max_point_error > 0:
+                valid_point_mask = point_errors < self.params.max_point_error
+                print("valid points: {}/{}".format(valid_point_mask.sum(), valid_point_mask.shape[0]))
+                xyz = xyz[valid_point_mask]
+                rgb = rgb[valid_point_mask]
         else:
             # random points generated later
             xyz = np.ones((1, 3))
