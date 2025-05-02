@@ -5,6 +5,7 @@ from typing import Union, Optional, Literal, List, Tuple, Dict, Any
 import os
 import time
 import traceback
+import shlex
 import yaml
 import torch
 import subprocess
@@ -421,7 +422,7 @@ class PartitionTraining:
 
         ret_code = -1
         if dry_run:
-            print(" \\\n  ".join(args))
+            self.print_command(args)
         else:
             try:
                 print_func(str(args))
@@ -502,3 +503,17 @@ class PartitionTraining:
 
         # start training
         partition_training.train_partitions()
+
+    @staticmethod
+    def print_command(args: list, return_str: bool = False):
+        escaped_args = []
+        for i in args:
+            escaped_args.append(shlex.quote(i))
+        connector = " "
+        if len(args) > 3:
+            connector = " \\\n    "
+
+        command_str = connector.join(escaped_args)
+        if return_str:
+            return command_str
+        print(command_str)
