@@ -157,7 +157,7 @@ class ForegroundFirstDensityControllerModule(DensityControllerImpl):
     def update_states(self, outputs):
         viewspace_point_tensor, visibility_filter, radii = outputs["viewspace_points"], outputs["visibility_filter"], outputs["radii"]
         if self.config.acc_vis:
-            visibility_filter = viewspace_point_tensor.has_hit_any_pixels
+            visibility_filter = outputs["acc_vis"]
         # retrieve viewspace_points_grad_scale if provided
         viewspace_points_grad_scale = outputs.get("viewspace_points_grad_scale", None)
 

@@ -19,7 +19,7 @@ class AccurateVisibilityFilterDensityController(VanillaDensityController):
 class AccurateVisibilityFilterDensityControllerModule(VanillaDensityControllerImpl):
     def update_states(self, outputs):
         viewspace_point_tensor, radii = outputs["viewspace_points"], outputs["radii"]
-        visibility_filter = viewspace_point_tensor.has_hit_any_pixels
+        visibility_filter = outputs["acc_vis"]
         # retrieve viewspace_points_grad_scale if provided
         viewspace_points_grad_scale = outputs.get("viewspace_points_grad_scale", None)
 
