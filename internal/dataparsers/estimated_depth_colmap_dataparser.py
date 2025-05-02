@@ -125,7 +125,7 @@ class EstimatedDepthColmapDataParser(ColmapDataParser):
             if median_normalization:
                 median = torch.median(depth[depth > 0])
                 depth = depth / median
-                assert not torch.any(torch.isnan(depth))
+                assert not torch.any(torch.isnan(depth)), depth_file_path
                 return depth, median
             return depth
 
