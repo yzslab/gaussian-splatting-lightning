@@ -6,6 +6,7 @@ import cv2
 import json
 from joblib import delayed, Parallel
 from internal.utils.colmap import read_model, qvec2rotmat
+from internal.dataparsers.estimated_depth_colmap_dataparser import EstimatedDepthColmapDataParser
 
 parser = argparse.ArgumentParser()
 parser.add_argument("dataset_dir")
