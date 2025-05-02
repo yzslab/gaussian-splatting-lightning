@@ -80,9 +80,7 @@ class HasInverseDepthMetricsModule(VanillaMetricsImpl):
                 min_depth = predicted_inverse_depth.min()
             predicted_inverse_depth = (predicted_inverse_depth - min_depth) / (max_depth - min_depth + 1e-8)
         elif self.config.depth_median_normalization:
-            median = torch.median(gt_inverse_depth)
-            # TODO: normalize G.T. at load time
-            gt_inverse_depth = gt_inverse_depth / median
+            gt_inverse_depth, median = gt_inverse_depth
             predicted_inverse_depth = predicted_inverse_depth / median
         elif self.config.depth_mean_normalization:
             mean_depth = torch.mean(gt_inverse_depth)

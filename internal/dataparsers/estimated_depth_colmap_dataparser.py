@@ -2,6 +2,7 @@ import os
 import json
 import numpy as np
 import torch
+import cv2
 from dataclasses import dataclass
 from .colmap_dataparser import Colmap, ColmapDataParser
 from internal.dataparsers import DataParserOutputs
@@ -20,6 +21,8 @@ class EstimatedDepthColmap(Colmap):
     depth_scale_upper_bound: float = 5.
 
     allow_depth_interpolation: bool = False
+
+    median_normalization: bool = False
 
     def instantiate(self, path: str, output_path: str, global_rank: int) -> "EstimatedDepthColmapDataParser":
         return EstimatedDepthColmapDataParser(path=path, output_path=output_path, global_rank=global_rank, params=self)
@@ -47,8 +50,10 @@ class EstimatedDepthColmapDataParser(ColmapDataParser):
             for idx, image_name in enumerate(image_set.image_names):
                 depth_file_path = os.path.join(self.path, self.params.depth_dir, f"{image_name}.npy")
                 if os.path.exists(depth_file_path) is False:
-                    print("[WARNING] {} does not have a depth file".format(image_name))
-                    continue
+                    depth_file_path = os.path.join(self.path, self.params.depth_dir, f"{image_name}.uint16.png")
+                    if os.path.exists(depth_file_path) is False:
+                        print("[WARNING] {} does not have a depth file".format(image_name))
+                        continue
 
                 depth_scale = {
                     "scale": 1.,
@@ -70,7 +75,10 @@ class EstimatedDepthColmapDataParser(ColmapDataParser):
 
                 image_set.extra_data[idx] = (depth_file_path, depth_scale, (image_set.cameras[idx].height.item(), image_set.cameras[idx].width.item()))
                 loaded_depth_count += 1
-            image_set.extra_data_processor = self.get_depth_loader(self.params.allow_depth_interpolation)
+            image_set.extra_data_processor = self.get_depth_loader(
+                self.params.allow_depth_interpolation,
+                self.params.median_normalization,
+            )
 
         assert loaded_depth_count > 0
         print("found {} depth maps".format(loaded_depth_count))
@@ -78,13 +86,30 @@ class EstimatedDepthColmapDataParser(ColmapDataParser):
         return dataparser_outputs
 
     @staticmethod
-    def get_depth_loader(allow_depth_interpolation: bool):
+    def load_npy_depth(file_path):
+        return np.load(file_path)
+
+    @staticmethod
+    def load_uint16_png_depth(file_path):
+        image = cv2.imread(file_path, cv2.IMREAD_UNCHANGED)
+        assert image.ndim == 2 and image.dtype == np.uint16
+
+        return image.astype(np.float32) / 65535.
+
+    @classmethod
+    def load_depth_file(cls, file_path):
+        if file_path.endswith(".npy"):
+            return cls.load_npy_depth(file_path)
+        return cls.load_uint16_png_depth(file_path)
+
+    @classmethod
+    def get_depth_loader(cls, allow_depth_interpolation: bool, median_normalization: bool):
         def load_depth(depth_info):
             if depth_info is None:
                 return None
 
             depth_file_path, depth_scale, image_shape = depth_info
-            depth = np.load(depth_file_path) * depth_scale["scale"] + depth_scale["offset"]
+            depth = cls.load_depth_file(depth_file_path) * depth_scale["scale"] + depth_scale["offset"]
             depth = torch.tensor(depth, dtype=torch.float)
             depth = torch.clamp_min(depth, min=0.)
 
@@ -97,6 +122,11 @@ class EstimatedDepthColmapDataParser(ColmapDataParser):
                     align_corners=True,
                 )[0, 0]
 
+            if median_normalization:
+                median = torch.median(depth[depth > 0])
+                depth = depth / median
+                assert not torch.any(torch.isnan(depth))
+                return depth, median
             return depth
 
         return load_depth

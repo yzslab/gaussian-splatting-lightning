@@ -2,6 +2,7 @@ import add_pypath
 import os
 import sys
 import argparse
+import numpy as np
 import torch
 from tqdm import tqdm
 from internal.utils.visualizers import Visualizers
@@ -18,6 +19,8 @@ parser.add_argument("--extensions", "-e", default=["jpg", "JPG", "jpeg", "JPEG",
 parser.add_argument("--preview", "-p", action="store_true", default=False)
 parser.add_argument("--colormap", type=str, default="default")
 parser.add_argument("--da2_path", type=str, default=os.path.join(os.path.dirname(__file__), "Depth-Anything-V2"))
+parser.add_argument("--image_list", type=str, default=None)
+parser.add_argument("--uint16", action="store_true", default=False)
 configure_arg_parser(parser)
 args = parser.parse_args()
 
@@ -27,7 +30,21 @@ from depth_anything_v2.dpt import DepthAnythingV2
 if args.output is None:
     args.output = os.path.join(os.path.dirname(args.image_dir), "estimated_depths")
 
-images = get_task_list_with_args(args, find_files(args.image_dir, args.extensions, as_relative_path=False))
+found_image_list = find_files(args.image_dir, args.extensions, as_relative_path=False)
+if args.image_list is not None:
+    provided_image_list = {}
+    with open(args.image_list, "r") as f:
+        for row in f:
+            provided_image_list[row.strip("\n")] = True
+
+    valid_image_list = []
+    for i in found_image_list:
+        if i[len(args.image_dir):].lstrip("/") not in provided_image_list:
+            continue
+        valid_image_list.append(i)
+    found_image_list = valid_image_list
+
+images = get_task_list_with_args(args, found_image_list)
 assert len(images) > 0, "not an image with extension name '{}' can be found in '{}'".format(args.extensions, args.image_dir)
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
@@ -50,7 +67,20 @@ def apply_color_map(normalized_depth):
     return colored_depth
 
 
-ndarray_saver = AsyncNDArraySaver()
+if args.uint16:
+    depth_saver = AsyncImageSaver()
+
+    def save_depth(depth, image_name):
+        depth = np.clip((depth * 65535) + 0.5, a_min=0., a_max=65535.).astype(np.uint16)
+        output_filename = os.path.join(args.output, "{}.uint16.png".format(image_name))
+        depth_saver.save(depth, output_filename)
+else:
+    depth_saver = AsyncNDArraySaver()
+
+    def save_depth(depth, image_name):
+        output_filename = os.path.join(args.output, "{}.npy".format(image_name))
+        depth_saver.save(depth, output_filename)
+
 image_reader = AsyncImageReader(image_list=images)
 image_saver = AsyncImageSaver(is_rgb=True)
 try:
@@ -62,12 +92,11 @@ try:
             depth = depth_anything.infer_image(raw_image, args.input_size)
             normalized_depth = (depth - depth.min()) / (depth.max() - depth.min())
 
-            output_filename = os.path.join(args.output, "{}.npy".format(image_name))
-            ndarray_saver.save(normalized_depth, output_filename)
+            save_depth(normalized_depth, image_name)
 
             if args.preview is True:
                 image_saver.save(normalized_depth, os.path.join(args.output, "{}.png".format(image_name)), processor=apply_color_map)
 finally:
-    ndarray_saver.stop()
+    depth_saver.stop()
     image_reader.stop()
     image_saver.stop()

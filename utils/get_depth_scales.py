@@ -38,6 +38,14 @@ points3d_error_ordered[pts_indices] = pts_errors
 
 def get_scales(key, cameras, images, points3d_ordered, points3d_error_ordered, args):
     image_meta = images[key]
+
+    depth_file_path = os.path.join(args.depth_dir, "{}.npy".format(image_meta.name))
+
+    if os.path.exists(depth_file_path) is False:
+        depth_file_path = os.path.join(args.depth_dir, "{}.uint16.png".format(image_meta.name))
+        if os.path.exists(depth_file_path) is False:
+            return None
+
     cam_intrinsic = cameras[image_meta.camera_id]
 
     pts_idx = images[key].point3D_ids
@@ -67,7 +75,7 @@ def get_scales(key, cameras, images, points3d_ordered, points3d_error_ordered, a
     pts = np.dot(pts, R.T) + image_meta.tvec
 
     invcolmapdepth = 1. / pts[..., 2]
-    invmonodepthmap = np.load(os.path.join(args.depth_dir, "{}.npy".format(image_meta.name)))  # already normalized
+    invmonodepthmap = EstimatedDepthColmapDataParser.load_depth_file(depth_file_path)  # already normalized
 
     if invmonodepthmap is None:
         return None
