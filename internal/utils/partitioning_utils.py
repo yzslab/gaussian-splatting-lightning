@@ -106,6 +106,8 @@ class PartitionableScene:
 
     point_based_bounding_box: MinMaxBoundingBox = None
 
+    sfm_based_bounding_box: MinMaxBoundingBox = None
+
     scene_bounding_box: SceneBoundingBox = None
 
     partition_coordinates: PartitionCoordinates = None
@@ -120,6 +122,7 @@ class PartitionableScene:
 
     def get_bounding_box_by_camera_centers(self, enlarge: float = 0.):
         self.camera_center_based_bounding_box = Partitioning.get_bounding_box_by_camera_centers(self.camera_centers, enlarge=enlarge)
+        self.sfm_based_bounding_box = self.camera_center_based_bounding_box
         return self.camera_center_based_bounding_box
 
     def get_bounding_box_by_points(self, points: torch.Tensor, enlarge: float = 0., outlier_threshold: float = 0.001):
@@ -128,12 +131,12 @@ class PartitionableScene:
             enlarge=enlarge,
             outlier_threshold=outlier_threshold,
         )
-
+        self.sfm_based_bounding_box = self.point_based_bounding_box
         return self.point_based_bounding_box
 
     def get_scene_bounding_box(self):
         self.scene_bounding_box = Partitioning.align_bounding_box(
-            self.point_based_bounding_box,
+            self.sfm_based_bounding_box,
             origin=self.scene_config.origin,
             size=self.scene_config.partition_size,
         )
