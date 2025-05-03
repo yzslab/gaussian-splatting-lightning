@@ -47,6 +47,10 @@ class ForegroundFirstDensityController(DensityController):
 
     acc_vis: bool = False
 
+    up_direction: Tuple[float, float, float] = None
+
+    min_alt: float = None
+
     def instantiate(self, *args, **kwargs) -> DensityControllerImpl:
         return ForegroundFirstDensityControllerModule(self)
 
@@ -228,6 +232,13 @@ class ForegroundFirstDensityControllerModule(DensityControllerImpl):
                 big_points_ws = gaussian_model.get_scales().max(dim=1).values > 0.1 * prune_extent
                 self.log_metric("big_points_ws_count", big_points_ws.sum())
                 prune_mask = torch.logical_or(prune_mask, big_points_ws)
+
+        if self.config.min_alt is not None:
+            alt = torch.inner(gaussian_model.get_means(), torch.tensor(self.config.up_direction, dtype=torch.float, device=grads.device))
+            min_alt_mask = alt < self.config.min_alt
+            prune_mask = torch.logical_or(prune_mask, min_alt_mask)
+            self.log_metric("min_alt_count", min_alt_mask.sum())
+
         self.log_metric("prune_count", prune_mask.sum())
         self._prune_points(prune_mask, gaussian_model, optimizers)
 
