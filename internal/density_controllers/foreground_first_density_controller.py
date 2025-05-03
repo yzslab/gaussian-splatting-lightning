@@ -37,6 +37,8 @@ class ForegroundFirstDensityController(DensityController):
     cull_opacity_threshold: float = 0.005
     """threshold of opacity for culling gaussians."""
 
+    cull_big_scale: bool = True
+
     camera_extent_factor: float = 1.
 
     scene_extent_override: float = -1.
@@ -221,9 +223,11 @@ class ForegroundFirstDensityControllerModule(DensityControllerImpl):
         if max_screen_size:
             big_points_vs = self.max_radii2D > max_screen_size
             self.log_metric("big_points_vs_count", big_points_vs.sum())
-            big_points_ws = gaussian_model.get_scales().max(dim=1).values > 0.1 * prune_extent
-            self.log_metric("big_points_ws_count", big_points_ws.sum())
-            prune_mask = torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws)
+            prune_mask = torch.logical_or(prune_mask, big_points_vs)
+            if self.config.cull_big_scale:
+                big_points_ws = gaussian_model.get_scales().max(dim=1).values > 0.1 * prune_extent
+                self.log_metric("big_points_ws_count", big_points_ws.sum())
+                prune_mask = torch.logical_or(prune_mask, big_points_ws)
         self.log_metric("prune_count", prune_mask.sum())
         self._prune_points(prune_mask, gaussian_model, optimizers)
 
