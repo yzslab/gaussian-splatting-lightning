@@ -4,7 +4,8 @@ import argparse
 import numpy as np
 import cv2
 import json
-from joblib import delayed, Parallel
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm.auto import tqdm
 from internal.utils.colmap import read_model, qvec2rotmat
 from internal.dataparsers.estimated_depth_colmap_dataparser import EstimatedDepthColmapDataParser
 
@@ -115,11 +116,13 @@ def get_scales(key, cameras, images, points3d_ordered, points3d_error_ordered, a
         offset = 0
     return {"image_name": image_meta.name, "scale": scale, "offset": offset}
 
-
-# depth_param_list = [get_scales(key, cameras, images, points3d_ordered, points3d_error_ordered, args) for key in images]
-depth_param_list = Parallel(n_jobs=-1, backend="threading")(
-    delayed(get_scales)(key, cameras, images, points3d_ordered, points3d_error_ordered, args) for key in images
-)
+depth_param_list = []
+with ThreadPoolExecutor() as tpe:
+    futures = []
+    for image_idx in images:
+        futures.append(tpe.submit(get_scales, image_idx, cameras, images, points3d_ordered, points3d_error_ordered, args))
+    for i in tqdm(as_completed(futures), total=len(futures)):
+        depth_param_list.append(i.result())
 
 depth_params = {
     depth_param["image_name"]: {"scale": depth_param["scale"], "offset": depth_param["offset"]}
