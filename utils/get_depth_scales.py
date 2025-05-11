@@ -49,7 +49,7 @@ def get_scales(key, cameras, images, points3d_ordered, points3d_error_ordered, a
 
     cam_intrinsic = cameras[image_meta.camera_id]
 
-    pts_idx = images[key].point3D_ids
+    pts_idx = images[key].point3D_ids.astype(np.int64)
 
     # filter out invalid 3D points
     mask = pts_idx >= 0
