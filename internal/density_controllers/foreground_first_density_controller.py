@@ -6,7 +6,7 @@ from torch import nn
 from lightning import LightningModule
 
 from internal.models.vanilla_gaussian import VanillaGaussianModel
-from internal.utils.general_utils import build_rotation
+from internal.utils.general_utils import build_rotation, inverse_sigmoid
 from .density_controller import DensityController, DensityControllerImpl, Utils
 
 
@@ -38,6 +38,8 @@ class ForegroundFirstDensityController(DensityController):
     """threshold of opacity for culling gaussians."""
 
     cull_big_scale: bool = True
+
+    opacity_correction: bool = False
 
     camera_extent_factor: float = 1.
 
@@ -263,6 +265,14 @@ class ForegroundFirstDensityControllerModule(DensityControllerImpl):
         new_properties = {}
         for key, value in gaussian_model.properties.items():
             new_properties[key] = value[selected_pts_mask]
+
+        if self.config.opacity_correction:
+            # NEW: Opacity correction
+            current_opacity = gaussian_model.get_opacities()[selected_pts_mask]
+            alpha_hat = 1. - torch.sqrt(1. - current_opacity)
+            raw_alpha_hat = inverse_sigmoid(alpha_hat)
+            gaussian_model.properties["opacities"][selected_pts_mask] = raw_alpha_hat
+            new_properties["opacities"] = raw_alpha_hat
 
         # Update optimizers and properties
         self._densification_postfix(new_properties, gaussian_model, optimizers)
