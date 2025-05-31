@@ -94,3 +94,4 @@
 !taming_3dgs/rasterizer-fused_ssim-sparse_adam-aa.yaml
 !taming_3dgs/fused_ssim.yaml
 !fused_ssim.yaml
+!opacity_correction.yaml
