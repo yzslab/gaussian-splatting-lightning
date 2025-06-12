@@ -42,6 +42,7 @@ class Viewer:
             default_camera_look_at: List[float] = None,
             no_edit_panel: bool = False,
             no_render_panel: bool = False,
+            demo_mode: bool = False,
             gsplat: bool = False,
             gsplat_aa: bool = False,
             gsplat_v1_example: bool = False,
@@ -73,11 +74,13 @@ class Viewer:
         self.use_gsplat_aa = gsplat_aa
 
         self.simplified_model = True
+
+        self.demo_mode = demo_mode
         self.show_edit_panel = True
-        if no_edit_panel is True:
+        if no_edit_panel is True or demo_mode:
             self.show_edit_panel = False
         self.show_render_panel = True
-        if no_render_panel is True:
+        if no_render_panel is True or demo_mode:
             self.show_render_panel = False
 
         def turn_off_edit_and_video_render_panel():
@@ -522,13 +525,14 @@ class Viewer:
 
         with tabs.add_tab("General"):
             # add render options
-            with server.gui.add_folder("Render"):
+            with server.gui.add_folder("Render", visible=not self.demo_mode):
                 self.max_res_when_static = server.gui.add_slider(
                     "Max Res",
                     min=128,
                     max=3840,
                     step=128,
                     initial_value=1920,
+                    disabled=self.demo_mode,
                 )
                 self.max_res_when_static.on_update(self._handle_option_updated)
                 self.jpeg_quality_when_static = server.gui.add_slider(
@@ -537,6 +541,7 @@ class Viewer:
                     max=100,
                     step=1,
                     initial_value=100,
+                    disabled=self.demo_mode,
                 )
                 self.jpeg_quality_when_static.on_update(self._handle_option_updated)
 
@@ -546,6 +551,7 @@ class Viewer:
                     max=3840,
                     step=128,
                     initial_value=1280,
+                    disabled=self.demo_mode,
                 )
                 self.jpeg_quality_when_moving = server.gui.add_slider(
                     "JPEG Quality when Moving",
@@ -553,17 +559,20 @@ class Viewer:
                     max=100,
                     step=1,
                     initial_value=60,
+                    disabled=self.demo_mode,
                 )
 
-            self.viewer_renderer.setup_options(self, server)
+            if not self.demo_mode:
+                self.viewer_renderer.setup_options(self, server)
 
-            with server.gui.add_folder("Model"):
+            with server.gui.add_folder("Model", visible=not self.demo_mode):
                 self.scaling_modifier = server.gui.add_slider(
                     "Scaling Modifier",
                     min=0.,
                     max=1.,
                     step=0.01,
                     initial_value=1.,
+                    disabled=self.demo_mode,
                 )
                 self.scaling_modifier.on_update(self._handle_option_updated)
 
@@ -574,6 +583,7 @@ class Viewer:
                         max=self.viewer_renderer.gaussian_model.max_sh_degree,
                         step=1,
                         initial_value=self.viewer_renderer.gaussian_model.max_sh_degree,
+                        disabled=self.demo_mode,
                     )
                     self.active_sh_degree_slider.on_update(self._handle_activate_sh_degree_slider_updated)
 
@@ -597,7 +607,8 @@ class Viewer:
                         max=max_input_id,
                         step=1,
                         initial_value=0,
-                        visible=max_input_id > 0
+                        visible=max_input_id > 0,
+                        disabled=self.demo_mode,
                     )
 
                     self.normalized_appearance_id = server.gui.add_slider(
@@ -606,6 +617,7 @@ class Viewer:
                         max=1.,
                         step=0.01,
                         initial_value=0.,
+                        disabled=self.demo_mode,
                     )
 
                     appearance_options = list(self.available_appearance_options.keys())
@@ -614,6 +626,7 @@ class Viewer:
                         "Appearance Group",
                         options=appearance_options,
                         initial_value=appearance_options[0],
+                        disabled=self.demo_mode,
                     )
                     self.appearance_id.on_update(self._handle_appearance_embedding_slider_updated)
                     self.normalized_appearance_id.on_update(self._handle_appearance_embedding_slider_updated)
@@ -625,6 +638,7 @@ class Viewer:
                     max=1.,
                     step=0.01,
                     initial_value=0.,
+                    disabled=self.demo_mode,
                 )
                 self.time_slider.on_update(self._handle_option_updated)
 
@@ -632,7 +646,8 @@ class Viewer:
             if self.show_cameras is True:
                 self.add_cameras_to_scene(server)
 
-            UpDirectionFolder(self, server)
+            if not self.demo_mode:
+                UpDirectionFolder(self, server)
 
             go_to_scene_center = server.gui.add_button(
                 "Go to scene center",
@@ -676,7 +691,7 @@ class Viewer:
                     tab=tab,
                 )
 
-        if enable_renderer_options is True:
+        if enable_renderer_options is True and not self.demo_mode:
             self.viewer_renderer.renderer.setup_web_viewer_tabs(self, server, tabs)
 
         # register hooks

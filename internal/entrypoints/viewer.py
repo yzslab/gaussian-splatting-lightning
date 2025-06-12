@@ -33,6 +33,7 @@ def cli():
     parser.add_argument("--default_camera_look_at", "--dcla", nargs=3, required=False, type=float, default=None)
     parser.add_argument("--no_edit_panel", action="store_true", default=False)
     parser.add_argument("--no_render_panel", action="store_true", default=False)
+    parser.add_argument("--demo_mode", action="store_true", default=False)
     parser.add_argument("--gsplat", action="store_true", default=False,
                         help="Use gsplat v1 renderer for ply file")
     parser.add_argument("--gsplat_aa", action="store_true", default=False,
