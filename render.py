@@ -47,13 +47,12 @@ def initializer_viewer_renderer(
         renderer = None
 
         load_device = torch.device("cuda") if len(model_paths) == 1 or enable_transform is False else torch.device("cpu")
+        # TODO: pick the renderer from the first model so that it is consistent with the viewer
         for model_path in model_paths:
             model, renderer = GaussianModelLoader.search_and_load(model_path, load_device)
             model.freeze()
             model_list.append(model)
 
-        if len(model_paths) > 1:
-            renderer = VanillaRenderer()
         if renderer_override is not None:
             print(f"Renderer: {renderer_override.__class__}")
             renderer = renderer_override

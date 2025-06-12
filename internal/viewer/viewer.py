@@ -222,7 +222,7 @@ class Viewer:
         else:
             # switch to vanilla renderer
             model_list = [model.to(torch.device("cpu"))]
-            renderer = VanillaRenderer()
+            # renderer = VanillaRenderer()
             for model_path in addition_models:
                 load_from = self._search_load_file(model_path)
                 if load_from.endswith(".ckpt"):
