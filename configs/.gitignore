@@ -95,3 +95,4 @@
 !taming_3dgs/fused_ssim.yaml
 !fused_ssim.yaml
 !opacity_correction.yaml
+!normal_reg.yaml

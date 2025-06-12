@@ -1,0 +1,10 @@
+model:
+  metric:
+    class_path: internal.metrics.normal_reg.VanillaWithNormalRegMetrics
+    init_args:
+      fused_ssim: true
+  renderer_output_types:
+    - rgb
+    - alpha
+    - exp_depth
+    - normal

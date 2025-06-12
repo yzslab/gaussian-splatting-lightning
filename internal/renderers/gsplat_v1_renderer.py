@@ -60,6 +60,7 @@ class GSplatV1RendererModule(Renderer):
     _HARD_DEPTH_REQUIRED = 1 << 7
     _HARD_INVERSE_DEPTH_REQUIRED = 1 << 8
     _DEPTH_ALTERNATIVE = 1 << 9
+    _NORMAL_REQUIRED = 1 << 10
 
     RENDER_TYPE_BITS = {
         "rgb": _RGB_REQUIRED,
@@ -72,6 +73,7 @@ class GSplatV1RendererModule(Renderer):
         "hard_depth": _HARD_DEPTH_REQUIRED,
         "hard_inverse_depth": _HARD_INVERSE_DEPTH_REQUIRED,
         "inv_depth_alt": _DEPTH_ALTERNATIVE,
+        "normal": _NORMAL_REQUIRED,
     }
 
     def __init__(self, config: GSplatV1Renderer):
@@ -195,9 +197,35 @@ class GSplatV1RendererModule(Renderer):
                 return rendered_colors, rendered_alphas.squeeze(0).squeeze(-1)
             return rendered_colors
 
-        # rgb
-        rgb = None
-        acc_vis = None
+        outputs = {
+            "render": None,
+            "alpha": None,
+            "acc_depth": None,
+            "acc_depth_inverted": None,
+            "exp_depth": None,
+            "exp_depth_inverted": None,
+            "inverse_depth": None,
+            "hard_depth": None,
+            "hard_inverse_depth": None,
+            "normal": None,
+            "inv_depth_alt": None,
+            "viewspace_points": means2d,
+            "viewspace_points_grad_scale": 0.5 * torch.tensor([preprocessed_camera[-1]]).to(means2d).clamp_(max=self.config.max_viewspace_grad_scale),
+            "visibility_filter": visibility_filter,
+            "acc_vis": None,
+            "radii": radii_squeezed,
+            "scales": scales,
+            "opacities": opacities[0],
+            "projections": projections,
+            "isects": isects,
+            "camera": viewpoint_camera,
+            "preprocessed_camera": preprocessed_camera,
+        }
+
+        input_feature_list = []
+        bg_color_list = []
+        rasterization_output_indices = {}  # = (start, end + 1)
+        n_input_dims = 0
         if self.is_type_required(render_type_bits, self._RGB_REQUIRED):
             rgbs = self.get_rgbs(
                 viewpoint_camera,
@@ -207,54 +235,82 @@ class GSplatV1RendererModule(Renderer):
                 status,
                 **kwargs,
             )
-            rgb = rasterize(rgbs, bg_color).permute(2, 0, 1)
-            # avoid overriding by hard depth
-            acc_vis = means2d.has_hit_any_pixels
+            input_feature_list.append(rgbs)
+            bg_color_list.append(bg_color)
+            rasterization_output_indices["render"] = (n_input_dims, n_input_dims + 3)
+            n_input_dims += 3
 
-        alpha = None
-        acc_depth_im = None
-        acc_depth_inverted_im = None
-        exp_depth_im = None
-        exp_depth_inverted_im = None
-        inv_depth_alt = None
         if self.is_type_required(render_type_bits, self._ACC_DEPTH_REQUIRED):
             # acc depth
-            acc_depth_im, alpha = rasterize(depths[0].unsqueeze(-1), torch.zeros((1,), device=bg_color.device), True)
-            alpha = alpha[..., None]
+            input_feature_list.append(depths[0].unsqueeze(-1))
+            bg_color_list.append(torch.zeros((1,), device=bg_color.device))
+            rasterization_output_indices["acc_depth"] = (n_input_dims, n_input_dims + 1)
+            n_input_dims += 1
+
+        # normals
+        if self.is_type_required(render_type_bits, self._NORMAL_REQUIRED):
+            # TODO: implement in CUDA
+            from internal.utils.general_utils import build_scaling_rotation
+            scales_2d = torch.clone(scales)
+            scales_2d[..., -1] = 1.
+            normals = build_scaling_rotation(scales_2d, pc.get_rotations())[:, :3, -1]
+            dirs = pc.get_means() - viewpoint_camera.camera_center
+            is_point_to_the_view = torch.einsum("ij,ij->i", normals, dirs) > 0
+            normal_multiplers = torch.where(is_point_to_the_view, -1., 1.)
+            normals = normals * normal_multiplers.unsqueeze(-1)
+
+            input_feature_list.append(normals)
+            bg_color_list.append(torch.zeros((3,), device=bg_color.device))
+            rasterization_output_indices["normal"] = (n_input_dims, n_input_dims + 3)
+            n_input_dims += 3
+
+        if n_input_dims > 0:
+            if len(input_feature_list) == 1:
+                input_features = input_feature_list[0]
+                input_bg_colors = bg_color_list[0]
+            else:
+                input_features = torch.concat(input_feature_list, dim=-1)
+                input_bg_colors = torch.concat(bg_color_list, dim=-1)
+            render_features, render_alpha = rasterize(
+                input_features,
+                background=input_bg_colors,
+                return_alpha=True,
+            )
+            render_features = render_features.permute(2, 0, 1)
+            render_alpha = render_alpha.unsqueeze(0)
+
+            for k, slice_index in rasterization_output_indices.items():
+                outputs[k] = render_features[slice_index[0]:slice_index[1]]
+            outputs["alpha"] = render_alpha
+            # avoid overriding by hard depth
+            outputs["acc_vis"] = means2d.has_hit_any_pixels
 
             # acc depth inverted
             if self.is_type_required(render_type_bits, self._ACC_DEPTH_INVERTED_REQUIRED):
+                acc_depth_im = outputs["acc_depth"]
                 acc_depth_inverted_im = torch.where(acc_depth_im > 0, 1. / acc_depth_im, acc_depth_im.detach().max())
-                acc_depth_inverted_im = acc_depth_inverted_im.permute(2, 0, 1)
+                outputs["acc_depth_inverted"] = acc_depth_inverted_im
 
             # exp depth
             if self.is_type_required(render_type_bits, self._EXP_DEPTH_REQUIRED):
-                exp_depth_im = torch.where(alpha > 0, acc_depth_im / alpha, acc_depth_im.detach().max())
-
-                exp_depth_im = exp_depth_im.permute(2, 0, 1)
-
-            # alpha
-            if self.is_type_required(render_type_bits, self._ALPHA_REQUIRED):
-                alpha = alpha.permute(2, 0, 1)
-            else:
-                alpha = None
-
-            # permute acc depth
-            acc_depth_im = acc_depth_im.permute(2, 0, 1)
+                acc_depth_im = outputs["acc_depth"]
+                exp_depth_im = torch.where(render_alpha > 0, acc_depth_im / render_alpha, acc_depth_im.detach().max())
+                outputs["exp_depth"] = exp_depth_im
 
             # exp depth inverted
             if self.is_type_required(render_type_bits, self._EXP_DEPTH_INVERTED_REQUIRED):
                 exp_depth_inverted_im = torch.where(exp_depth_im > 0, 1. / exp_depth_im, exp_depth_im.detach().max())
+                outputs["exp_depth_inverted"] = exp_depth_inverted_im
 
         # inverse depth
-        inverse_depth_im = None
         if self.is_type_required(render_type_bits, self._INVERSE_DEPTH_REQUIRED):
             inverse_depth = 1. / (depths[0].clamp_min(0.) + 1e-8).unsqueeze(-1)
             inverse_depth_im = rasterize(inverse_depth, torch.zeros((1,), dtype=torch.float, device=bg_color.device)).permute(2, 0, 1)
+            outputs["inverse_depth"] = inverse_depth_im
             inv_depth_alt = inverse_depth_im
+            outputs["inv_depth_alt"] = inv_depth_alt
 
         # hard depth
-        hard_depth_im = None
         if self.is_type_required(render_type_bits, self._HARD_DEPTH_REQUIRED):
             hard_depth_im, _ = GSplatV1.rasterize(
                 preprocessed_camera,
@@ -266,9 +322,9 @@ class GSplatV1RendererModule(Renderer):
                 tile_size=self.config.block_size,
             )
             hard_depth_im = hard_depth_im.permute(2, 0, 1)
+            outputs["hard_depth"] = hard_depth_im
 
         # hard inverse depth
-        hard_inverse_depth_im = None
         if self.is_type_required(render_type_bits, self._HARD_INVERSE_DEPTH_REQUIRED):
             inverse_depth = 1. / (depths[0].clamp_min(0.) + 1e-8).unsqueeze(-1)
             hard_inverse_depth_im, _ = GSplatV1.rasterize(
@@ -282,29 +338,11 @@ class GSplatV1RendererModule(Renderer):
             )
 
             hard_inverse_depth_im = hard_inverse_depth_im.permute(2, 0, 1)
+            outputs["hard_inverse_depth"] = hard_inverse_depth_im
             inv_depth_alt = hard_inverse_depth_im
+            outputs["inv_depth_alt"] = inv_depth_alt
 
-        return {
-            "render": rgb,
-            "alpha": alpha,
-            "acc_depth": acc_depth_im,
-            "acc_depth_inverted": acc_depth_inverted_im,
-            "exp_depth": exp_depth_im,
-            "exp_depth_inverted": exp_depth_inverted_im,
-            "inverse_depth": inverse_depth_im,
-            "hard_depth": hard_depth_im,
-            "hard_inverse_depth": hard_inverse_depth_im,
-            "inv_depth_alt": inv_depth_alt,
-            "viewspace_points": means2d,
-            "viewspace_points_grad_scale": 0.5 * torch.tensor([preprocessed_camera[-1]]).to(means2d).clamp_(max=self.config.max_viewspace_grad_scale),
-            "visibility_filter": visibility_filter,
-            "acc_vis": acc_vis,
-            "radii": radii_squeezed,
-            "scales": scales,
-            "opacities": opacities[0],
-            "projections": projections,
-            "isects": isects,
-        }
+        return outputs
 
     def setup_web_viewer_tabs(self, viewer, server, tabs):
         with tabs.add_tab("gsplat"):
@@ -321,6 +359,8 @@ class GSplatV1RendererModule(Renderer):
             "inverse_depth": RendererOutputInfo("inverse_depth", type=RendererOutputTypes.GRAY),
             "hard_depth": RendererOutputInfo("hard_depth", type=RendererOutputTypes.GRAY),
             "hard_inverse_depth": RendererOutputInfo("hard_inverse_depth", type=RendererOutputTypes.GRAY),
+            "normal": RendererOutputInfo("normal", type=RendererOutputTypes.NORMAL_MAP),
+            # "inv_depth_alt": RendererOutputInfo("inv_depth_alt", type=RendererOutputTypes.GRAY),
         }
 
 
