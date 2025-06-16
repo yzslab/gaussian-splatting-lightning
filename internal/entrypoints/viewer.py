@@ -47,6 +47,7 @@ def cli():
     parser.add_argument("--vanilla_seganygs", action="store_true", default=False)
     parser.add_argument("--vanilla_mip", action="store_true", default=False)
     parser.add_argument("--vanilla_pvg", action="store_true", default=False)
+    parser.add_argument("--difix", action="store_true", default=False)
     parser.add_argument("--float32_matmul_precision", "--fp", type=str, default=None)
     args = parser.parse_args()
 

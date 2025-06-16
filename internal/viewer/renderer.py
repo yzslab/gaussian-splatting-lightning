@@ -10,12 +10,14 @@ class ViewerRenderer:
             gaussian_model,
             renderer: renderers.Renderer,
             background_color,
+            difix: bool = False,
     ):
         super().__init__()
 
         self.gaussian_model = gaussian_model
         self.renderer = renderer
         self.background_color = background_color
+        self.difix = difix
 
         self.max_depth = 0.
         self.depth_map_color_map = "turbo"
@@ -81,6 +83,8 @@ class ViewerRenderer:
         if visualizer is None:
             if renderer_output_info.type == renderers.RendererOutputTypes.RGB:
                 visualizer = self.no_processing
+                if self.difix_enabled:
+                    visualizer = self.difix_processor
             elif renderer_output_info.type == renderers.RendererOutputTypes.GRAY:
                 visualizer = self.depth_map_processor
             elif renderer_output_info.type == renderers.RendererOutputTypes.NORMAL_MAP:
@@ -96,6 +100,8 @@ class ViewerRenderer:
     def setup_options(self, viewer, server):
         available_outputs = self.renderer.get_available_outputs()
         first_type_name = list(available_outputs.keys())[0]
+
+        self.difix_enabled = False
 
         with server.gui.add_folder("Output"):
             # setup output type dropdown
@@ -121,6 +127,26 @@ class ViewerRenderer:
                     viewer.rerender_for_all_client()
 
             self._setup_depth_map_options(viewer, server)
+
+        if self.difix:
+            # TODO: with reference views
+            from internal.utils.pipeline_difix import DifixPipeline
+            # self.difix = DifixPipeline.from_pretrained("nvidia/difix_ref", trust_remote_code=True)
+            self.difix = DifixPipeline.from_pretrained("nvidia/difix", trust_remote_code=True)
+            self.difix.to(self.gaussian_model.get_means().device)
+            with server.gui.add_folder("DIFIX"):
+                difix_checkbox = server.gui.add_checkbox(
+                    "Enable",
+                    initial_value=self.difix_enabled,
+                )
+
+                @difix_checkbox.on_update
+                def _(event):
+                    self.difix_enabled = difix_checkbox.value
+
+                    self._set_output_type("rgb", available_outputs["rgb"])
+
+                    viewer.rerender_for_all_client()
 
         # update default output type to the first one, must be placed after gui setup
         self._set_output_type(name=first_type_name, renderer_output_info=available_outputs[first_type_name])
@@ -156,6 +182,18 @@ class ViewerRenderer:
 
     def feature_map_processor(self, feature_map, *args, **kwargs):
         return Visualizers.pca_colormap(feature_map)
+
+    @torch.no_grad()
+    def difix_processor(self, rgb, render_outputs, *args, **kwargs):
+        return self.difix(
+            prompt="remove degradation",
+            image=rgb,
+            # ref_image=ref_image,
+            num_inference_steps=1,
+            timesteps=[199],
+            guidance_scale=0.0,
+            output_type="pt",
+        ).images[0]
 
     def no_processing(self, i, *args, **kwargs):
         return i

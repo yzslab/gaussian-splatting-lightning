@@ -51,6 +51,7 @@ class Viewer:
             vanilla_seganygs: bool = False,
             vanilla_mip: bool = False,
             vanilla_pvg: bool = False,
+            difix: bool = False,
     ):
         self.device = torch.device("cuda")
 
@@ -250,6 +251,7 @@ class Viewer:
             model,
             renderer,
             torch.tensor(background_color, dtype=torch.float, device=self.device),
+            difix=difix,
         )
 
         self.clients = {}
