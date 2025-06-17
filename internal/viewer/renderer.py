@@ -17,7 +17,6 @@ class ViewerRenderer:
         self.gaussian_model = gaussian_model
         self.renderer = renderer
         self.background_color = background_color
-        self.difix = difix
 
         self.max_depth = 0.
         self.depth_map_color_map = "turbo"
@@ -28,6 +27,11 @@ class ViewerRenderer:
             renderers.RendererOutputInfo("render"),
             self.no_processing,
         )
+
+        self.difix = None
+        self.difix_enabled = False
+        if difix:
+            self._setup_difix()
 
     def set_output_info(
             self,
@@ -101,8 +105,6 @@ class ViewerRenderer:
         available_outputs = self.renderer.get_available_outputs()
         first_type_name = list(available_outputs.keys())[0]
 
-        self.difix_enabled = False
-
         with server.gui.add_folder("Output"):
             # setup output type dropdown
             output_type_dropdown = server.gui.add_dropdown(
@@ -128,12 +130,8 @@ class ViewerRenderer:
 
             self._setup_depth_map_options(viewer, server)
 
-        if self.difix:
+        if self.difix is not None:
             # TODO: with reference views
-            from internal.utils.pipeline_difix import DifixPipeline
-            # self.difix = DifixPipeline.from_pretrained("nvidia/difix_ref", trust_remote_code=True)
-            self.difix = DifixPipeline.from_pretrained("nvidia/difix", trust_remote_code=True)
-            self.difix.to(self.gaussian_model.get_means().device)
             with server.gui.add_folder("DIFIX"):
                 difix_checkbox = server.gui.add_checkbox(
                     "Enable",
@@ -143,13 +141,17 @@ class ViewerRenderer:
                 @difix_checkbox.on_update
                 def _(event):
                     self.difix_enabled = difix_checkbox.value
-
                     self._set_output_type("rgb", available_outputs["rgb"])
-
                     viewer.rerender_for_all_client()
 
         # update default output type to the first one, must be placed after gui setup
         self._set_output_type(name=first_type_name, renderer_output_info=available_outputs[first_type_name])
+
+    def _setup_difix(self):
+        from internal.utils.pipeline_difix import DifixPipeline
+        # self.difix = DifixPipeline.from_pretrained("nvidia/difix_ref", trust_remote_code=True)
+        self.difix = DifixPipeline.from_pretrained("nvidia/difix", trust_remote_code=True)
+        self.difix.to(self.gaussian_model.get_means().device)
 
     def get_outputs(self, camera, scaling_modifier: float = 1.):
         render_type, output_info, output_processor = self.output_info
