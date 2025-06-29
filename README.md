@@ -3,6 +3,9 @@
 * <a href="#2-training">Training</a>
 * <a href="#4-web-viewer">Web Viewer</a>
 * <a href="https://github.com/yzslab/gaussian-splatting-lightning/releases">Changelog</a>
+## News
+* [2025-06-29] Our paper "Robust and Efficient 3D Gaussian Splatting for Urban Scene Reconstruction" has been accepted to ICCV 2025, and we will release the code here soon. Stay tuned!
+
 ## Known issues
 * ~~Multi-GPU training can only be enabled after densification~~ (Try <a href="#216-new-multiple-gpu-training-strategy">2.16. New Multiple GPU training strategy</a>)
 ## Features
