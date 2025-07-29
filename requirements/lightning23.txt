@@ -1,3 +1,4 @@
 lightning[pytorch-extra]==2.3.*
 pytorch-lightning==2.3.*
+bitsandbytes==0.45.*
 -r common.txt
