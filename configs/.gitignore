@@ -96,3 +96,4 @@
 !fused_ssim.yaml
 !opacity_correction.yaml
 !normal_reg.yaml
+!learn_exposure.yaml

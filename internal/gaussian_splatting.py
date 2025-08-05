@@ -25,6 +25,7 @@ from internal.metrics.metric import Metric
 from internal.metrics.vanilla_metrics import VanillaMetrics
 from internal.density_controllers.density_controller import DensityController
 from internal.density_controllers.vanilla_density_controller import VanillaDensityController
+from internal.output_processors.output_processors import OutputProcessor, VanillaOutputProcessor
 from jsonargparse import lazy_instance
 
 from internal.utils.sh_utils import eval_sh
@@ -46,6 +47,7 @@ class GaussianSplatting(LightningModule):
             renderer: Union[Renderer, RendererConfig] = lazy_instance(VanillaRenderer),
             metric: Metric = lazy_instance(VanillaMetrics),
             density: DensityController = lazy_instance(VanillaDensityController),
+            output_processor: Optional[OutputProcessor] = lazy_instance(VanillaOutputProcessor),
             save_ply: bool = False,
             web_viewer: bool = False,
             initialize_from: str = None,
@@ -73,6 +75,8 @@ class GaussianSplatting(LightningModule):
 
         # metrics
         self.metric = metric.instantiate()
+        # output_processor
+        self.output_processor = output_processor.instantiate()
 
         # background color
         self.background_color = torch.tensor(background_color, dtype=torch.float32)
@@ -350,6 +354,8 @@ class GaussianSplatting(LightningModule):
 
         # forward
         outputs = self(camera)
+        # output processors
+        self.output_processor.training_forward(batch, outputs)
         # metrics
         metrics, prog_bar = self.metric.get_train_metrics(self, self.gaussian_model, global_step, batch, outputs)
         self.log_metrics(metrics, prog_bar, prefix="train", on_step=True, on_epoch=False)
@@ -667,6 +673,9 @@ class GaussianSplatting(LightningModule):
         # metric optimizer and scheduler setup
         metric_optimizer, metric_scheduler = self.metric.training_setup(self)
         add_optimizers_and_schedulers(metric_optimizer, metric_scheduler)
+        # output processors
+        op_optimizer, op_scheduler = self.output_processor.training_setup(self)
+        add_optimizers_and_schedulers(op_optimizer, op_scheduler)
 
         return optimizers, schedulers
 
