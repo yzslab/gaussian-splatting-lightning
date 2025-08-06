@@ -14,8 +14,6 @@ from .logger_mixin import LoggerMixin
 
 @dataclass
 class H3DGSDensityController(VanillaDensityController):
-    percent_dense: float = 0.0001
-
     densification_interval: int = 300
 
     densify_grad_threshold: float = 0.015
@@ -40,6 +38,8 @@ class H3DGSDensityControllerModule(LoggerMixin, VanillaDensityControllerImpl):
 
         # prune
         prune_mask = (gaussian_model.get_opacities() < min_opacity).squeeze()
+        big_points_ws = gaussian_model.get_scales().max(dim=1).values > 0.1 * self.prune_extent
+        prune_mask = torch.logical_or(prune_mask, big_points_ws)
         self.log_metric("prune_count", prune_mask.sum())
         self._prune_points(prune_mask, gaussian_model, optimizers)
 
