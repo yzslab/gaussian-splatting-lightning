@@ -10,6 +10,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument("input")
 parser.add_argument("--output", "-o", required=False, default=None)
 parser.add_argument("--colored", "-c", action="store_true", default=False)
+parser.add_argument("--override", action="store_true", default=False)
+parser.add_argument("--drop-shs-rest", action="store_true", default=False)
 args = parser.parse_args()
 
 # search input file
@@ -29,10 +31,14 @@ if args.output is None:
         except:
             pass
 
-assert os.path.exists(args.output) is False, f"Output file already exists, please remove it first: '{args.output}'"
+if not args.override:
+    assert os.path.exists(args.output) is False, f"Output file already exists, please remove it first: '{args.output}'"
 
 print(f"Loading checkpoint '{load_file}'...")
 ckpt = torch.load(load_file)
 print("Converting...")
-model = GaussianPlyUtils.load_from_state_dict(ckpt["state_dict"]).to_ply_format().save_to_ply(args.output, args.colored)
+model = GaussianPlyUtils.load_from_state_dict(ckpt["state_dict"]).to_ply_format()
+if args.drop_shs_rest:
+    model.sh_degrees = 0
+model.save_to_ply(args.output, args.colored)
 print(f"Saved to '{args.output}'")
