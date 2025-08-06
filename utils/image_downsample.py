@@ -22,7 +22,7 @@ def find_images(path: str, extensions: list) -> list:
 def resize_image(image, factor):
     width, height = image.size
     resized_width, resized_height = round(width / factor), round(height / factor)
-    return image.resize((resized_width, resized_height))
+    return image.resize((resized_width, resized_height), resample=Image.LANCZOS)
 
 
 def process_task(src: str, dst: str, image_name: str, factor: int):
@@ -32,7 +32,7 @@ def process_task(src: str, dst: str, image_name: str, factor: int):
     output_path = os.path.join(dst, image_name)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-    image.save(output_path, quality=100)
+    image.save(output_path, subsampling=0, quality=100)
 
 
 if __name__ == "__main__":
@@ -68,7 +68,7 @@ if __name__ == "__main__":
                 args.factor,
             ))
 
-        for _ in tqdm(concurrent.futures.as_completed(future_list), total=len(future_list)):
-            pass
+        for i in tqdm(concurrent.futures.as_completed(future_list), total=len(future_list)):
+            i.result()
 
     print("images saved to {}".format(args.dst))
