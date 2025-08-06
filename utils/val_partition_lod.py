@@ -31,6 +31,7 @@ def get_metric_calculator(device, val_side: str = None):
     ssim = StructuralSimilarityIndexMeasure(data_range=1.).to(device=device)
     vgg_lpips = LearnedPerceptualImagePatchSimilarity(net_type="vgg", normalize=False).to(device=device)
     alex_lpips = LearnedPerceptualImagePatchSimilarity(net_type="alex", normalize=True).to(device=device)
+    unnormalized_alex_lpips = LearnedPerceptualImagePatchSimilarity(net_type="alex", normalize=False).to(device=device)
 
     def get_metrics(predicts, batch):
         predicted_image = torch.clamp_max(predicts["render"], max=1.)
@@ -65,6 +66,7 @@ def get_metric_calculator(device, val_side: str = None):
             "ssim": ssim(predicted_image, gt_image),
             "vgg_lpips": vgg_lpips(predicted_image, gt_image),
             "alex_lpips": alex_lpips(predicted_image, gt_image),
+            "un_alex_lpips": unnormalized_alex_lpips(predicted_image, gt_image),
         }, (predicted_image.squeeze(0), gt_image.squeeze(0))
 
     return get_metrics
@@ -242,7 +244,7 @@ def main():
     max_memory_usage = torch.cuda.max_memory_allocated() / (1024. * 1024.)
 
     metric_list_key_by_name = {}
-    available_metric_keys = ["psnr", "ssim", "vgg_lpips", "alex_lpips"]
+    available_metric_keys = ["psnr", "ssim", "vgg_lpips", "alex_lpips", "un_alex_lpips"]
     with open(os.path.join(output_dir, "metrics-{}.csv".format(os.path.basename(output_dir))), "w") as f:
         metrics_writer = csv.writer(f)
         metrics_writer.writerow(["name"] + available_metric_keys)
