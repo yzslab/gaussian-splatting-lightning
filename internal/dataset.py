@@ -331,6 +331,8 @@ class DataModule(LightningDataModule):
             image_uint8: bool = False,
             async_caching: bool = False,
             allow_mask_interpolation: bool = False,
+            extra_points: str = None,
+            max_extra_points: int = -1,
     ) -> None:
         r"""Load dataset
 
@@ -390,60 +392,10 @@ class DataModule(LightningDataModule):
         self.dataparser_outputs = dataparser.get_outputs()
 
         self.prune_extent = self.dataparser_outputs.camera_extent
-        # add background sphere: https://github.com/graphdeco-inria/gaussian-splatting/issues/300#issuecomment-1756073909
-        if self.hparams["add_background_sphere"] is True:
-            # find the scene center and size
-            scene_center = None
-            if self.hparams["background_sphere_scene_center"] is not None:
-                scene_center = np.asarray(self.hparams["background_sphere_scene_center"])
-            if self.hparams["background_sphere_center"] == "points":
-                if scene_center is None:
-                    scene_center = self.dataparser_outputs.point_cloud.xyz.mean(axis=0)
-                scene_radius = np.percentile(np.linalg.norm(self.dataparser_outputs.point_cloud.xyz - scene_center, axis=-1), 99.9).item()
-            else:
-                if scene_center is None:
-                    scene_center = self.dataparser_outputs.train_set.cameras.camera_center.mean(dim=0)
-                else:
-                    scene_center = torch.from_numpy(scene_center)
-                scene_radius_from_cameras = torch.norm(self.dataparser_outputs.train_set.cameras.camera_center - scene_center, dim=-1).max().item()
 
-                scene_center = scene_center.numpy()
-                radius_from_points = np.percentile(np.linalg.norm(self.dataparser_outputs.point_cloud.xyz - scene_center, axis=-1), 99.9).item()
-
-                scene_radius = max(scene_radius_from_cameras, radius_from_points)
-                scene_radius = scene_radius
-
-            # build unit sphere points
-            n_points = self.hparams["background_sphere_points"]
-            samples = np.arange(n_points)
-            y = 1 - (samples / float(n_points - 1)) * 2  # y goes from 1 to -1
-            radius = np.sqrt(1 - y * y)  # radius at y
-            phi = math.pi * (math.sqrt(5.) - 1.)  # golden angle in radians
-            theta = phi * samples  # golden angle increment
-            x = np.cos(theta) * radius
-            z = np.sin(theta) * radius
-            unit_sphere_points = np.concatenate([x[:, None], y[:, None], z[:, None]], axis=1)
-            # build background sphere
-            background_sphere_point_xyz = (unit_sphere_points * scene_radius * self.hparams["background_sphere_distance"]) + scene_center
-            # simply delete those under min altitude
-            if self.hparams["background_sphere_up"] is not None:
-                up_direction = np.asarray(self.hparams["background_sphere_up"], dtype=np.float64)
-                background_sphere_point_z = np.dot(background_sphere_point_xyz, (up_direction / np.linalg.norm(up_direction)))
-            else:
-                background_sphere_point_z = background_sphere_point_xyz[:, -1]
-            background_sphere_point_xyz = background_sphere_point_xyz[background_sphere_point_z >= self.hparams["background_sphere_min_altitude"]]
-            if self.hparams["background_sphere_color"] == "random":
-                background_sphere_point_rgb = np.asarray(np.random.random(background_sphere_point_xyz.shape) * 255, dtype=np.uint8)
-            else:
-                background_sphere_point_rgb = np.ones(background_sphere_point_xyz.shape, dtype=np.uint8) * 255
-            # add background sphere to scene
-            self.dataparser_outputs.point_cloud.xyz = np.concatenate([self.dataparser_outputs.point_cloud.xyz, background_sphere_point_xyz], axis=0)
-            self.dataparser_outputs.point_cloud.rgb = np.concatenate([self.dataparser_outputs.point_cloud.rgb, background_sphere_point_rgb], axis=0)
-            # increase prune extent
-            # TODO: resize scene_extent without changing lr
-            self.prune_extent = scene_radius * self.hparams["background_sphere_distance"] * 1.0001
-
-            print("added {} background sphere points, scene_center={}, scene_radius={}, rescale prune extent from {} to {}".format(background_sphere_point_xyz.shape, scene_center.tolist(), scene_radius, self.dataparser_outputs.camera_extent, self.prune_extent))
+        # some extra points
+        self._build_background_sphere()
+        self._fetch_extra_points()
 
         # convert point cloud
         self.point_cloud = self.dataparser_outputs.point_cloud
@@ -501,6 +453,87 @@ class DataModule(LightningDataModule):
                     ))
             except:
                 pass
+
+    def _build_background_sphere(self) -> None:
+        # add background sphere: https://github.com/graphdeco-inria/gaussian-splatting/issues/300#issuecomment-1756073909
+        if self.hparams["add_background_sphere"] is True:
+            # find the scene center and size
+            scene_center = None
+            if self.hparams["background_sphere_scene_center"] is not None:
+                scene_center = np.asarray(self.hparams["background_sphere_scene_center"])
+            if self.hparams["background_sphere_center"] == "points":
+                if scene_center is None:
+                    scene_center = self.dataparser_outputs.point_cloud.xyz.mean(axis=0)
+                scene_radius = np.percentile(np.linalg.norm(self.dataparser_outputs.point_cloud.xyz - scene_center, axis=-1), 99.9).item()
+            else:
+                if scene_center is None:
+                    scene_center = self.dataparser_outputs.train_set.cameras.camera_center.mean(dim=0)
+                else:
+                    scene_center = torch.from_numpy(scene_center)
+                scene_radius_from_cameras = torch.norm(self.dataparser_outputs.train_set.cameras.camera_center - scene_center, dim=-1).max().item()
+
+                scene_center = scene_center.numpy()
+                radius_from_points = np.percentile(np.linalg.norm(self.dataparser_outputs.point_cloud.xyz - scene_center, axis=-1), 99.9).item()
+
+                scene_radius = max(scene_radius_from_cameras, radius_from_points)
+                scene_radius = scene_radius
+
+            # build unit sphere points
+            n_points = self.hparams["background_sphere_points"]
+            samples = np.arange(n_points)
+            y = 1 - (samples / float(n_points - 1)) * 2  # y goes from 1 to -1
+            radius = np.sqrt(1 - y * y)  # radius at y
+            phi = math.pi * (math.sqrt(5.) - 1.)  # golden angle in radians
+            theta = phi * samples  # golden angle increment
+            x = np.cos(theta) * radius
+            z = np.sin(theta) * radius
+            unit_sphere_points = np.concatenate([x[:, None], y[:, None], z[:, None]], axis=1)
+            # build background sphere
+            background_sphere_point_xyz = (unit_sphere_points * scene_radius * self.hparams["background_sphere_distance"]) + scene_center
+            # simply delete those under min altitude
+            if self.hparams["background_sphere_up"] is not None:
+                up_direction = np.asarray(self.hparams["background_sphere_up"], dtype=np.float64)
+                background_sphere_point_z = np.dot(background_sphere_point_xyz, (up_direction / np.linalg.norm(up_direction)))
+            else:
+                background_sphere_point_z = background_sphere_point_xyz[:, -1]
+            background_sphere_point_xyz = background_sphere_point_xyz[background_sphere_point_z >= self.hparams["background_sphere_min_altitude"]]
+            if self.hparams["background_sphere_color"] == "random":
+                background_sphere_point_rgb = np.asarray(np.random.random(background_sphere_point_xyz.shape) * 255, dtype=np.uint8)
+            else:
+                background_sphere_point_rgb = np.ones(background_sphere_point_xyz.shape, dtype=np.uint8) * 255
+            # add background sphere to scene
+            self.dataparser_outputs.point_cloud.xyz = np.concatenate([self.dataparser_outputs.point_cloud.xyz, background_sphere_point_xyz], axis=0)
+            self.dataparser_outputs.point_cloud.rgb = np.concatenate([self.dataparser_outputs.point_cloud.rgb, background_sphere_point_rgb], axis=0)
+            # increase prune extent
+            # TODO: resize scene_extent without changing lr
+            self.prune_extent = scene_radius * self.hparams["background_sphere_distance"] * 1.0001
+
+            print("added {} background sphere points, scene_center={}, scene_radius={}, rescale prune extent from {} to {}".format(background_sphere_point_xyz.shape, scene_center.tolist(), scene_radius, self.dataparser_outputs.camera_extent, self.prune_extent))
+
+    def _fetch_extra_points(self) -> None:
+        if self.hparams["extra_points"] is not None:
+            if self.hparams["extra_points"].endswith(".ply"):
+                from internal.utils.graphics_utils import fetch_ply_without_rgb_normalization
+                extra_pcd = fetch_ply_without_rgb_normalization(self.hparams["extra_points"])
+            elif self.hparams["extra_points"].endswith(".pcd"):
+                from internal.utils.graphics_utils import fetch_pcd
+                extra_pcd = fetch_pcd(self.hparams["extra_points"])
+            elif self.hparams["extra_points"].endswith(".las"):
+                from internal.utils.graphics_utils import fetch_las
+                extra_pcd = fetch_las(self.hparams["extra_points"])
+            elif os.path.isdir(self.hparams["extra_points"]):
+                from internal.utils.graphics_utils import fetch_pcd_dir
+                extra_pcd = fetch_pcd_dir(self.hparams["extra_points"])
+            print("Load {} extra points from {}".format(extra_pcd.points.shape[0], self.hparams["extra_points"]))
+
+            if self.hparams["max_extra_points"] > 0:
+                select_indices = np.random.choice(extra_pcd.points.shape[0], self.hparams["max_extra_points"])
+                extra_pcd.points = extra_pcd.points[select_indices]
+                extra_pcd.colors = extra_pcd.colors[select_indices]
+                print("Randomly selected {} extra points".format(extra_pcd.points.shape[0]))
+
+            self.dataparser_outputs.point_cloud.xyz = np.concatenate([self.dataparser_outputs.point_cloud.xyz, extra_pcd.points], axis=0)
+            self.dataparser_outputs.point_cloud.rgb = np.concatenate([self.dataparser_outputs.point_cloud.rgb, extra_pcd.colors], axis=0)
 
     def train_dataloader(self) -> TRAIN_DATALOADERS:
         return CacheDataLoader(

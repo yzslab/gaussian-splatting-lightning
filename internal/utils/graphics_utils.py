@@ -21,7 +21,7 @@ from plyfile import PlyData, PlyElement
 class BasicPointCloud:
     points: np.array
     colors: np.array
-    normals: np.array
+    normals: np.array = None
 
 
 def fetch_ply_without_rgb_normalization(path):
@@ -29,7 +29,7 @@ def fetch_ply_without_rgb_normalization(path):
     vertices = plydata['vertex']
     positions = np.vstack([vertices['x'], vertices['y'], vertices['z']]).T
     colors = np.vstack([vertices['red'], vertices['green'], vertices['blue']]).T
-    normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T
+    normals = np.zeros_like(positions)
     return BasicPointCloud(points=positions, colors=colors, normals=normals)
 
 
@@ -37,6 +37,49 @@ def fetch_ply(path):
     pcd = fetch_ply_without_rgb_normalization(path)
     pcd.colors = pcd.colors / 255.
     return pcd
+
+
+def fetch_pcd(path):
+    import open3d as o3d
+    o3d_pcd = o3d.io.read_point_cloud(path)
+    positions = np.asarray(o3d_pcd.points)
+    if o3d_pcd.has_colors:
+        colors = np.clip(np.asarray(o3d_pcd.colors) * 255, a_min=0, a_max=255).astype(np.uint8)
+    else:
+        colors = np.full((positions.shape[0], 3), 127, dtype=np.uint8)
+    return BasicPointCloud(
+        positions,
+        # np.full((positions.shape[0], 3), 127, dtype=np.uint8),
+        colors,
+        np.zeros_like(positions),
+    )
+
+
+def fetch_pcd_dir(path):
+    position_list = []
+    color_list = []
+    import os
+    from internal.utils.graphics_utils import fetch_pcd
+    for i in os.scandir(path):
+        if i.is_file() and i.name.endswith(".pcd"):
+            pcd_item = fetch_pcd(i.path)
+            position_list.append(pcd_item.points)
+            color_list.append(pcd_item.colors)
+    return BasicPointCloud(
+        points=np.concatenate(position_list, axis=0),
+        colors=np.concatenate(color_list, axis=0),
+    )
+
+
+def fetch_las(path):
+    import laspy
+    las = laspy.read(path)
+    points = np.vstack((las.x, las.y, las.z)).transpose()
+    colors = np.vstack((las.red, las.green, las.blue)).transpose()
+    return BasicPointCloud(
+        points=points,
+        colors=np.clip(colors, a_min=0, a_max=255).astype(np.uint8),
+    )
 
 
 def store_ply(path, xyz, rgb):
