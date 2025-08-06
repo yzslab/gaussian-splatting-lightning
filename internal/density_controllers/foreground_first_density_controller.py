@@ -12,10 +12,10 @@ from .density_controller import DensityController, DensityControllerImpl, Utils
 
 @dataclass
 class ForegroundFirstDensityController(DensityController):
-    partition: str
+    # partition: str
     """Partition data directory"""
 
-    partition_idx: int
+    # partition_idx: int
 
     max_grad_decay_factor: float = 4
 
@@ -74,48 +74,48 @@ class ForegroundFirstDensityControllerModule(DensityControllerImpl):
 
             self._init_state(pl_module.gaussian_model.n_gaussians, pl_module.device)
 
-        # load partition data
-        partition_data = torch.load(os.path.join(
-            self.config.partition,
-            "partitions.pt",
-        ))
+        # # load partition data
+        # partition_data = torch.load(os.path.join(
+        #     self.config.partition,
+        #     "partitions.pt",
+        # ))
 
-        default_partition_size = partition_data["scene_config"]["partition_size"]
-        self.register_buffer(
-            "default_partition_size",
-            torch.tensor(default_partition_size, dtype=torch.float),
-            persistent=False,
-        )
-        partition_size = partition_data["partition_coordinates"]["size"][self.config.partition_idx]
+        # default_partition_size = partition_data["scene_config"]["partition_size"]
+        # self.register_buffer(
+        #     "default_partition_size",
+        #     torch.tensor(default_partition_size, dtype=torch.float),
+        #     persistent=False,
+        # )
+        # partition_size = partition_data["partition_coordinates"]["size"][self.config.partition_idx]
 
-        # get transform matrix
-        try:
-            rotation_transform = partition_data["extra_data"]["rotation_transform"]
-        except:
-            print("FFDensityController: No orientation transform")
-            rotation_transform = torch.eye(4, dtype=torch.float, device=pl_module.device)
-        self.register_buffer(
-            "rotation_transform",
-            rotation_transform,
-            persistent=False,
-        )
+        # # get transform matrix
+        # try:
+        #     rotation_transform = partition_data["extra_data"]["rotation_transform"]
+        # except:
+        #     print("FFDensityController: No orientation transform")
+        #     rotation_transform = torch.eye(4, dtype=torch.float, device=pl_module.device)
+        # self.register_buffer(
+        #     "rotation_transform",
+        #     rotation_transform,
+        #     persistent=False,
+        # )
 
-        # get bounding box
-        partition_bbox_min = partition_data["partition_coordinates"]["xy"][self.config.partition_idx]
-        partition_bbox_max = partition_bbox_min + partition_size
+        # # get bounding box
+        # partition_bbox_min = partition_data["partition_coordinates"]["xy"][self.config.partition_idx]
+        # partition_bbox_max = partition_bbox_min + partition_size
 
-        self.register_buffer("partition_bbox_min", partition_bbox_min, persistent=False)
-        self.register_buffer("partition_bbox_max", partition_bbox_max, persistent=False)
+        # self.register_buffer("partition_bbox_min", partition_bbox_min, persistent=False)
+        # self.register_buffer("partition_bbox_max", partition_bbox_max, persistent=False)
 
-        print("partition_idx=#{}, id={}, transform={}, default_size={}, partition_size={}, bbox=(\n  {}, \n  {}\n)".format(
-            self.config.partition_idx,
-            partition_data["partition_coordinates"]["id"][self.config.partition_idx],
-            self.rotation_transform.tolist(),
-            default_partition_size,
-            partition_size.tolist(),
-            self.partition_bbox_min.tolist(),
-            self.partition_bbox_max.tolist(),
-        ))
+        # print("partition_idx=#{}, id={}, transform={}, default_size={}, partition_size={}, bbox=(\n  {}, \n  {}\n)".format(
+        #     self.config.partition_idx,
+        #     partition_data["partition_coordinates"]["id"][self.config.partition_idx],
+        #     self.rotation_transform.tolist(),
+        #     default_partition_size,
+        #     partition_size.tolist(),
+        #     self.partition_bbox_min.tolist(),
+        #     self.partition_bbox_max.tolist(),
+        # ))
 
     def log_metric(self, name, value):
         self.avoid_state_dict["pl"].logger.log_metrics(
@@ -188,22 +188,14 @@ class ForegroundFirstDensityControllerModule(DensityControllerImpl):
         self.xyz_gradient_accum[update_filter] += grad_norm
         self.denom[update_filter] += 1
 
-    def _get_normalized_distance_to_bounding_box(self, gaussian_model):
-        # transform 3D means
-        transformed_means = gaussian_model.get_means() @ self.rotation_transform[:2, :3].T + self.rotation_transform[:2, 3]  # [N, 2]
-
-        dist_min2p = self.partition_bbox_min - transformed_means
-        dist_p2max = transformed_means - self.partition_bbox_max
-        dxy = torch.maximum(dist_min2p, dist_p2max)
-        distances = torch.sqrt(torch.pow(dxy.clamp(min=0.), 2).sum(dim=-1))
-        return torch.clamp_max(
-            (distances / self.default_partition_size) / self.config.max_radius_factor,
-            max=1.,
-        ), transformed_means, distances  # [N]
-
     def _get_grad_decay_factors(self, gaussian_model):
         # decay grads based on distance (xy only)
-        normalized_distances, _, distances = self._get_normalized_distance_to_bounding_box(gaussian_model)
+        pl_module = self.avoid_state_dict["pl"]
+        distances = pl_module.store.distances
+        normalized_distances = torch.clamp_max(
+            pl_module.store.distance_factors / self.config.max_radius_factor,
+            max=1.,
+        )
         decay_factors = (normalized_distances * (self.config.max_grad_decay_factor - 1)) + 1
 
         return decay_factors, distances

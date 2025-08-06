@@ -25,6 +25,7 @@ from internal.metrics.metric import Metric
 from internal.metrics.vanilla_metrics import VanillaMetrics
 from internal.density_controllers.density_controller import DensityController
 from internal.density_controllers.vanilla_density_controller import VanillaDensityController
+from internal.stores.vanilla_store import Store, VanillaStore
 from internal.output_processors.output_processors import OutputProcessor, VanillaOutputProcessor
 from jsonargparse import lazy_instance
 
@@ -47,6 +48,7 @@ class GaussianSplatting(LightningModule):
             renderer: Union[Renderer, RendererConfig] = lazy_instance(VanillaRenderer),
             metric: Metric = lazy_instance(VanillaMetrics),
             density: DensityController = lazy_instance(VanillaDensityController),
+            store: Optional[Store] = lazy_instance(VanillaStore),
             output_processor: Optional[OutputProcessor] = lazy_instance(VanillaOutputProcessor),
             save_ply: bool = False,
             web_viewer: bool = False,
@@ -75,6 +77,10 @@ class GaussianSplatting(LightningModule):
 
         # metrics
         self.metric = metric.instantiate()
+
+        # store
+        self.store = store.instantiate()
+
         # output_processor
         self.output_processor = output_processor.instantiate()
 
@@ -168,6 +174,7 @@ class GaussianSplatting(LightningModule):
             if self.hparams["save_val_metrics"] is None:
                 self.hparams["save_val_metrics"] = True
 
+        self.store.setup(stage=stage, pl_module=self)
         self.renderer.setup(stage=stage, lightning_module=self)
         self.metric.setup(stage=stage, pl_module=self)
         self.density_controller.setup(stage=stage, pl_module=self)
