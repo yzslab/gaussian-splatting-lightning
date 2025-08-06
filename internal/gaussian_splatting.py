@@ -55,6 +55,7 @@ class GaussianSplatting(LightningModule):
             web_viewer: bool = False,
             initialize_from: str = None,
             renderer_output_types: Optional[List[str]] = None,
+            drop_optimizer_states: bool = False,
     ) -> None:
         super().__init__()
         self.automatic_optimization = False
@@ -136,7 +137,7 @@ class GaussianSplatting(LightningModule):
         return torch.rand(3)
 
     def _initialize_gaussians_from_trained_model(self):
-        assert self.hparams["gaussian"].extra_feature_dims == 0
+        # assert self.hparams["gaussian"].extra_feature_dims == 0
 
         from internal.utils.gaussian_model_loader import GaussianModelLoader
         load_from = GaussianModelLoader.search_load_file(self.hparams["initialize_from"])
@@ -188,6 +189,9 @@ class GaussianSplatting(LightningModule):
             self.log_image = self.wandb_log_image
 
     def on_load_checkpoint(self, checkpoint) -> None:
+        if self.hparams["drop_optimizer_states"]:
+            checkpoint["optimizer_states"] = []
+
         # reinitialize parameters based on the gaussian number in the checkpoint
         self.gaussian_model.setup_from_number(checkpoint["state_dict"]["gaussian_model.gaussians.means"].shape[0])
         if "frozen_gaussians.means" in checkpoint["state_dict"]:
@@ -421,7 +425,6 @@ class GaussianSplatting(LightningModule):
 
     def light_gaussian_prune(self, global_step):
         # TODO: move elsewhere
-
         """
         LightGaussian prune
         """
@@ -635,6 +638,7 @@ class GaussianSplatting(LightningModule):
                 os.makedirs(os.path.dirname(image_output_path), exist_ok=True)
                 save_tensor_image(
                     image_output_path,
+                    image,
                 )
             except:
                 traceback.print_exc()
@@ -680,6 +684,7 @@ class GaussianSplatting(LightningModule):
         # metric optimizer and scheduler setup
         metric_optimizer, metric_scheduler = self.metric.training_setup(self)
         add_optimizers_and_schedulers(metric_optimizer, metric_scheduler)
+
         # output processors
         op_optimizer, op_scheduler = self.output_processor.training_setup(self)
         add_optimizers_and_schedulers(op_optimizer, op_scheduler)
