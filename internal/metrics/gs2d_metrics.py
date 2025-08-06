@@ -1,9 +1,11 @@
+from dataclasses import dataclass
 from typing import Tuple, Dict, Any
 
 from .metric import MetricImpl
 from .vanilla_metrics import VanillaMetrics, VanillaMetricsImpl
 
 
+@dataclass
 class GS2DMetrics(VanillaMetrics):
     lambda_normal: float = 0.05
 
