@@ -17,6 +17,7 @@ from internal.renderers.gsplat_v1_renderer import GSplatV1Renderer
 from internal.renderers.gsplat_mip_splatting_renderer_v2 import GSplatMipSplattingRendererV2
 from internal.density_controllers.vanilla_density_controller import VanillaDensityController
 from internal.utils.gaussian_model_loader import GaussianModelLoader
+from utils.distibuted_tasks import configure_arg_parser_v2, get_task_list_with_args_v2
 
 
 def parse_args():
@@ -34,6 +35,7 @@ def parse_args():
     parser.add_argument("--preprocess", action="store_true")
     parser.add_argument("--ckpt-name", "--name", type=str, default="preprocessed")
     parser.add_argument("--without-bkg", action="store_true", default=False)
+    configure_arg_parser_v2(parser)
     args = parser.parse_args()
 
     if args.output_path is None:
@@ -182,21 +184,29 @@ def main():
         partition_dir=args.partition_dir,
         project_name=args.project,
         min_images=args.min_images,
+        ignore_slurm=True,  # bounding box calculating requires all partitions
     )
 
     image_name_to_camera = None
 
     gaussians_to_merge = {}
 
-    partition_bounding_boxes = partition_training.partition_coordinates.get_bounding_boxes()
-    scene_bounding_box = (
-        torch.min(partition_bounding_boxes.min, dim=0).values,
-        torch.max(partition_bounding_boxes.max, dim=0).values,
-    )
+    # partition_bounding_boxes = partition_training.partition_coordinates.get_bounding_boxes()
+    # scene_bounding_box = (
+    #     torch.min(partition_bounding_boxes.min, dim=0).values,
+    #     torch.max(partition_bounding_boxes.max, dim=0).values,
+    # )
+    mergable_partition_bbox_min_list = []
+    mergable_partition_bbox_max_list = []
+    for _, _, _, bbox in mergable_partitions:
+        mergable_partition_bbox_min_list.append(bbox.min)
+        mergable_partition_bbox_max_list.append(bbox.max)
+    mergable_partition_bbox_min = torch.stack(mergable_partition_bbox_min_list).min(dim=0).values
+    mergable_partition_bbox_max = torch.stack(mergable_partition_bbox_max_list).max(dim=0).values
 
     def isclose(a, b):
         return torch.isclose(a, b, atol=1e-4)
-    
+
     output_filename_suffix = ""
     if args.retain_appearance:
         output_filename_suffix += "-retain_appearance"
@@ -205,46 +215,37 @@ def main():
     elif args.right_optimized:
         output_filename_suffix += "-right_optimized"
 
+    if args.preprocess:
+        mergable_partitions = get_task_list_with_args_v2(args, mergable_partitions)
     with tqdm(mergable_partitions, desc="Pre-processing") as t:
         for partition_idx, partition_id_str, ckpt_file, bounding_box in t:
-            if args.preprocess and os.path.exists(os.path.join(
+            preprocessed_ckpt_path = os.path.join(
                 os.path.dirname(os.path.dirname(ckpt_file)),
-                "{}{}.ckpt".format(args.ckpt_name, output_filename_suffix)),
-            ):
+                "{}{}.ckpt".format(args.ckpt_name, output_filename_suffix)
+            )
+            if args.preprocess and os.path.exists(preprocessed_ckpt_path):
                 t.write("Skip {}".format(partition_id_str))
                 continue
 
             t.set_description("{}".format(partition_id_str))
 
-            # ===== for evaluation =====
-            if args.left_optimized:
-                ckpt_file = convert_to_embedding_optimized_ckpt_file_path(ckpt_file, "left")
-            elif args.right_optimized:
-                ckpt_file = convert_to_embedding_optimized_ckpt_file_path(ckpt_file, "right")
-            # ===== for evaluation =====
-
-            t.write("Loading {}".format(ckpt_file))
-
-            ckpt = torch.load(ckpt_file, map_location="cpu")
-
-            t.write("Splitting...")
             # include background if the partition locates at the border
             # TODO: deal with the non-rectangular case
             bounding_box_updated = False
             if not args.without_bkg:
-                if isclose(bounding_box.min[0], scene_bounding_box[0][0]):
+                if isclose(bounding_box.min[0], mergable_partition_bbox_min[0]):
                     # x == scene bbox x min -> bbox.x_min = -inf
                     bounding_box.min[0] = -torch.inf
                     bounding_box_updated = True
-                if isclose(bounding_box.min[1], scene_bounding_box[0][1]):
+                if isclose(bounding_box.min[1], mergable_partition_bbox_min[1]):
                     # y == scene bbox y min -> bbox.y_min = -inf
                     bounding_box.min[1] = -torch.inf
                     bounding_box_updated = True
-                if isclose(bounding_box.max[0], scene_bounding_box[1][0]):
+                if isclose(bounding_box.max[0], mergable_partition_bbox_max[0]):
                     # x == scene bbox x max -> bbox.x_max = inf
                     bounding_box.max[0] = torch.inf
                     bounding_box_updated = True
-                if isclose(bounding_box.max[1], scene_bounding_box[1][1]):
+                if isclose(bounding_box.max[1], mergable_partition_bbox_max[1]):
                     # x == scene bbox x max -> bbox.x_max = inf
                     bounding_box.max[1] = torch.inf
                     bounding_box_updated = True
@@ -255,69 +256,88 @@ def main():
                     bounding_box,
                 ))
 
-            gaussian_model, _, _ = split_partition_gaussians(
-                ckpt,
-                bounding_box,
-                orientation_transformation,
-            )
+            if not os.path.exists(preprocessed_ckpt_path):
+                # ===== for evaluation =====
+                if args.left_optimized:
+                    ckpt_file = convert_to_embedding_optimized_ckpt_file_path(ckpt_file, "left")
+                elif args.right_optimized:
+                    ckpt_file = convert_to_embedding_optimized_ckpt_file_path(ckpt_file, "right")
+                # ===== for evaluation =====
 
-            if isinstance(gaussian_model, AppearanceFeatureGaussianModel) and not args.retain_appearance:
-                with open(os.path.join(
-                        os.path.dirname(os.path.dirname(ckpt_file)),
-                        "cameras.json"
-                ), "r") as f:
-                    cameras_json = json.load(f)
+                t.write("Loading {}".format(ckpt_file))
 
-                # the dataset will only be loaded once
-                if image_name_to_camera is None:
-                    t.write("Loading colmap model...")
+                ckpt = torch.load(ckpt_file, map_location="cpu")
 
-                    dataparser_config = Colmap(
-                        split_mode="reconstruction",
-                        eval_step=64,
-                        points_from="random",
-                    )
-                    for i in ["image_dir", "mask_dir", "scene_scale", "reorient", "appearance_groups", "down_sample_factor", "down_sample_rounding_mode"]:
-                        setattr(dataparser_config, i, getattr(ckpt["datamodule_hyper_parameters"]["parser"], i))
-                    dataparser_outputs = dataparser_config.instantiate(
-                        path=partition_training.dataset_path,
-                        output_path=os.getcwd(),
-                        global_rank=0,
-                    ).get_outputs()
+                t.write("Splitting...")
 
-                    image_name_to_camera = {}
-                    for idx in range(len(dataparser_outputs.train_set)):
-                        image_name = dataparser_outputs.train_set.image_names[idx]
-                        camera = dataparser_outputs.train_set.cameras[idx]
-                        image_name_to_camera[image_name] = camera
-
-                t.write("Fusing appearance features...")
-                fuse_appearance_features(
+                gaussian_model, _, _ = split_partition_gaussians(
                     ckpt,
-                    gaussian_model,
-                    cameras_json,
-                    image_name_to_camera=image_name_to_camera,
+                    bounding_box,
+                    orientation_transformation,
                 )
 
-            if isinstance(gaussian_model, MipSplattingModelMixin):
-                if not args.retain_appearance:
-                    t.write("Fusing MipSplatting filters...")
-                    fuse_mip_filters(gaussian_model)
+                if isinstance(gaussian_model, AppearanceFeatureGaussianModel) and not args.retain_appearance:
+                    with open(os.path.join(
+                            os.path.dirname(os.path.dirname(ckpt_file)),
+                            "cameras.json"
+                    ), "r") as f:
+                        cameras_json = json.load(f)
+
+                    # the dataset will only be loaded once
+                    if image_name_to_camera is None:
+                        t.write("Loading colmap model...")
+
+                        dataparser_config = Colmap(
+                            split_mode="reconstruction",
+                            eval_step=64,
+                            points_from="random",
+                        )
+                        for i in ["image_dir", "mask_dir", "scene_scale", "reorient", "appearance_groups", "down_sample_factor", "down_sample_rounding_mode"]:
+                            setattr(dataparser_config, i, getattr(ckpt["datamodule_hyper_parameters"]["parser"], i))
+                        dataparser_outputs = dataparser_config.instantiate(
+                            path=partition_training.dataset_path,
+                            output_path=os.getcwd(),
+                            global_rank=0,
+                        ).get_outputs()
+
+                        image_name_to_camera = {}
+                        for idx in range(len(dataparser_outputs.train_set)):
+                            image_name = dataparser_outputs.train_set.image_names[idx]
+                            camera = dataparser_outputs.train_set.cameras[idx]
+                            image_name_to_camera[image_name] = camera
+
+                    t.write("Fusing appearance features...")
+                    fuse_appearance_features(
+                        ckpt,
+                        gaussian_model,
+                        cameras_json,
+                        image_name_to_camera=image_name_to_camera,
+                    )
+
+                if isinstance(gaussian_model, MipSplattingModelMixin):
+                    if not args.retain_appearance:
+                        t.write("Fusing MipSplatting filters...")
+                        fuse_mip_filters(gaussian_model)
+                else:
+                    try:
+                        MERGABLE_PROPERTY_NAMES.remove("filter_3d")
+                    except:
+                        pass
             else:
-                try:
-                    MERGABLE_PROPERTY_NAMES.remove("filter_3d")
-                except:
-                    pass
+                # load preprocessed ckpt
+                t.write("Loading {}".format(preprocessed_ckpt_path))
+                ckpt = torch.load(preprocessed_ckpt_path, map_location="cpu")
+                gaussian_model, _, _ = split_partition_gaussians(
+                    ckpt,
+                    bounding_box,
+                    orientation_transformation,
+                )
 
             if args.preprocess:
                 update_ckpt(ckpt, {k: gaussian_model.get_property(k) for k in MERGABLE_PROPERTY_NAMES}, gaussian_model.max_sh_degree, retain_appearance=args.retain_appearance)
 
-                output_filename = os.path.join(
-                    os.path.dirname(os.path.dirname(ckpt_file)),
-                    "{}{}.ckpt".format(args.ckpt_name, output_filename_suffix),
-                )
-                torch.save(ckpt, output_filename)
-                t.write("Saved to {}".format(output_filename))
+                torch.save(ckpt, preprocessed_ckpt_path)
+                t.write("Saved to {}".format(preprocessed_ckpt_path))
             else:
                 for i in MERGABLE_PROPERTY_NAMES:
                     gaussians_to_merge.setdefault(i, []).append(gaussian_model.get_property(i))
