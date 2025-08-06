@@ -62,6 +62,8 @@ class Colmap(DataParserConfig):
 
     points_from: Literal["sfm", "random", "ply"] = "sfm"
 
+    n_max_points: int = -1
+
     max_point_error: float = None
 
     ply_file: str = None
@@ -210,6 +212,8 @@ class ColmapDataParser(DataParser):
                 xyzs.append(xyz)
                 rgbs.append(rgb)
                 errors.append(error)
+        if len(xyzs) == 0:
+            return np.zeros((0, 3), dtype=np.float64), np.zeros((0, 3), dtype=np.uint8), np.zeros((0,), dtype=np.float64)
         return np.asarray(xyzs), np.asarray(rgbs), np.asarray(errors)
 
     def get_outputs(self) -> DataParserOutputs:
@@ -513,6 +517,12 @@ class ColmapDataParser(DataParser):
             xyz = basic_pcd.points
             rgb = basic_pcd.colors
             print("load {} points from {}".format(xyz.shape[0], self.params.ply_file))
+
+        if self.params.n_max_points > 0 and xyz.shape[0] > self.params.n_max_points:
+            print("[colmap dataparser] select {} of {} points".format(self.params.n_max_points, xyz.shape[0]))
+            point_indices = np.random.choice(xyz.shape[0], self.params.n_max_points)
+            xyz = xyz[point_indices]
+            rgb = rgb[point_indices]
 
         # print information
         print("[colmap dataparser] train set images: {}, val set images: {}, loaded mask: {}".format(
