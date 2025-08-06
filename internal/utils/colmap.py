@@ -39,12 +39,21 @@ import argparse
 
 CameraModel = collections.namedtuple(
     "CameraModel", ["model_id", "model_name", "num_params"])
-Camera = collections.namedtuple(
-    "Camera", ["id", "model", "width", "height", "params"])
-BaseImage = collections.namedtuple(
-    "Image", ["id", "qvec", "tvec", "camera_id", "name", "xys", "point3D_ids"])
+# Camera = collections.namedtuple(
+#     "Camera", ["id", "model", "width", "height", "params"])
+# BaseImage = collections.namedtuple(
+#     "Image", ["id", "qvec", "tvec", "camera_id", "name", "xys", "point3D_ids"])
 # Point3D = collections.namedtuple(
 #     "Point3D", ["id", "xyz", "rgb", "error", "image_ids", "point2D_idxs"])
+
+
+@dataclass
+class Camera:
+    id: int
+    model: str
+    width: int
+    height: int
+    params: np.ndarray
 
 
 @dataclass
@@ -56,7 +65,17 @@ class Point3D:
     image_ids: np.ndarray
     point2D_idxs: np.ndarray
 
-class Image(BaseImage):
+
+@dataclass
+class Image:
+    id: int
+    qvec: np.ndarray
+    tvec: np.ndarray
+    camera_id: int
+    name: str
+    xys: np.ndarray
+    point3D_ids: np.ndarray
+
     def qvec2rotmat(self):
         return qvec2rotmat(self.qvec)
 
@@ -152,8 +171,8 @@ def read_cameras_binary(path_to_model_file):
             width = camera_properties[2]
             height = camera_properties[3]
             num_params = CAMERA_MODEL_IDS[model_id].num_params
-            params = read_next_bytes(fid, num_bytes=8*num_params,
-                                     format_char_sequence="d"*num_params)
+            params = read_next_bytes(fid, num_bytes=8 * num_params,
+                                     format_char_sequence="d" * num_params)
             cameras[camera_id] = Camera(id=camera_id,
                                         model=model_name,
                                         width=width,
@@ -255,8 +274,8 @@ def read_images_binary(path_to_model_file):
             image_name = image_name.decode("utf-8")
             num_points2D = read_next_bytes(fid, num_bytes=8,
                                            format_char_sequence="Q")[0]
-            x_y_id_s = read_next_bytes(fid, num_bytes=24*num_points2D,
-                                       format_char_sequence="ddq"*num_points2D)
+            x_y_id_s = read_next_bytes(fid, num_bytes=24 * num_points2D,
+                                       format_char_sequence="ddq" * num_points2D)
             xys = np.column_stack([tuple(map(float, x_y_id_s[0::3])),
                                    tuple(map(float, x_y_id_s[1::3]))])
             point3D_ids = np.array(tuple(map(int, x_y_id_s[2::3])))
@@ -276,7 +295,7 @@ def write_images_text(images, path):
     if len(images) == 0:
         mean_observations = 0
     else:
-        mean_observations = sum((len(img.point3D_ids) for _, img in images.items()))/len(images)
+        mean_observations = sum((len(img.point3D_ids) for _, img in images.items())) / len(images)
     HEADER = "# Image list with two lines of data per image:\n" + \
              "#   IMAGE_ID, QW, QX, QY, QZ, TX, TY, TZ, CAMERA_ID, NAME\n" + \
              "#   POINTS2D[] as (X, Y, POINT3D_ID)\n" + \
@@ -365,8 +384,8 @@ def read_points3D_binary(path_to_model_file):
             track_length = read_next_bytes(
                 fid, num_bytes=8, format_char_sequence="Q")[0]
             track_elems = read_next_bytes(
-                fid, num_bytes=8*track_length,
-                format_char_sequence="ii"*track_length)
+                fid, num_bytes=8 * track_length,
+                format_char_sequence="ii" * track_length)
             image_ids = np.array(tuple(map(int, track_elems[0::2])))
             point2D_idxs = np.array(tuple(map(int, track_elems[1::2])))
             points3D[point3D_id] = Point3D(
@@ -385,7 +404,7 @@ def write_points3D_text(points3D, path):
     if len(points3D) == 0:
         mean_track_length = 0
     else:
-        mean_track_length = sum((len(pt.image_ids) for _, pt in points3D.items()))/len(points3D)
+        mean_track_length = sum((len(pt.image_ids) for _, pt in points3D.items())) / len(points3D)
     HEADER = "# 3D point list with one line of data per point:\n" + \
              "#   POINT3D_ID, X, Y, Z, R, G, B, ERROR, TRACK[] as (IMAGE_ID, POINT2D_IDX)\n" + \
              "# Number of points: {}, mean track length: {}\n".format(len(points3D), mean_track_length)
@@ -421,8 +440,8 @@ def write_points3D_binary(points3D, path_to_model_file):
 
 
 def detect_model_format(path, ext):
-    if os.path.isfile(os.path.join(path, "cameras"  + ext)) and \
-       os.path.isfile(os.path.join(path, "images"   + ext)) and \
+    if os.path.isfile(os.path.join(path, "cameras" + ext)) and \
+       os.path.isfile(os.path.join(path, "images" + ext)) and \
        os.path.isfile(os.path.join(path, "points3D" + ext)):
         print("Detected model format: '" + ext + "'")
         return True
@@ -489,6 +508,38 @@ def rotmat2qvec(R):
     if qvec[0] < 0:
         qvec *= -1
     return qvec
+
+
+def remove_image_from_points(image, points):
+    point_mask = image.point3D_ids != -1
+    point3D_ids = image.point3D_ids[point_mask]
+
+    removed_points = {}
+
+    for point_idx in point3D_ids:
+        try:
+            point = points[point_idx]
+        except:
+            continue
+        # get the mask to remove the removed image from this point
+        image_id_mask = point.image_ids != image.id
+        point.image_ids = point.image_ids[image_id_mask]
+        point.point2D_idxs = point.point2D_idxs[image_id_mask]
+
+        if point.image_ids.shape[0] <= 1:
+            del points[point_idx]
+            removed_points[point_idx] = point
+
+    return removed_points
+
+
+def remove_point_from_images(point, images):
+    for image_id in point.image_ids:
+        if image_id not in images:
+            continue
+        image = images[image_id]
+        mask = image.point3D_ids == point.id
+        image.point3D_ids[mask] = -1
 
 
 def main():
