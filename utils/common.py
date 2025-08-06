@@ -99,7 +99,7 @@ class AsyncImageSaver:
             image = func(image)
         if image.shape[-1] == 3 and is_rgb is True:
             image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-        cv2.imwrite(tmp_path, image)
+        cv2.imwrite(tmp_path, image, [int(cv2.IMWRITE_JPEG_QUALITY), 100])
         os.rename(tmp_path, path)
 
 
