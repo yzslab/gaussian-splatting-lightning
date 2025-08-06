@@ -13,6 +13,7 @@ def get_trained_partitions(
         min_images: int,
         n_processes: int = 1,
         process_id: int = 1,
+        ignore_slurm: bool = False,
 ):
     partition_training = PartitionTraining(PartitionTrainingConfig(
         partition_dir=partition_dir,
@@ -27,6 +28,7 @@ def get_trained_partitions(
         min_images=min_images,
         n_processes=n_processes,
         process_id=process_id,
+        ignore_slurm=ignore_slurm,
     )
 
     partition_bounding_boxes = partition_training.partition_coordinates.get_bounding_boxes()

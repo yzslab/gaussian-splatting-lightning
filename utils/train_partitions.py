@@ -30,7 +30,9 @@ class PartitionTrainingConfig:
     dry_run: bool
     extra_epoches: int
     name_suffix: str = ""
+    min_image_location_based: bool = False
     ff_densify: bool = False
+    mcmc_ff_densify: bool = False
     t3dgs_densify: bool = False
     max_steps: int = None
     scale_base: int = None
@@ -61,6 +63,7 @@ class PartitionTrainingConfig:
                             help="Project name")
         parser.add_argument("--min-images", "-m", type=int, default=32,
                             help="Ignore partitions with image number less than this value")
+        parser.add_argument("--min-image-location-based", action="store_true", default=False)
         parser.add_argument("--config", "-c", type=str, nargs="*", default=None)
         parser.add_argument("--parts", default=None, nargs="*", action="extend")
         parser.add_argument("--extra-epoches", "-e", type=int, default=extra_epoches)
@@ -75,7 +78,9 @@ class PartitionTrainingConfig:
         parser.add_argument("--dry-run", action="store_true")
         parser.add_argument("--name-suffix", type=str, default="")
         parser.add_argument("--ff-densify", action="store_true", default=False)
+        parser.add_argument("--mcmc-ff-densify", action="store_true", default=False)
         parser.add_argument("--t3dgs-densify", action="store_true", default=False)
+        parser.add_argument("--densify-config", type=str, nargs="*", default=None)
         parser.add_argument("--image-number-from", type=str, default=None)
         configure_arg_parser_v2(parser)
 
@@ -133,12 +138,14 @@ class PartitionTrainingConfig:
             partition_dir=args.partition_dir,
             project_name=args.project,
             min_images=args.min_images,
+            min_image_location_based=args.min_image_location_based,
             n_processes=args.n_processes,
             process_id=args.process_id,
             dry_run=args.dry_run,
             extra_epoches=args.extra_epoches,
             name_suffix=args.name_suffix,
             ff_densify=args.ff_densify,
+            mcmc_ff_densify=args.mcmc_ff_densify,
             t3dgs_densify=args.t3dgs_densify,
             max_steps=max_steps,
             scale_base=scale_base,
@@ -245,15 +252,24 @@ class PartitionTraining:
 
     def get_overridable_partition_specific_args(self, partition_idx: int) -> list[str]:
         args = []
+
+        def add_partition_args():
+            nonlocal args
+            args += [
+                "--model.store=internal.stores.partition_store.PartitionStore",
+                "--model.store.partition={}".format(self.path),
+                "--model.store.partition_idx={}".format(partition_idx),
+                "--model.density={}".format(density_controller),
+            ]
+
         if self.config.ff_densify:
             density_controller = "internal.density_controllers.foreground_first_density_controller.ForegroundFirstDensityController"
             if self.config.t3dgs_densify:
                 density_controller = "internal.density_controllers.taming_3dgs_density_ff_controller.Taming3DGSDensityFFController"
-            args += [
-                "--model.density={}".format(density_controller),
-                "--model.density.partition={}".format(self.path),
-                "--model.density.partition_idx={}".format(partition_idx),
-            ]
+            add_partition_args()
+        elif self.config.mcmc_ff_densify:
+            density_controller = "internal.density_controllers.mcmc_ff_density_controller.MCMCFFDensityController"
+            add_partition_args()
         return args
 
     def get_partition_specific_args(self, partition_idx: int) -> list[str]:
@@ -288,9 +304,15 @@ class PartitionTraining:
             min_images: int,
             n_processes: int,
             process_id: int,
+            ignore_slurm: bool = False,
     ) -> list[int]:
-        assigned_camera_numbers = self.get_assigned_camera_numbers()
+        if self.config.min_image_location_based:
+            assigned_camera_numbers = self.get_location_based_assignment_numbers()
+        else:
+            assigned_camera_numbers = self.get_assigned_camera_numbers()
         all_trainable_partition_indices = torch.ge(assigned_camera_numbers, min_images).nonzero().squeeze(-1).tolist()
+        if ignore_slurm:
+            return all_trainable_partition_indices
         return get_task_list(n_processors=n_processes, current_processor_id=process_id, all_tasks=all_trainable_partition_indices)
 
     def get_partition_trained_step_filename(self, partition_idx: int):
