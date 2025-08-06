@@ -32,6 +32,7 @@ def calculate_gaussian_scores(cameras, gaussian_model, device):
     hit_count_list = []
     opacity_score_list = []
     alpha_score_list = []
+    # Use bfloat16 can avoid OOM
     all_visibility_score = torch.zeros((len(cameras), gaussian_model.get_xyz.shape[0]), dtype=torch.float, device=device)
 
     scales = gaussian_model.get_scales()
@@ -71,11 +72,12 @@ def prune_and_get_weights(gaussian_model, cameras, n_average_cameras, weight_dev
     # calculate total visibility score for each Gaussian
     visibility_score_acc = torch.sum(visibility_score, dim=-1)
     # find Gaussian whose total visibility is closed to zero
-    visibility_score_acc_is_close_to_zero = torch.isclose(visibility_score_acc, torch.tensor(0., device=visibility_score_acc.device))
+    visibility_score_acc_is_close_to_zero = torch.isclose(visibility_score_acc, torch.tensor(0., dtype=visibility_score.dtype, device=visibility_score_acc.device))
     gaussian_to_preserve = ~visibility_score_acc_is_close_to_zero
     # prune
     prune_gaussian_model(gaussian_model, gaussian_to_preserve.to(device=gaussian_model.means.device))
-    visibility_score_pruned = visibility_score[~visibility_score_acc_is_close_to_zero]
+    visibility_score_pruned = visibility_score[~visibility_score_acc_is_close_to_zero].float()
+    assert visibility_score_pruned.shape[0] > 0
     del visibility_score
     visibility_score_acc_is_close_to_zero.sum()
 
@@ -240,6 +242,8 @@ def fuse(
         embedding_view_dir_mode: Literal["camera_center", "view_direction"],
         dataset_path_override: str = None
 ):
+    # Avoid loading points from colmap sparse model
+    dataparser_outputs = ckpt["datamodule_hyper_parameters"]["parser"].points_from = "random"
     dataparser_outputs = ckpt["datamodule_hyper_parameters"]["parser"].instantiate(
         path=ckpt["datamodule_hyper_parameters"]["path"] if dataset_path_override is None else dataset_path_override,
         output_path=os.getcwd(),
