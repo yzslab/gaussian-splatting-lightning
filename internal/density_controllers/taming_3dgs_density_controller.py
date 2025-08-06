@@ -2,7 +2,7 @@
 Most copied from https://github.com/humansensinglab/taming-3dgs
 """
 
-from typing import Literal, List
+from typing import Literal, List, Tuple
 from dataclasses import dataclass
 import torch
 from lightning import LightningModule
@@ -13,6 +13,7 @@ from internal.renderers.gsplat_v1_renderer import GSplatV1
 from gsplat.rasterize_to_weights import rasterize_to_weights
 from .density_controller import DensityController
 from .vanilla_density_controller import VanillaDensityControllerImpl
+from internal.utils.general_utils import inverse_sigmoid
 
 
 @dataclass
@@ -48,7 +49,11 @@ class Taming3DGSDensityController(DensityController):
     cull_opacity_threshold: float = 0.005
     """threshold of opacity for culling gaussians."""
 
+    opacity_correction: bool = False
+
     cull_by_max_opacity: bool = False
+
+    cull_big_scale: bool = True
 
     camera_extent_factor: float = 1.
 
@@ -71,6 +76,12 @@ class Taming3DGSDensityController(DensityController):
     cull_opacity_until: int = 27
 
     score_coeffs: ScoreCoefficients = ScoreCoefficients()
+
+    # Altitude
+
+    up_direction: Tuple[float, float, float] = None
+
+    min_alt: float = None
 
     def instantiate(self, *args, **kwargs) -> "Taming3DGSDensityControllerModule":
         return Taming3DGSDensityControllerModule(self)
@@ -236,6 +247,14 @@ class Taming3DGSDensityControllerModule(VanillaDensityControllerImpl):
         for key, value in gaussian_model.properties.items():
             new_properties[key] = value[selected_pts_mask]
 
+        if self.config.opacity_correction:
+            # NEW: Opacity correction
+            current_opacity = gaussian_model.get_opacities()[selected_pts_mask]
+            alpha_hat = 1. - torch.sqrt(1. - current_opacity)
+            raw_alpha_hat = inverse_sigmoid(alpha_hat)
+            gaussian_model.properties["opacities"][selected_pts_mask] = raw_alpha_hat
+            new_properties["opacities"] = raw_alpha_hat
+
         # Update optimizers and properties
         self._densification_postfix(new_properties, gaussian_model, optimizers)
 
@@ -287,13 +306,25 @@ class Taming3DGSDensityControllerModule(VanillaDensityControllerImpl):
         max_scales = gaussian_model.get_scales().max(dim=1).values
 
         # small scale and opacity
-        small_scale_mask = max_scales < 1e-2
-        must_prune_mask = torch.logical_and(prune_mask, small_scale_mask)
+        small_scale_mask = max_scales < 1e-4
 
         if max_screen_size:
             big_points_vs = self.max_radii2D > max_screen_size
-            big_points_ws = max_scales > 0.1 * self.prune_extent
-            prune_mask = torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws)
+            self.log_metric("big_points_vs_count", big_points_vs.sum())
+            prune_mask = torch.logical_or(prune_mask, big_points_vs)
+            if self.config.cull_big_scale:
+                big_points_ws = max_scales > 0.1 * self.prune_extent
+                self.log_metric("big_points_ws_count", big_points_ws.sum())
+                prune_mask = torch.logical_or(prune_mask, big_points_ws)
+
+        # min altitude
+        if self.config.min_alt is not None:
+            alt = torch.inner(gaussian_model.get_means(), torch.tensor(self.config.up_direction, dtype=torch.float, device=max_scales.device))
+            min_alt_mask = alt < self.config.min_alt
+            prune_mask = torch.logical_or(prune_mask, min_alt_mask)
+            self.log_metric("min_alt_count", min_alt_mask.sum())
+
+        must_prune_mask = torch.logical_or(prune_mask, small_scale_mask)
 
         to_remove = torch.sum(prune_mask)
         remove_budget = int(0.5 * to_remove)
