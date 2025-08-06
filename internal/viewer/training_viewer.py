@@ -55,6 +55,8 @@ class TrainingViewer(Viewer):
         self.show_render_panel = False
         self.default_camera_position = None
         self.default_camera_look_at = None
+        self.demo_mode = False
+        self.enable_measurement = False
         self.camera_transform = torch.eye(4)
         self.device = torch.device("cpu")
 
