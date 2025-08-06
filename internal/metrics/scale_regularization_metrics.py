@@ -1,21 +1,24 @@
 from dataclasses import dataclass
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, Optional
 import torch
 from .vanilla_metrics import VanillaMetrics, VanillaMetricsImpl
 from .inverse_depth_metrics import HasInverseDepthMetrics, HasInverseDepthMetricsModule
+from .ground_reg_metrics import GroundRegMetricConfig, GroundRegMetricModuleMixin
 
 
 @dataclass
 class ScaleRegularizationMetricsMixin:
     """Avoid large and highly anisotropic Gaussians"""
 
-    scale_reg_from: int = -1
+    scale_reg_from: int = 3100
     """Should be at least after the first opacity reset + a densify interval, i.e. 3100 by default"""
 
     max_scale: float = -1
     """Should be greater than `percent_dense * camera_extent`, or splitting of densification will not work"""
 
-    max_scale_ratio: float = -1
+    max_scale_outside_partition: Optional[float] = None
+
+    max_scale_ratio: float = 10
 
     scale_reg_lambda: float = 0.05
 
@@ -25,9 +28,9 @@ class ScaleRegularizationMetricsMixin:
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
 
-        assert self.scale_reg_from > 0
-        if self.scale_reg_lambda > 0.:
-            assert self.max_scale > 0
+        assert self.scale_reg_from >= 0
+        # if self.scale_reg_lambda > 0.:
+        # assert self.max_scale > 0
         if self.scale_ratio_reg_lambda > 0.:
             assert self.max_scale_ratio > 0
 
@@ -36,7 +39,14 @@ class ScaleRegularizationMetricsMixin:
 
 
 class ScaleRegularizationMetricsModuleMixin:
-    def get_scale_regularization_metrics(self, gaussian_model, metrics, pbar):
+    def setup(self, stage: str, pl_module):
+        super().setup(stage, pl_module)
+        if self.config.max_scale <= 0 and stage == "fit":
+            self.config.max_scale = pl_module.trainer.datamodule.dataparser_outputs.camera_extent * 1.1
+            assert self.config.max_scale > 0.
+            print("max_scale={}".format(self.config.max_scale))
+
+    def get_scale_regularization_metrics(self, gaussian_model, pl_module, metrics, pbar):
         scales = gaussian_model.get_scales()
         sorted_scales = torch.sort(scales, dim=-1).values
 
@@ -47,7 +57,26 @@ class ScaleRegularizationMetricsModuleMixin:
         over_scale_loss = 0.
         is_over_scales = None
         if self.config.scale_reg_lambda > 0.:
-            is_over_scales = scales.detach() > self.config.max_scale
+            if self.config.max_scale_outside_partition is None:
+                upper_scale = self.config.max_scale
+            else:
+                is_outside_partition = pl_module.store.distance_factors.to(device=pl_module.device) > 0.5
+                upper_scale = torch.where(
+                    is_outside_partition,
+                    self.config.max_scale_outside_partition,
+                    self.config.max_scale,
+                ).unsqueeze(-1)
+            is_over_scales = scales.detach() > upper_scale
+
+            # is_over_scales = scales.detach() > self.config.max_scale
+            # if self.config.max_scale_outside_partition is not None:
+            #     is_outside_partition = pl_module.store.distance_factors > 0.5
+            #     is_over_outside_scale = torch.logical_or(
+            #         scales.detach() > self.config.max_scale_outside_partition,  # overscale is True
+            #         torch.logical_not(is_outside_partition),  # inside all True
+            #     )
+            #     is_over_scales = torch.logical_and(is_over_scales, is_over_outside_scale)  # mask out not overscale outside
+
             n_over_scales = is_over_scales.sum().float()
             over_scale_loss = (scales * is_over_scales).sum() / (n_over_scales + 1) * self.config.scale_reg_lambda
 
@@ -97,13 +126,13 @@ class ScaleRegularizationMetricsModuleMixin:
         )
 
         if step >= self.config.scale_reg_from:
-            self.get_scale_regularization_metrics(gaussian_model, metrics, pbar)
+            self.get_scale_regularization_metrics(gaussian_model, pl_module, metrics, pbar)
 
         return metrics, pbar
 
     def get_validate_metrics(self, pl_module, gaussian_model, batch, outputs) -> Tuple[Dict[str, Any], Dict[str, bool]]:
         metrics, pbar = super().get_validate_metrics(pl_module, gaussian_model, batch, outputs)
-        self.get_scale_regularization_metrics(gaussian_model, metrics, pbar)
+        self.get_scale_regularization_metrics(gaussian_model, pl_module, metrics, pbar)
 
         return metrics, pbar
 
@@ -125,4 +154,40 @@ class ScaleRegularizationWithDepthMetrics(ScaleRegularizationMetricsMixin, HasIn
 
 
 class ScaleRegularizationWithDepthMetricsModule(ScaleRegularizationMetricsModuleMixin, HasInverseDepthMetricsModule):
+    pass
+
+
+@dataclass
+class ScaleRegularizationWithGroundMetrics(
+    ScaleRegularizationMetricsMixin,
+    GroundRegMetricConfig,
+    VanillaMetrics,
+):
+    def instantiate(self, *args, **kwargs) -> "ScaleRegularizationWithGroundMetricsModule":
+        return ScaleRegularizationWithGroundMetricsModule(self)
+
+
+class ScaleRegularizationWithGroundMetricsModule(
+    ScaleRegularizationMetricsModuleMixin,
+    GroundRegMetricModuleMixin,
+    VanillaMetricsImpl,
+):
+    pass
+
+
+@dataclass
+class ScaleRegularizationWithGroundDepthMetrics(
+    ScaleRegularizationMetricsMixin,
+    GroundRegMetricConfig,
+    HasInverseDepthMetrics,
+):
+    def instantiate(self, *args, **kwargs) -> "ScaleRegularizationWithGroundDepthMetricsModule":
+        return ScaleRegularizationWithGroundDepthMetricsModule(self)
+
+
+class ScaleRegularizationWithGroundDepthMetricsModule(
+    ScaleRegularizationMetricsModuleMixin,
+    GroundRegMetricModuleMixin,
+    HasInverseDepthMetricsModule,
+):
     pass
