@@ -248,13 +248,9 @@ class ColmapDataParser(DataParser):
 
         # build appearance dict: group name -> image name list
         if self.params.appearance_groups is None:
-            print("appearance group by camera id")
             appearance_groups = {}
-            for i in images:
-                image_camera_id = images[i].camera_id
-                if image_camera_id not in appearance_groups:
-                    appearance_groups[image_camera_id] = []
-                appearance_groups[image_camera_id].append(images[i].name)
+            for i in images.values():
+                appearance_groups.setdefault(i.name, []).append(i.name)
         else:
             appearance_group_file_path = os.path.join(self.path, self.params.appearance_groups)
             print("loading appearance groups from {}".format(appearance_group_file_path))
