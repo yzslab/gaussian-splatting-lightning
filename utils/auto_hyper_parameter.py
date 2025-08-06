@@ -61,7 +61,10 @@ def auto_hyper_parameter(
     def scale_params(scalable_params, extra_epoch_scalable_step_params):
         scaled_params = {}
         for name, value in scalable_params.items():
-            value = round(value * scale_up)
+            is_int = isinstance(value, int)
+            value = value * scale_up
+            if is_int:
+                value = round(value)
             if name in extra_epoch_scalable_step_params:
                 value += extra_steps
 
