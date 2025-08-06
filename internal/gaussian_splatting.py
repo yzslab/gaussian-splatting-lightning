@@ -31,6 +31,7 @@ from jsonargparse import lazy_instance
 
 from internal.utils.sh_utils import eval_sh
 from internal.utils.graphics_utils import store_ply
+from internal.utils.image_utils import save_tensor_image
 
 
 class GaussianSplatting(LightningModule):
@@ -629,11 +630,10 @@ class GaussianSplatting(LightningModule):
                         item["epoch"],
                         item["step"],
                     ),
-                    "{}.png".format(item["image_name"].replace("/", "_"))
+                    "{}.jpg".format(item["image_name"].replace("/", "_"))
                 )
                 os.makedirs(os.path.dirname(image_output_path), exist_ok=True)
-                torchvision.utils.save_image(
-                    image,
+                save_tensor_image(
                     image_output_path,
                 )
             except:
