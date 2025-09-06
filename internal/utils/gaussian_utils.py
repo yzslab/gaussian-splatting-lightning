@@ -189,10 +189,12 @@ class GaussianPlyUtils:
 
         gaussian = self
 
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+        except:
+            pass
 
         xyz = gaussian.xyz
-        normals = np.zeros_like(xyz)
         f_dc = gaussian.features_dc.reshape((gaussian.features_dc.shape[0], -1))
         # TODO: change sh degree
         if gaussian.sh_degrees > 0:
@@ -203,36 +205,51 @@ class GaussianPlyUtils:
         scale = gaussian.scales
         rotation = gaussian.rotations
 
-        def construct_list_of_attributes():
-            l = ['x', 'y', 'z', 'nx', 'ny', 'nz']
-            # All channels except the 3 DC
-            for i in range(gaussian.features_dc.shape[1] * gaussian.features_dc.shape[2]):
-                l.append('f_dc_{}'.format(i))
-            if gaussian.sh_degrees > 0:
-                for i in range(gaussian.features_rest.shape[1] * gaussian.features_rest.shape[2]):
-                    l.append('f_rest_{}'.format(i))
-            l.append('opacity')
-            for i in range(gaussian.scales.shape[1]):
-                l.append('scale_{}'.format(i))
-            for i in range(gaussian.rotations.shape[1]):
-                l.append('rot_{}'.format(i))
-            return l
+        # xyz
+        dtype_full = [
+            ("x", "f4"),
+            ("y", "f4"),
+            ("z", "f4"),
+        ]
+        attribute_list = [
+            ("x", xyz[..., 0]),
+            ("y", xyz[..., 1]),
+            ("z", xyz[..., 2]),
+        ]
 
-        dtype_full = [(attribute, 'f4') for attribute in construct_list_of_attributes()]
-        attribute_list = [xyz, normals, f_dc, f_rest, opacities, scale, rotation]
+        def add_attribute(name_prefix, value):
+            for i in range(value.shape[-1]):
+                name = "{}_{}".format(name_prefix, i)
+                dtype_full.append((name, "f4"))
+                attribute_list.append((name, value[..., i]))
+
+        # shs_dc
+        add_attribute("f_dc", f_dc)
+        # shs_rest
+        add_attribute("f_rest", f_rest)
+        # opacities
+        dtype_full.append(("opacity", "f4"))
+        attribute_list.append(("opacity", opacities.squeeze(-1)))
+        # scales
+        add_attribute("scale", scale)
+        # rotations
+        add_attribute("rot", rotation)
+
         if with_colors is True:
             from internal.utils.sh_utils import eval_sh
             rgbs = np.clip((eval_sh(0, self.features_dc, None) + 0.5), 0., 1.)
             rgbs = (rgbs * 255).astype(np.uint8)
 
             dtype_full += [('red', 'u1'), ('green', 'u1'), ('blue', 'u1')]
-            attribute_list.append(rgbs)
+            attribute_list += [
+                ("red", rgbs[..., 0]),
+                ("green", rgbs[..., 1]),
+                ("blue", rgbs[..., 2]),
+            ]
 
         elements = np.empty(xyz.shape[0], dtype=dtype_full)
-        attributes = np.concatenate(attribute_list, axis=1)
-        # do not save 'features_extra' for ply
-        # attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation, f_extra), axis=1)
-        elements[:] = list(map(tuple, attributes))
+        for (k, v) in attribute_list:
+            elements[k] = v
         el = PlyElement.describe(elements, 'vertex')
         PlyData([el]).write(path)
 
@@ -312,7 +329,7 @@ class GaussianTransformUtils:
 
         shs_feat = features[:, 1:, :]
 
-        ## rotate shs
+        # rotate shs
         P = torch.tensor([[0, 0, 1], [1, 0, 0], [0, 1, 0]], dtype=shs_feat.dtype, device=shs_feat.device)  # switch axes: yzx -> xyz
         inversed_P = torch.tensor([
             [0, 1, 0],
