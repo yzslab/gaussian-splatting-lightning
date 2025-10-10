@@ -616,6 +616,8 @@ class GaussianSplatting(LightningModule):
             try:
                 image_list = [item["gt_image"]]
                 for i in item["output_images"]:
+                    if i.shape[0] == 1:
+                        i = i.repeat(3, 1, 1)
                     image_list.append(i)
                 image = torch.concat(image_list, dim=-1)
 
