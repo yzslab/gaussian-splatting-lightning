@@ -534,8 +534,7 @@ If you have not downsized images, remember to add a `--data.parser.down_sample_f
 python main.py validate \
    --config outputs/brandenburg_gate/lightning_logs/version_0/config.yaml \
    --save_val \
-   --val_train \
-   --config outputs/brandenburg_gate/lightning_logs/version_0/config.yaml  # you may need to change this path
+   --val_train
 ```
 
 Then you can find the rendered masks and images in `outputs/brandenburg_gate/val`.
