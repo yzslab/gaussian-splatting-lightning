@@ -14,9 +14,23 @@ class ExposureProcessor(OutputProcessor):
 
     max_gray_scale: float = 5.
 
+    with_bias: bool = False
+
     max_gamma: float = 5.
 
+    shadow_correction: bool = False
+
+    shadow_correction_size: int = 128
+
+    shadow_correction_max_gray_scale: float = 2.5
+
     def instantiate(self, *args, **kwargs):
+        # avoid exceptions when loading previous checkpoint
+        if not hasattr(self, "with_bias"):
+            self.config.with_bias = False
+        if not hasattr(self, "shadow_correction"):
+            self.config.shadow_correction = False
+
         # must > 1 or optimization will not work
         assert self.max_gray_scale > 1.
         assert self.max_gamma > 1.
@@ -28,17 +42,37 @@ class ExposureProcessorModule(torch.nn.Module):
         super().__init__()
         self.config = config
 
-    def init_exposures(self, n_appearances: int, device):
+    def init_exposures(self, n_appearances: int, device, n_cameras: int = 1):
+        n_parameters = 4
+        if self.config.with_bias:
+            n_parameters += 3
         exposures = torch.full(
-            (n_appearances, 4),
+            (n_appearances, n_parameters),
             inverse_sigmoid(torch.tensor(1. / self.config.max_gray_scale, dtype=torch.float32, device=device)),
             dtype=torch.float32,
             device=device,
         )
         exposures[:, -1] = inverse_sigmoid(torch.tensor(1. / self.config.max_gamma, dtype=torch.float32, device=device))
+
+        if self.config.with_bias:
+            # bias = sigmoid(x) * 2. - 1.
+            exposures[:, 3:6].fill_(inverse_sigmoid(torch.tensor(0.5, dtype=torch.float32, device=device)))
+            assert torch.allclose(torch.sigmoid(exposures[:, 3:6]) * 2. - 1., torch.tensor(0., device=device))
+
         assert torch.allclose(torch.sigmoid(exposures[:, :3]) * self.config.max_gray_scale, torch.tensor(1., device=device))
         assert torch.allclose(torch.sigmoid(exposures[:, -1]) * self.config.max_gamma, torch.tensor(1., device=device))
         self.exposure_parameters = torch.nn.Parameter(exposures, requires_grad=True)
+
+        if self.config.shadow_correction:
+            # TODO: multiple cameras
+            self.shade_correction = torch.nn.Parameter(
+                torch.full(
+                    size=(n_cameras, self.config.shadow_correction_size, self.config.shadow_correction_size),
+                    fill_value=inverse_sigmoid(torch.tensor(1. / self.config.shadow_correction_max_gray_scale, device=device)),
+                    device=device,
+                ),
+                requires_grad=True,
+            )
 
     def setup(self, stage: str, pl_module=None, *args, **kwargs):
         if pl_module is not None:
@@ -61,10 +95,14 @@ class ExposureProcessorModule(torch.nn.Module):
         return super().load_state_dict(state_dict, strict)
 
     def training_setup(self, pl_module):
+        params = [
+            {"params": [self.exposure_parameters], "name": "exposure"},
+        ]
+        if self.config.shadow_correction:
+            params.append({"params": [self.shade_correction], "name": "shadow"})
+
         optimizer = torch.optim.Adam(
-            params=[
-                {"params": [self.exposure_parameters], "name": "exposure"},
-            ],
+            params=params,
             lr=self.config.lr_init,
         )
         return optimizer, torch.optim.lr_scheduler.LambdaLR(
@@ -81,7 +119,21 @@ class ExposureProcessorModule(torch.nn.Module):
         adjustment = torch.sigmoid(self.exposure_parameters[camera.appearance_id])
 
         rendered_image = outputs["render"]  # [C, H, W]
+
+        if self.config.shadow_correction:
+            # TODO: multiple cameras
+            shadow_correction_map = torch.nn.functional.interpolate(
+                torch.sigmoid(self.shade_correction[0][None, None, :, :]) * self.config.shadow_correction_max_gray_scale,
+                size=(rendered_image.shape[1], rendered_image.shape[2]),
+                mode="bilinear",
+                align_corners=False,
+            )[0]  # [1, H, W]
+            rendered_image = rendered_image * shadow_correction_map
+
         rendered_image = adjustment[:3, None, None] * self.config.max_gray_scale * rendered_image
+        if self.config.with_bias:
+            bias = adjustment[3:6, None, None] * 2. - 1.
+            rendered_image = rendered_image + bias
+        rendered_image = torch.clamp(rendered_image, min=0., max=1.)
         rendered_image = torch.pow(rendered_image + 1e-5, adjustment[-1] * self.config.max_gamma)
-        rendered_image = torch.clamp_max(rendered_image, max=1.)
         outputs["render"] = rendered_image
