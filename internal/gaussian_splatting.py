@@ -180,6 +180,7 @@ class GaussianSplatting(LightningModule):
         self.renderer.setup(stage=stage, lightning_module=self)
         self.metric.setup(stage=stage, pl_module=self)
         self.density_controller.setup(stage=stage, pl_module=self)
+        self.output_processor.setup(stage=stage, pl_module=self)
 
         # use different image log method based on the logger type
         self.log_image = None
