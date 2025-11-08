@@ -1,0 +1,6 @@
+model:
+  output_processor:
+    class_path: internal.output_processors.exposure.ExposureProcessor
+    init_args:
+      with_bias: true
+      shade_correction: true

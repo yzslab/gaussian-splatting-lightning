@@ -98,5 +98,5 @@
 !normal_reg.yaml
 !learn_exposure.yaml
 !learn_exposure-with_bias.yaml
-!learn_exposure-with_bias-shadow_correction.yaml
+!learn_exposure-with_bias-shade_correction.yaml
 !vgg_lpips.yaml
