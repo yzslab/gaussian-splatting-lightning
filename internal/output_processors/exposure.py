@@ -120,13 +120,14 @@ class ExposureProcessorModule(torch.nn.Module):
 
         if self.config.shade_correction:
             # TODO: multiple cameras
+            shade_correction_map = torch.sigmoid(self.shade_correction[0][None, None, :, :])
+            shade_correction_map = shade_correction_map / shade_correction_map.detach().max().clamp_min_(1e-4)
             shade_correction_map = torch.nn.functional.interpolate(
-                torch.sigmoid(self.shade_correction[0][None, None, :, :]),
+                shade_correction_map,
                 size=(rendered_image.shape[1], rendered_image.shape[2]),
                 mode="bilinear",
-                align_corners=False,
+                align_corners=True,
             )[0]  # [1, H, W]
-            shade_correction_map = shade_correction_map / shade_correction_map.detach().max().clamp_min_(1e-4)
             rendered_image = rendered_image * shade_correction_map
 
         rendered_image = adjustment[:3, None, None] * self.config.max_gray_scale * rendered_image
