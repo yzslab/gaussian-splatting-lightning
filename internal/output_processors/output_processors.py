@@ -15,6 +15,9 @@ class VanillaOutputProcessor(OutputProcessor):
 
 
 class VanillaOutputProcessorModule:
+    def setup(self, stage: str, pl_module=None, *args, **kwargs) -> None:
+        return
+
     def training_setup(self, pl_module) -> Tuple[Optional[List], Optional[List]]:
         return None, None
 

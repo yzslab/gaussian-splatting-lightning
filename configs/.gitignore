@@ -97,3 +97,4 @@
 !opacity_correction.yaml
 !normal_reg.yaml
 !learn_exposure.yaml
+!vgg_lpips.yaml

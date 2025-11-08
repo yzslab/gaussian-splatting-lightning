@@ -133,6 +133,16 @@ class GaussianModelLoader:
         return renderer
 
     @classmethod
+    def initialize_output_processor_from_checkpoint(cls, checkpoint: dict, stage: str, device):
+        state_dict = cls.filter_state_dict_by_prefix(checkpoint["state_dict"], "output_processor.", device=device)
+        output_processor = checkpoint["hyper_parameters"]["output_processor"].instantiate()
+        output_processor.setup(stage=stage)
+        output_processor.to(device)
+        output_processor.load_state_dict(state_dict)
+
+        return output_processor
+
+    @classmethod
     def initialize_model_and_renderer_from_checkpoint_file(
             cls,
             checkpoint_path: str,
