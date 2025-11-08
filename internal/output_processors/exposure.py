@@ -22,8 +22,6 @@ class ExposureProcessor(OutputProcessor):
 
     shade_correction_size: int = 128
 
-    shade_correction_max_gray_scale: float = 2.5
-
     def instantiate(self, *args, **kwargs):
         # avoid exceptions when loading previous checkpoint
         if not hasattr(self, "with_bias"):
@@ -68,7 +66,7 @@ class ExposureProcessorModule(torch.nn.Module):
             self.shade_correction = torch.nn.Parameter(
                 torch.full(
                     size=(n_cameras, self.config.shade_correction_size, self.config.shade_correction_size),
-                    fill_value=inverse_sigmoid(torch.tensor(1. / self.config.shade_correction_max_gray_scale, device=device)),
+                    fill_value=inverse_sigmoid(torch.tensor(0.95, device=device)),
                     device=device,
                 ),
                 requires_grad=True,
@@ -123,11 +121,12 @@ class ExposureProcessorModule(torch.nn.Module):
         if self.config.shade_correction:
             # TODO: multiple cameras
             shade_correction_map = torch.nn.functional.interpolate(
-                torch.sigmoid(self.shade_correction[0][None, None, :, :]) * self.config.shade_correction_max_gray_scale,
+                torch.sigmoid(self.shade_correction[0][None, None, :, :]),
                 size=(rendered_image.shape[1], rendered_image.shape[2]),
                 mode="bilinear",
                 align_corners=False,
             )[0]  # [1, H, W]
+            shade_correction_map = shade_correction_map / shade_correction_map.detach().max().clamp_min_(1e-4)
             rendered_image = rendered_image * shade_correction_map
 
         rendered_image = adjustment[:3, None, None] * self.config.max_gray_scale * rendered_image
