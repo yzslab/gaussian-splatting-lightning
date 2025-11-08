@@ -18,18 +18,18 @@ class ExposureProcessor(OutputProcessor):
 
     max_gamma: float = 5.
 
-    shadow_correction: bool = False
+    shade_correction: bool = False
 
-    shadow_correction_size: int = 128
+    shade_correction_size: int = 128
 
-    shadow_correction_max_gray_scale: float = 2.5
+    shade_correction_max_gray_scale: float = 2.5
 
     def instantiate(self, *args, **kwargs):
         # avoid exceptions when loading previous checkpoint
         if not hasattr(self, "with_bias"):
             self.config.with_bias = False
-        if not hasattr(self, "shadow_correction"):
-            self.config.shadow_correction = False
+        if not hasattr(self, "shade_correction"):
+            self.config.shade_correction = False
 
         # must > 1 or optimization will not work
         assert self.max_gray_scale > 1.
@@ -63,12 +63,12 @@ class ExposureProcessorModule(torch.nn.Module):
         assert torch.allclose(torch.sigmoid(exposures[:, -1]) * self.config.max_gamma, torch.tensor(1., device=device))
         self.exposure_parameters = torch.nn.Parameter(exposures, requires_grad=True)
 
-        if self.config.shadow_correction:
+        if self.config.shade_correction:
             # TODO: multiple cameras
             self.shade_correction = torch.nn.Parameter(
                 torch.full(
-                    size=(n_cameras, self.config.shadow_correction_size, self.config.shadow_correction_size),
-                    fill_value=inverse_sigmoid(torch.tensor(1. / self.config.shadow_correction_max_gray_scale, device=device)),
+                    size=(n_cameras, self.config.shade_correction_size, self.config.shade_correction_size),
+                    fill_value=inverse_sigmoid(torch.tensor(1. / self.config.shade_correction_max_gray_scale, device=device)),
                     device=device,
                 ),
                 requires_grad=True,
@@ -98,8 +98,8 @@ class ExposureProcessorModule(torch.nn.Module):
         params = [
             {"params": [self.exposure_parameters], "name": "exposure"},
         ]
-        if self.config.shadow_correction:
-            params.append({"params": [self.shade_correction], "name": "shadow"})
+        if self.config.shade_correction:
+            params.append({"params": [self.shade_correction], "name": "shade"})
 
         optimizer = torch.optim.Adam(
             params=params,
@@ -120,15 +120,15 @@ class ExposureProcessorModule(torch.nn.Module):
 
         rendered_image = outputs["render"]  # [C, H, W]
 
-        if self.config.shadow_correction:
+        if self.config.shade_correction:
             # TODO: multiple cameras
-            shadow_correction_map = torch.nn.functional.interpolate(
-                torch.sigmoid(self.shade_correction[0][None, None, :, :]) * self.config.shadow_correction_max_gray_scale,
+            shade_correction_map = torch.nn.functional.interpolate(
+                torch.sigmoid(self.shade_correction[0][None, None, :, :]) * self.config.shade_correction_max_gray_scale,
                 size=(rendered_image.shape[1], rendered_image.shape[2]),
                 mode="bilinear",
                 align_corners=False,
             )[0]  # [1, H, W]
-            rendered_image = rendered_image * shadow_correction_map
+            rendered_image = rendered_image * shade_correction_map
 
         rendered_image = adjustment[:3, None, None] * self.config.max_gray_scale * rendered_image
         if self.config.with_bias:
