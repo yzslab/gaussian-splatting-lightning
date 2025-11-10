@@ -1,0 +1,3 @@
+model:
+  output_processor:
+    class_path: internal.output_processors.bilagrid.BilagridProcessor

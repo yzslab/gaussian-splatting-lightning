@@ -371,10 +371,9 @@ class GaussianSplatting(LightningModule):
         self.output_processor.training_forward(batch, outputs)
         # metrics
         metrics, prog_bar = self.metric.get_train_metrics(self, self.gaussian_model, global_step, batch, outputs)
-        self.log_metrics(metrics, prog_bar, prefix="train", on_step=True, on_epoch=False)
-
         for i in self.extra_train_metrics:
-            metrics["loss"] = metrics["loss"] + i(outputs, batch, self.gaussian_model, global_step, self)
+            i(outputs, batch, self.gaussian_model, global_step, self, metrics, prog_bar)
+        self.log_metrics(metrics, prog_bar, prefix="train", on_step=True, on_epoch=False)
 
         # log learning rate and gaussian count every 100 iterations (without plus one step)
         if self.trainer.global_step % 100 == 0:
