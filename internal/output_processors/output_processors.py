@@ -21,5 +21,8 @@ class VanillaOutputProcessorModule:
     def training_setup(self, pl_module) -> Tuple[Optional[List], Optional[List]]:
         return None, None
 
+    def forward(self, camera, outputs) -> None:
+        return
+
     def training_forward(self, batch, outputs) -> None:
         return

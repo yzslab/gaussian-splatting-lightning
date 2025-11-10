@@ -109,11 +109,10 @@ class ExposureProcessorModule(torch.nn.Module):
             verbose=False,
         )
 
-    def training_forward(self, batch, outputs):
+    def forward(self, camera, outputs) -> None:
         if "render" not in outputs:
             return
 
-        camera = batch[0]
         adjustment = torch.sigmoid(self.exposure_parameters[camera.appearance_id])
 
         rendered_image = outputs["render"]  # [C, H, W]
@@ -134,6 +133,14 @@ class ExposureProcessorModule(torch.nn.Module):
         if self.config.with_bias:
             bias = adjustment[3:6, None, None] * 2. - 1.
             rendered_image = rendered_image + bias
-        rendered_image = torch.clamp(rendered_image, min=0., max=1.)
+
+        with torch.no_grad():
+            rendered_image_clamped = torch.clamp(rendered_image, min=0., max=1.)
+            rendered_image_clamped_diff = rendered_image - rendered_image_clamped
+        rendered_image = rendered_image - rendered_image_clamped_diff
+
         rendered_image = torch.pow(rendered_image + 1e-5, adjustment[-1] * self.config.max_gamma)
         outputs["render"] = rendered_image
+
+    def training_forward(self, batch, outputs):
+        return self(batch[0], outputs)
