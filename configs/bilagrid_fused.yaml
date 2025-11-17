@@ -1,0 +1,5 @@
+model:
+  output_processor:
+    class_path: internal.output_processors.bilagrid.BilagridProcessor
+    init_args:
+      fused: true

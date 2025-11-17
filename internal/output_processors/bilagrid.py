@@ -1,9 +1,17 @@
-from typing import Tuple, List, Optional
+from typing import Tuple, List, Optional, Any
 from internal.configs.instantiate_config import InstantiatableConfig
 from dataclasses import dataclass
 import torch
-from internal.utils.lib_bilagrid import BilateralGrid, slice, total_variation_loss
 from .output_processors import OutputProcessor
+
+
+@dataclass
+class Bilagrid:
+    BilateralGrid: Any
+
+    slice: Any
+
+    total_variation_loss: Any
 
 
 @dataclass
@@ -22,8 +30,17 @@ class BilagridProcessor(OutputProcessor):
 
     tv_loss_weight: float = 10.
 
+    fused: bool = True
+
     def instantiate(self, *args, **kwargs):
         return BilagridProcessorModule(self)
+
+    def import_lib(self):
+        if self.fused:
+            from fused_bilagrid import BilateralGrid, slice, total_variation_loss
+        else:
+            from internal.utils.lib_bilagrid import BilateralGrid, slice, total_variation_loss
+        return Bilagrid(BilateralGrid, slice, total_variation_loss)
 
 
 class BilagridProcessorModule(torch.nn.Module):
@@ -31,8 +48,10 @@ class BilagridProcessorModule(torch.nn.Module):
         super().__init__()
         self.config = config
 
+        self.bilagrid_interfaces = self.config.import_lib()
+
     def init_bilagrid(self, n_grids: int, device):
-        self.bgrid = BilateralGrid(
+        self.bgrid = self.bilagrid_interfaces.BilateralGrid(
             num=n_grids,
             grid_X=self.config.grid_x,
             grid_Y=self.config.grid_y,
@@ -52,7 +71,7 @@ class BilagridProcessorModule(torch.nn.Module):
 
             self.init_bilagrid(n_appearances, pl_module.device)
 
-            print("{} exposure groups".format(n_appearances))
+            print("{} appearance groups".format(n_appearances))
 
     def load_state_dict(self, state_dict, strict=True):
         n_appearances = state_dict["grids"].shape[0]
@@ -79,7 +98,7 @@ class BilagridProcessorModule(torch.nn.Module):
         )
 
     def tv_loss(self, outputs, batch, gaussian_model, global_step, pl_module, metrics, pbar):
-        tv_loss = self.config.tv_loss_weight * total_variation_loss(self.bgrid.grids)
+        tv_loss = self.config.tv_loss_weight * self.bilagrid_interfaces.total_variation_loss(self.bgrid.grids)
         metrics["loss"] = metrics["loss"] + tv_loss
         metrics["tv"] = tv_loss
         pbar["tv"] = True
@@ -97,7 +116,7 @@ class BilagridProcessorModule(torch.nn.Module):
         if "render" not in outputs:
             return
 
-        outputs["render"] = slice(
+        outputs["render"] = self.bilagrid_interfaces.slice(
             self.bgrid,
             xy=self.build_grid_xy(camera).unsqueeze(0),
             rgb=outputs["render"].permute(1, 2, 0).unsqueeze(0),

@@ -171,10 +171,10 @@ class ViewerRenderer:
     def depth_map_processor(self, depth_map, *args, **kwargs):
         # TODO: the pixels not covered by any Gaussian (alpha==0), should be 1. after normalization
         max_depth = self.max_depth
-        if max_depth == 0:
-            max_depth = depth_map.max()
         # normalize raw depth_map
         depth_map = depth_map - torch.minimum(depth_map.min(), torch.tensor(0., dtype=torch.float, device=depth_map.device))  # avoid negative values
+        if max_depth == 0:
+            max_depth = depth_map.max()
         depth_map = (depth_map / (max_depth + 1e-8)).clamp(max=1.)
         # apply colormap
         return Visualizers.float_colormap(depth_map, self.depth_map_color_map)
