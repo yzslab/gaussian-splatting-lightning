@@ -102,3 +102,4 @@
 !vgg_lpips.yaml
 !bilagrid.yaml
 !bilagrid_fused.yaml
+!background_removal.yaml
