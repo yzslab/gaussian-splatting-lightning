@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Union, Tuple, Literal, Any
 import math
 import torch
+from internal.utils.general_utils import build_rotation
 from .renderer import RendererConfig, Renderer, RendererOutputInfo, RendererOutputTypes
 
 from gsplat.cuda._wrapper import (
@@ -250,12 +251,12 @@ class GSplatV1RendererModule(Renderer):
         # normals
         if self.is_type_required(render_type_bits, self._NORMAL_REQUIRED):
             # TODO: implement in CUDA
-            from internal.utils.general_utils import build_scaling_rotation
-            scales_2d = torch.clone(scales)
-            scales_2d[..., -1] = 1.
-            normals = build_scaling_rotation(scales_2d, pc.get_rotations())[:, :3, -1]
+            normals = build_rotation(pc.get_rotations())[:, :3, -1]
+
+            # normals point from primitives to camera centers
             dirs = pc.get_means() - viewpoint_camera.camera_center
-            is_point_to_the_view = torch.einsum("ij,ij->i", normals, dirs) > 0
+            planar_distances = torch.einsum("ij,ij->i", normals, dirs)
+            is_point_to_the_view = planar_distances > 0
             normal_multiplers = torch.where(is_point_to_the_view, -1., 1.)
             normals = normals * normal_multiplers.unsqueeze(-1)
 
