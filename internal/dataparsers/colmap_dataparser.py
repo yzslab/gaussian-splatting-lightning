@@ -212,8 +212,6 @@ class ColmapDataParser(DataParser):
                 xyzs.append(xyz)
                 rgbs.append(rgb)
                 errors.append(error)
-        if len(xyzs) == 0:
-            return np.zeros((0, 3), dtype=np.float64), np.zeros((0, 3), dtype=np.uint8), np.zeros((0,), dtype=np.float64)
         return np.asarray(xyzs), np.asarray(rgbs), np.asarray(errors)
 
     def get_outputs(self) -> DataParserOutputs:
@@ -550,6 +548,10 @@ class ColmapDataParser(DataParser):
             len(image_set[1]),
             loaded_mask_count,
         ))
+
+        if xyz.shape[0] == 0:
+            xyz = np.zeros((0, 3), dtype=np.float32)
+            rgb = np.zeros((0, 3), dtype=np.uint8)
 
         return DataParserOutputs(
             train_set=image_set[0],
