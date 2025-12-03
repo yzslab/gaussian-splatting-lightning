@@ -219,8 +219,14 @@ class ColmapDataParser(DataParser):
     def get_outputs(self) -> DataParserOutputs:
         # load colmap sparse model
         sparse_model_dir = self.detect_sparse_model_dir()
-        cameras = colmap_utils.read_cameras_binary(os.path.join(sparse_model_dir, "cameras.bin"))
-        images = colmap_utils.read_images_binary(os.path.join(sparse_model_dir, "images.bin"))
+        if os.path.exists(os.path.join(sparse_model_dir, "cameras.bin")):
+            cameras = colmap_utils.read_cameras_binary(os.path.join(sparse_model_dir, "cameras.bin"))
+            images = colmap_utils.read_images_binary(os.path.join(sparse_model_dir, "images.bin"))
+        elif os.path.exists(os.path.join(sparse_model_dir, "cameras.txt")):
+            cameras = colmap_utils.read_cameras_text(os.path.join(sparse_model_dir, "cameras.txt"))
+            images = colmap_utils.read_images_text(os.path.join(sparse_model_dir, "images.txt"))
+        else:
+            raise FileNotFoundError()
 
         # sort images
         images = dict(sorted(images.items(), key=lambda item: item[0]))
@@ -373,13 +379,27 @@ class ColmapDataParser(DataParser):
 
         if self.params.points_from == "sfm":
             print("loading colmap 3D points")
-            xyz, rgb, point_errors = ColmapDataParser.read_points3D_binary(
-                os.path.join(sparse_model_dir, "points3D.bin"),
-                selected_image_ids=selected_image_ids,
-                mask_path_list=mask_path_list,
-                image_point_xys_list=image_point_xys_list,
-                image_point3D_ids_list=image_point3D_ids_list,
-            )
+            if os.path.exists(os.path.join(sparse_model_dir, "points3D.bin")):
+                xyz, rgb, point_errors = ColmapDataParser.read_points3D_binary(
+                    os.path.join(sparse_model_dir, "points3D.bin"),
+                    selected_image_ids=selected_image_ids,
+                    mask_path_list=mask_path_list,
+                    image_point_xys_list=image_point_xys_list,
+                    image_point3D_ids_list=image_point3D_ids_list,
+                )
+            elif os.path.exists(os.path.join(sparse_model_dir, "points3D.txt")):
+                points_from_txt = colmap_utils.read_points3D_text(os.path.join(sparse_model_dir, "points3D.txt"))
+                xyz = []
+                rgb = []
+                point_errors = []
+                for i in points_from_txt.values():
+                    xyz.append(i.xyz)
+                    rgb.append(i.rgb)
+                    point_errors.append(i.error)
+                xyz = np.asarray(xyz)
+                rgb = np.asarray(rgb)
+                point_errors = np.asarray(point_errors)
+
             if self.params.max_point_error is not None and self.params.max_point_error > 0:
                 valid_point_mask = point_errors < self.params.max_point_error
                 print("valid points: {}/{}".format(valid_point_mask.sum(), valid_point_mask.shape[0]))
