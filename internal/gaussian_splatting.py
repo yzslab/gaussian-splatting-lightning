@@ -96,8 +96,8 @@ class GaussianSplatting(LightningModule):
         self.web_viewer: TrainingViewer = None
 
         self.batch_size = 1
-        self.restored_epoch = 0
-        self.restored_global_step = 0
+        self.restored_epoch = -1
+        self.restored_global_step = -1
 
         self.max_image_saving_threads = 16
         self.image_queue = queue.Queue(maxsize=self.max_image_saving_threads)
