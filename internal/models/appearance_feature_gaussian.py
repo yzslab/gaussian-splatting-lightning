@@ -40,6 +40,7 @@ class AppearanceFeatureGaussianModel(VanillaGaussianModel):
         appearance_features = torch.empty((n, self.config.appearance_feature_dims), dtype=torch.float)
         if self.config.appearance_feature_init_type == "zero":
             torch.nn.init.zeros_(appearance_features)
+            appearance_features[:, -1] = 1.  # avoid gradient vanishing
         elif self.config.appearance_feature_init_type == "rand":
             appearance_features.copy_(torch.rand_like(appearance_features))
         elif self.config.appearance_feature_init_type == "normal":
