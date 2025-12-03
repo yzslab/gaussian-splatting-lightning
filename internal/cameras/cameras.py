@@ -66,6 +66,36 @@ class Camera:
 
         return self.world_to_camera @ K.T
 
+    def rescale(self, width: int, height: int):
+        wh = torch.stack([self.width, self.height]).to(torch.float32)
+        new_wh = torch.tensor([width, height], dtype=wh.dtype, device=self.device)
+        scale_factors = new_wh / wh
+        new_wh = new_wh.to(torch.int32)
+        new_intrinsics = torch.tensor([[self.fx, self.cx], [self.fy, self.cy]], device=self.device) * scale_factors[:, None]
+
+        return Camera(
+            idx=self.idx,
+            R=self.R,
+            T=self.T,
+            fx=new_intrinsics[0, 0],  # updated
+            fy=new_intrinsics[1, 0],  # updated
+            fov_x=self.fov_x,
+            fov_y=self.fov_y,
+            cx=new_intrinsics[0, 1],  # updated
+            cy=new_intrinsics[1, 1],  # updated
+            width=new_wh[0],  # updated
+            height=new_wh[1],  # updated
+            appearance_id=self.appearance_id,
+            normalized_appearance_id=self.normalized_appearance_id,
+            time=self.time,
+            distortion_params=self.distortion_params,
+            camera_type=self.camera_type,
+            world_to_camera=self.world_to_camera,
+            projection=None,  # updated, gsplat does not require this
+            full_projection=None,  # updated, gsplat does not require this
+            camera_center=self.camera_center,
+        )
+
     @property
     def device(self):
         return self.R.device
@@ -205,3 +235,15 @@ class Cameras:
     def __iter__(self):
         for i in range(len(self)):
             yield self[i]
+
+    def get_K(self):
+        K = torch.zeros((len(self), 4, 4), dtype=self.R.dtype, device=self.R.device)
+
+        K[..., 0, 0] = self.fx
+        K[..., 1, 1] = self.fy
+        K[..., 0, 2] = self.cx
+        K[..., 1, 2] = self.cy
+        K[..., 2, 2] = 1.
+        K[..., 3, 3] = 1.
+
+        return K
