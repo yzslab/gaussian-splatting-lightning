@@ -74,8 +74,8 @@ class BilagridProcessorModule(torch.nn.Module):
             print("{} appearance groups".format(n_appearances))
 
     def load_state_dict(self, state_dict, strict=True):
-        n_appearances = state_dict["grids"].shape[0]
-        self.init_exposures(n_appearances, state_dict["grids"].device)
+        n_appearances = state_dict["bgrid.grids"].shape[0]
+        self.init_bilagrid(n_appearances, state_dict["bgrid.grids"].device)
         return super().load_state_dict(state_dict, strict)
 
     def training_setup(self, pl_module):
