@@ -1,0 +1,13 @@
+model:
+  gaussian:
+    optimization:
+      means_lr_init: 0.00004
+      means_lr_scheduler:
+        lr_final: 0.000002
+      shs_rest_lr: 0.00025
+      opacities_lr: 0.025
+  density:
+    class_path: internal.density_controllers.gns.GNS
+    init_args:
+      densify_grad_threshold: 0.0003
+      absgrad: true
