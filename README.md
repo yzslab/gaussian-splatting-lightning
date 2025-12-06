@@ -46,6 +46,8 @@
   * <a href="#219-stopthepop">StopThePop (2.19.)</a>
   * <a href="#220-scale-regularization">Scale Regularization (2.20.)</a>
   * <a href="#221-taming-3dgs">Taming 3DGS (2.21.)</a>
+  * <a href="#222-bilateral-grid">Bilateral Grid</a>
+  * <a href="#223-gns">GNS</a>
 ## 1. Installation
 ### 1.1. Clone repository
 
@@ -741,6 +743,29 @@ There are two implementations: one is the gsplat v1 based, and the other is the 
 
   You need to adjust the `--model.density.budget` if you want to use the steerable one.
 
+### 2.22. <a href="https://bilarfpro.github.io/">Bilateral Grid</a>
+
+The negative impacts of appearance variations can be largely mitigated using this method.
+
+* PyTorch based version: `configs/bilagrid.yaml`
+* Faster Fully-Fused version
+  * Install the fused-bilagrid first: `pip install -r requirements/fused-bilagrid.txt`
+  * Then run training with `configs/bilagrid_fused.yaml`
+
+
+### 2.23. <a href="https://xiaobin2001.github.io/GNS-web/">GNS</a>
+
+Better quality can be achieved with fewer primitives.
+
+My modified gsplat v1 is required.
+
+```bash
+python main.py fit \
+  --config configs/gsplat_v1.yaml \
+  --config configs/gns.yaml \
+  --model.density.budget YOUR_EXPECTED_BUDGET_GOES_HERE \
+  ...
+```
 
 ## 3. Evaluation
 
