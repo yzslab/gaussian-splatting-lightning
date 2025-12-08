@@ -68,10 +68,14 @@ class HasInverseDepthMetricsModule(VanillaMetricsImpl):
         pass
 
     def get_inverse_depth_metric(self, batch, outputs):
-        camera, image_info, gt_inverse_depth = batch
+        _, image_info, gt_inverse_depth_data = batch
 
-        if gt_inverse_depth is None:
-            return torch.tensor(0., device=camera.device)
+        device = batch[0].device
+
+        if gt_inverse_depth_data is None:
+            return torch.tensor(0., device=device)
+                
+        gt_inverse_depth = gt_inverse_depth_data.get(device=device)
 
         predicted_inverse_depth = outputs[self.config.depth_output_key].squeeze(0)
         if self.config.depth_normalized:
@@ -79,19 +83,17 @@ class HasInverseDepthMetricsModule(VanillaMetricsImpl):
                 max_depth = predicted_inverse_depth.max()
                 min_depth = predicted_inverse_depth.min()
             predicted_inverse_depth = (predicted_inverse_depth - min_depth) / (max_depth - min_depth + 1e-8)
-        elif self.config.depth_median_normalization:
-            gt_inverse_depth, median = gt_inverse_depth
-            predicted_inverse_depth = predicted_inverse_depth / median
+        elif gt_inverse_depth_data.median is not None:
+            assert self.config.depth_median_normalization
+            predicted_inverse_depth = predicted_inverse_depth / gt_inverse_depth_data.median
         elif self.config.depth_mean_normalization:
             mean_depth = torch.mean(gt_inverse_depth)
             gt_inverse_depth = gt_inverse_depth / mean_depth
             predicted_inverse_depth = predicted_inverse_depth / mean_depth
 
-        if isinstance(gt_inverse_depth, tuple):
-            gt_inverse_depth, gt_inverse_depth_mask = gt_inverse_depth
-
-            gt_inverse_depth = gt_inverse_depth * gt_inverse_depth_mask
-            predicted_inverse_depth = predicted_inverse_depth * gt_inverse_depth_mask
+        if gt_inverse_depth_data.mask is not None:
+            gt_inverse_depth = gt_inverse_depth * gt_inverse_depth_data.mask
+            predicted_inverse_depth = predicted_inverse_depth * gt_inverse_depth_data.mask
 
         # mask
         if image_info[-1] is not None:
@@ -104,11 +106,35 @@ class HasInverseDepthMetricsModule(VanillaMetricsImpl):
     def get_weight(self, step: int):
         return self.config.depth_loss_weight.init * (self.config.depth_loss_weight.final_factor ** min(step / self.config.depth_loss_weight.max_steps, 1))
 
+    def get_predicted_depth(self, pl_module, gaussian_model, batch, outputs):
+        predicted_depth = outputs
+        if outputs.get(self.config.depth_output_key, None) is None and batch[-1] is not None:
+            assert batch[-1].camera is not None
+            depth_camera = batch[-1].camera.to_device(pl_module.device)
+            predicted_depth = pl_module.renderer(
+                depth_camera,
+                gaussian_model,
+                torch.zeros((3, ), dtype=torch.float32, device=pl_module.device),
+                render_types=[
+                    self.config.depth_output_key,
+                ],
+            )
+
+        return predicted_depth
+
     def get_train_metrics(self, pl_module, gaussian_model, step: int, batch, outputs) -> Tuple[Dict[str, Any], Dict[str, bool]]:
         metrics, pbar = super().get_train_metrics(pl_module, gaussian_model, step, batch, outputs)
 
         d_reg_weight = self.get_weight(step)
-        d_reg = self.get_inverse_depth_metric(batch, outputs) * d_reg_weight
+
+        predicted_depth = self.get_predicted_depth(
+            pl_module,
+            gaussian_model,
+            batch,
+            outputs,
+        )
+
+        d_reg = self.get_inverse_depth_metric(batch, predicted_depth) * d_reg_weight
 
         metrics["loss"] = metrics["loss"] + d_reg
         metrics["d_reg"] = d_reg
@@ -121,7 +147,14 @@ class HasInverseDepthMetricsModule(VanillaMetricsImpl):
     def get_validate_metrics(self, pl_module, gaussian_model, batch, outputs) -> Tuple[Dict[str, float], Dict[str, bool]]:
         metrics, pbar = super().get_validate_metrics(pl_module, gaussian_model, batch, outputs)
 
-        d_reg = self.get_inverse_depth_metric(batch, outputs)
+        predicted_depth = self.get_predicted_depth(
+            pl_module,
+            gaussian_model,
+            batch,
+            outputs,
+        )
+
+        d_reg = self.get_inverse_depth_metric(batch, predicted_depth)
 
         metrics["loss"] = metrics["loss"] + d_reg
         metrics["d_reg"] = d_reg

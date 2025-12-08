@@ -1,0 +1,8 @@
+model:
+  # NOTE: do not add depth map output here
+  renderer_output_types:
+    - rgb
+data:
+  parser:
+    depth_dir: da3_inverse_depths
+    depth_scale_name: da3_inverse_depths-scales

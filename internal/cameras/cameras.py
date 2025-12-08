@@ -68,9 +68,8 @@ class Camera:
 
     def rescale(self, width: int, height: int):
         wh = torch.stack([self.width, self.height]).to(torch.float32)
-        new_wh = torch.tensor([width, height], dtype=wh.dtype, device=self.device)
-        scale_factors = new_wh / wh
-        new_wh = new_wh.to(torch.int32)
+        new_wh = torch.tensor([width, height], dtype=torch.int32, device=self.device)
+        scale_factors = new_wh.to(torch.float32) / wh
         new_intrinsics = torch.tensor([[self.fx, self.cx], [self.fy, self.cy]], device=self.device) * scale_factors[:, None]
 
         return Camera(
