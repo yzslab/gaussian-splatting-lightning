@@ -749,7 +749,7 @@ The negative impacts of appearance variations can be largely mitigated using thi
 
 * PyTorch based version: `configs/bilagrid.yaml`
 * Faster Fully-Fused version
-  * Install the fused-bilagrid first: `pip install -r requirements/fused-bilagrid.txt`
+  * Install the <a href="https://github.com/harry7557558/fused-bilagrid">fused-bilagrid</a> first: `pip install -r requirements/fused-bilagrid.txt`
   * Then run training with `configs/bilagrid_fused.yaml`
 
 
