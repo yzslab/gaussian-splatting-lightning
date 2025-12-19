@@ -9,5 +9,6 @@ model:
   density:
     class_path: internal.density_controllers.gns.GNS
     init_args:
+      opacity_reset_value: 0.05
       densify_grad_threshold: 0.0003
       absgrad: true

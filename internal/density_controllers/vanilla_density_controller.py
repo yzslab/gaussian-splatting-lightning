@@ -17,6 +17,8 @@ class VanillaDensityController(DensityController):
 
     opacity_reset_interval: int = 3000
 
+    opacity_reset_value: float = 0.01
+
     densify_from_iter: int = 500
 
     densify_until_iter: int = 15_000
@@ -268,7 +270,7 @@ class VanillaDensityControllerImpl(DensityControllerImpl):
     def _reset_opacities(self, gaussian_model: VanillaGaussianModel, optimizers: List):
         opacities_new = gaussian_model.opacity_inverse_activation(torch.min(
             gaussian_model.get_opacities(),
-            torch.ones_like(gaussian_model.get_opacities()) * 0.01,
+            torch.ones_like(gaussian_model.get_opacities()) * self.config.opacity_reset_value,
         ))
         new_parameters = Utils.replace_tensors_to_properties(tensors={
             "opacities": opacities_new,

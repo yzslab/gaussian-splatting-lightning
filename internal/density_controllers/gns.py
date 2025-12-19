@@ -10,6 +10,7 @@ Below components from Improved-GS are not included yet:
 from dataclasses import dataclass
 import math
 import torch
+from tqdm.auto import tqdm
 from internal.utils.general_utils import build_rotation
 from .vanilla_density_controller import VanillaDensityController, VanillaDensityControllerImpl
 from .taming_3dgs_density_controller import Taming3DGSUtils
@@ -20,6 +21,8 @@ from .logger_mixin import LoggerMixin
 @dataclass
 class GNS(VanillaDensityController):
     budget: int = -1
+
+    budget_intermediate_scale: float = 3.
 
     opacity_reg_interval: int = 50
 
@@ -41,6 +44,10 @@ class GNS(VanillaDensityController):
 
     split_distance: float = 0.45
 
+    edge_aware: bool = True
+
+    edge_on_cpu: bool = False
+
     def instantiate(self, *args, **kwargs):
         assert self.budget > 0, "The budget that represents the maximum number of Gaussians must be provided"
 
@@ -51,8 +58,16 @@ class GNSModule(LoggerMixin, VanillaDensityControllerImpl):
     def setup(self, stage, pl_module):
         super().setup(stage, pl_module)
 
-        pl_module.on_train_start_hooks.append(self.get_edges)
+        if self.config.edge_aware:
+            self.importance_sample_interval = self.config.densification_interval // self.config.n_sample_cameras
+            tqdm.write("importance_sample_interval={}".format(self.importance_sample_interval))
+            self.importance_sample_from = self.config.densify_from_iter - self.config.densification_interval
+
+        if self.config.edge_aware:
+            pl_module.on_train_start_hooks.append(self.get_edges)
         pl_module.extra_train_metrics.append(self.opacity_reg)
+        if self.config.edge_aware:
+            pl_module.on_after_backward_hooks.append(self.sample_importance)
         pl_module.on_after_backward_hooks.append(self.natural_selection)
         pl_module.on_after_backward_hooks.append(self.restore_opacity_lr_without_pruning)
         # self.avoid_state_dict = (pl_module,)
@@ -63,8 +78,11 @@ class GNSModule(LoggerMixin, VanillaDensityControllerImpl):
         self.register_buffer("prune_iter", torch.tensor(9999999, dtype=torch.int32, device=pl_module.device))
         self.register_buffer("opacity_lr_factor", torch.tensor(1., device=pl_module.device))
 
+    def reset_importance(self, gaussian_model):
+        self.gaussian_importance = torch.zeros((gaussian_model.n_gaussians, ), dtype=torch.float, device=self.gaussian_importance.device)
+        self.n_views = 0
+
     def get_edges(self, gaussian_model, pl_module):
-        from tqdm.auto import tqdm
         train_set = pl_module.trainer.train_dataloader.cached
         all_edges = []
         for item in tqdm(train_set, leave=False, desc="Getting edges..."):
@@ -73,8 +91,18 @@ class GNSModule(LoggerMixin, VanillaDensityControllerImpl):
                 image = image.float() / 255.
             edges_loss = Taming3DGSUtils.get_edges(image).squeeze(0)
             edges_loss_norm = (edges_loss - torch.min(edges_loss)) / (torch.max(edges_loss) - torch.min(edges_loss))
-            all_edges.append(edges_loss_norm.cpu())
+            if self.config.edge_on_cpu:
+                edges_loss_norm = edges_loss_norm.cpu()
+            else:
+                edges_loss_norm = edges_loss_norm.to(device=pl_module.device)
+            all_edges.append(edges_loss_norm)
         self.all_edges = all_edges
+
+        self.register_buffer("gaussian_importance", torch.zeros(
+            (pl_module.gaussian_model.n_gaussians, ), dtype=torch.float, device=pl_module.device),
+            persistent=False,
+        )
+        self.n_views = 0
 
     def get_budget_by_step(self, step: int):
         startI = self.config.densify_from_iter
@@ -82,20 +110,58 @@ class GNSModule(LoggerMixin, VanillaDensityControllerImpl):
         rate = (step - startI) / (endI - startI)
 
         if rate >= 1:
-            budget = int(self.config.budget * 3)
+            budget = int(self.config.budget * self.config.budget_intermediate_scale)
         else:
-            budget = int(math.sqrt(rate) * self.config.budget * 3)
+            budget = int(math.sqrt(rate) * self.config.budget * self.config.budget_intermediate_scale)
 
         return budget
 
+    def sample_importance(self, outputs, batch, gaussian_model, global_step, pl_module):
+        if global_step < self.importance_sample_from:
+            return
+        if global_step > self.config.densify_until_iter:
+            return
+        if global_step % self.importance_sample_interval != 0:
+            return
+
+        self.calculate_gaussian_importance_with_outputs(outputs)
+
+    def calculate_gaussian_importance_with_outputs(self, outputs):
+        with torch.no_grad():
+            opacities = outputs["opacities"]
+            projections = outputs["projections"]
+            isects = outputs["isects"]
+            camera = outputs["camera"]
+            visibility_filter = outputs["visibility_filter"]
+
+            all_depths, all_radii, loss_accum, reverse_counts, blending_weights, dist_accum = Taming3DGSUtils.rasterize_to_weights(
+                opacities=opacities,
+                projections=projections,
+                isects=isects,
+                pixel_weights=self.all_edges[camera.idx].to(device=camera.device),
+                viewpoint_camera=camera,
+            )
+
+            self.gaussian_importance += Taming3DGSUtils.normalize(1., loss_accum) * visibility_filter
+            self.n_views += 1
+
     def get_gaussian_importance(self, gaussian_model):
+        assert self.n_views > 0
+        return self.gaussian_importance / self.n_views
+
         pl_module = self.avoid_state_dict["pl"]
+        global_step = pl_module.trainer.global_step + 1
 
         # sample cameras
         n_cameras = len(pl_module.trainer.train_dataloader.cached)
         sample_cameras = []
         sample_edge_losses = []
-        for camera_idx in torch.randperm(n_cameras, dtype=torch.int)[:self.config.n_sample_cameras].tolist():
+
+        n_samples = self.config.n_sample_cameras
+        if (global_step % self.config.opacity_reset_interval) == (4 * self.config.densification_interval) and global_step < 3 * self.config.opacity_reset_interval:
+            n_samples = n_cameras
+            print("sample all cameras")
+        for camera_idx in torch.randperm(n_cameras, dtype=torch.int)[:n_samples].tolist():
             sample_cameras.append(pl_module.trainer.train_dataloader.cached[camera_idx])
             sample_edge_losses.append(self.all_edges[camera_idx])
 
@@ -107,7 +173,7 @@ class GNSModule(LoggerMixin, VanillaDensityControllerImpl):
             dtype=torch.float32,
         )
 
-        for camera_idx in range(len(sample_cameras)):
+        for camera_idx in tqdm(range(len(sample_cameras)), leave=False, desc="Sampling"):
             # TODO: mask
             # TODO: move camera to GPU
             camera, image_info, mask = sample_cameras[camera_idx]
@@ -156,7 +222,7 @@ class GNSModule(LoggerMixin, VanillaDensityControllerImpl):
             )
 
             # In gsplat, only the visible Gaussians have valid depth values
-            all_depths *= visibility_filter
+            # all_depths *= visibility_filter
 
             gaussian_importance += Taming3DGSUtils.normalize(1., loss_accum) * visibility_filter
 
@@ -166,11 +232,9 @@ class GNSModule(LoggerMixin, VanillaDensityControllerImpl):
 
     def _densify_and_prune(self, max_screen_size, gaussian_model, optimizers):
         min_opacity = self.config.cull_opacity_threshold
-        prune_extent = self.prune_extent
 
         # calculate mean grads
-        grads = self.xyz_gradient_accum / self.denom
-        grads[grads.isnan()] = 0.0
+        grads = torch.nan_to_num_(self.xyz_gradient_accum / self.denom, nan=0, posinf=0, neginf=0)
 
         # get the mask using the gradient threshold
         grad_norms = torch.norm(grads, dim=-1)
@@ -188,8 +252,11 @@ class GNSModule(LoggerMixin, VanillaDensityControllerImpl):
 
         if n_addable > 0:
             # sample based on the gradient norms
-            grad_norms = grad_norms * selected_pts_mask
-            gaussian_importance = self.get_gaussian_importance(gaussian_model) * selected_pts_mask
+            if self.config.edge_aware:
+                gaussian_importance = self.get_gaussian_importance(gaussian_model) * selected_pts_mask
+            else:
+                grad_norms = grad_norms * selected_pts_mask
+                gaussian_importance = grad_norms
             sampled_indices = torch.multinomial(
                 gaussian_importance,
                 n_addable,
@@ -214,11 +281,11 @@ class GNSModule(LoggerMixin, VanillaDensityControllerImpl):
             gaussian_model.reset_opacity_max()
         else:
             prune_mask = (gaussian_model.get_opacities() < min_opacity).squeeze()
-        if max_screen_size:
-            big_points_vs = self.max_radii2D > max_screen_size
-            big_points_ws = gaussian_model.get_scales().max(dim=1).values > 0.1 * prune_extent
-            prune_mask = torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws)
         self._prune_points(prune_mask, gaussian_model, optimizers)
+        n_pruned = prune_mask.sum()
+
+        if self.config.edge_aware and n_addable + n_pruned > 0:
+            self.reset_importance(gaussian_model=gaussian_model)
 
         torch.cuda.empty_cache()
 
@@ -320,7 +387,7 @@ class GNSModule(LoggerMixin, VanillaDensityControllerImpl):
             # find the min opacity that should survive
             value = sorted_values[gaussian_model.n_gaussians - self.config.budget].item()
             self.opacity_min = value * 0.8
-            print("opacity_min={}".format(self.opacity_min))
+            tqdm.write("opacity_min={}".format(self.opacity_min))
         elif ((global_step - 1) % 100) == 0:
             # select the goal based on current number of iteration, where the goal is proportional to the iteration
             opacity_goal = (1 - (global_step - self.config.opacity_reg_from) / (self.config.opacity_reg_until - self.config.opacity_reg_from - 1000)) * self.opacity_min
@@ -405,7 +472,7 @@ class GNSModule(LoggerMixin, VanillaDensityControllerImpl):
         mask[sampled_indices] = False
         self._prune_points(mask, gaussian_model, optimizers)
 
-        print("Final pruning activated")
+        tqdm.write("Final pruning activated at {}".format(self.avoid_state_dict["pl"].trainer.global_step))
 
     def _set_opacity_lr(self, factor):
         for opt in self.avoid_state_dict["pl"].gaussian_optimizers:
