@@ -66,9 +66,16 @@ class ProgressBar(TQDMProgressBar):
 
     def on_train_start(self, trainer, pl_module) -> None:
         super().on_train_start(trainer, pl_module)
-        self.max_epochs = trainer.max_epochs
-        if self.max_epochs < 0:
-            self.max_epochs = math.ceil(trainer.max_steps / self.total_train_batches)
+
+        self.epoch_pbar_max = trainer.max_epochs
+        self.epoch_pbar_increment = 1
+        if self.epoch_pbar_max < 0:
+            self.epoch_pbar_max = trainer.max_steps
+            self.epoch_pbar_increment = self.total_train_batches
+
+        # self.max_epochs = trainer.max_epochs
+        # if self.max_epochs < 0:
+            # self.max_epochs = math.ceil(trainer.max_steps / self.total_train_batches)
 
         self.epoch_progress_bar = Tqdm(
             desc=self.train_description,
@@ -77,15 +84,15 @@ class ProgressBar(TQDMProgressBar):
             leave=False,
             dynamic_ncols=True,
             file=sys.stdout,
-            total=self.max_epochs,
+            total=self.epoch_pbar_max,
         )
-        self.epoch_progress_bar.update(trainer.current_epoch)
+        self.epoch_progress_bar.update(trainer.global_step)
 
     def on_train_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         super().on_train_epoch_end(trainer, pl_module)
         self.on_epoch_metrics.update(self.get_metrics(trainer, pl_module))
         self.epoch_progress_bar.set_postfix(self.on_epoch_metrics)
-        self.epoch_progress_bar.update()
+        self.epoch_progress_bar.update(self.epoch_pbar_increment)
 
     def on_validation_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         super().on_validation_epoch_end(trainer, pl_module)
