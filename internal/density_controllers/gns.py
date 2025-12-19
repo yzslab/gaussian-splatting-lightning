@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import math
 import torch
 from tqdm.auto import tqdm
+from gsplat.rasterize_to_weights import rasterize_to_vis_aware_weights
 from internal.utils.general_utils import build_rotation
 from .vanilla_density_controller import VanillaDensityController, VanillaDensityControllerImpl
 from .taming_3dgs_density_controller import Taming3DGSUtils
@@ -126,6 +127,27 @@ class GNSModule(LoggerMixin, VanillaDensityControllerImpl):
 
         self.calculate_gaussian_importance_with_outputs(outputs)
 
+    @staticmethod
+    def rasterize_to_vis_aware_weights(opacities, projections, isects, pixel_weights, preprocessed_camera):
+        img_width, img_height = preprocessed_camera[-1]
+
+        radii, means2d, depths, conics, _ = projections
+        _, _, flatten_ids, isect_offsets = isects
+
+        accum_weights = rasterize_to_vis_aware_weights(
+            means2d=means2d,
+            conics=conics,
+            opacities=opacities.unsqueeze(0),
+            image_width=img_width,
+            image_height=img_height,
+            tile_size=16,
+            isect_offsets=isect_offsets,
+            flatten_ids=flatten_ids,
+            pixel_weights=pixel_weights.unsqueeze(0),
+        )
+
+        return depths[0], radii[0], accum_weights[0]
+
     def calculate_gaussian_importance_with_outputs(self, outputs):
         with torch.no_grad():
             opacities = outputs["opacities"]
@@ -134,12 +156,12 @@ class GNSModule(LoggerMixin, VanillaDensityControllerImpl):
             camera = outputs["camera"]
             visibility_filter = outputs["visibility_filter"]
 
-            all_depths, all_radii, loss_accum, reverse_counts, blending_weights, dist_accum = Taming3DGSUtils.rasterize_to_weights(
+            _, _, loss_accum = self.rasterize_to_vis_aware_weights(
                 opacities=opacities,
                 projections=projections,
                 isects=isects,
                 pixel_weights=self.all_edges[camera.idx].to(device=camera.device),
-                viewpoint_camera=camera,
+                preprocessed_camera=outputs["preprocessed_camera"],
             )
 
             self.gaussian_importance += Taming3DGSUtils.normalize(1., loss_accum) * visibility_filter
