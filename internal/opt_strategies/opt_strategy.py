@@ -10,5 +10,5 @@ class OptStrategyModule:
     def on_train_start(self, pl_modules):
         return
 
-    def step(self):
+    def step(self, global_step, pl_module):
         raise NotImplementedError()

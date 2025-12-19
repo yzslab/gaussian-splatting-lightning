@@ -38,7 +38,7 @@ class VanillaOptStrategyModule(OptStrategyModule):
 
         return schedulers
 
-    def step(self, pl_module):
+    def step(self, global_step, pl_module):
         for opt in self._multiple_optimizer_step_fix(pl_module.optimizers()):
             opt.step()
             opt.zero_grad(set_to_none=True)
