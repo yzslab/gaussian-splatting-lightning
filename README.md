@@ -723,7 +723,7 @@ There are two implementations: one is the gsplat v1 based, and the other is the 
 * (a) Install libraries first
   * fused-ssim
     ```bash
-    pip install -r requirements/fused-ssim.txt
+    pip install --no-build-isolation -r requirements/fused-ssim.txt
     ```
 
   * my modified gsplat v1 if you want the gsplat v1 based one (refer to <a href="#15-install-optional-packages">1.5.</a> for the setup guide)
