@@ -30,6 +30,7 @@ class GradAccOptStrategyModule(OptStrategyModule):
         sparse = []
 
         for opt in optimizers:
+            # TODO: this check may not be reliable
             if opt.__module__.startswith("torch.optim."):
                 non_sparse.append(opt)
             else:
