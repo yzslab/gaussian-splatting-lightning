@@ -1,0 +1,3 @@
+model:
+  opt_strategy:
+    class_path: internal.opt_strategies.grad_acc.GradAccOptStrategy
