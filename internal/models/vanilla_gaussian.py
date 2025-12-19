@@ -281,7 +281,6 @@ class VanillaGaussianModel(
         l = [
             {'params': [self.gaussians["shs_dc"]], 'lr': optimization_config.shs_dc_lr, "name": "shs_dc"},
             {'params': [self.gaussians["shs_rest"]], 'lr': optimization_config.shs_rest_lr, "name": "shs_rest"},
-            {'params': [self.gaussians["opacities"]], 'lr': optimization_config.opacities_lr, "name": "opacities"},
             {'params': [self.gaussians["scales"]], 'lr': optimization_config.scales_lr, "name": "scales"},
             {'params': [self.gaussians["rotations"]], 'lr': optimization_config.rotations_lr, "name": "rotations"},
         ]
