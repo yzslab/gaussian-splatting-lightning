@@ -50,6 +50,8 @@ class OptimizationConfig:
 
     optimizer: OptimizerConfig = field(default_factory=lambda: {"class_path": "Adam"})
 
+    opacity_optimizer: Optional[OptimizerConfig] = None
+
 
 @dataclass
 class VanillaGaussian(Gaussian):
@@ -246,6 +248,8 @@ class VanillaGaussianModel(
             torch.optim.lr_scheduler.LRScheduler,
         ]]
     ]:
+        optimizer_list = []
+
         spatial_lr_scale = self.config.optimization.spatial_lr_scale
         if spatial_lr_scale <= 0:
             spatial_lr_scale = module.trainer.datamodule.dataparser_outputs.camera_extent
@@ -264,6 +268,7 @@ class VanillaGaussianModel(
             lr=means_lr_init,
             eps=1e-15,
         )
+        optimizer_list.append(means_optimizer)
         self._add_optimizer_after_backward_hook_if_available(means_optimizer, module)
         # TODO: other scheduler may not contain `lr_final`, but does not need to change scheduler currently
         optimization_config.means_lr_scheduler.lr_final *= spatial_lr_scale
@@ -280,7 +285,21 @@ class VanillaGaussianModel(
             {'params': [self.gaussians["scales"]], 'lr': optimization_config.scales_lr, "name": "scales"},
             {'params': [self.gaussians["rotations"]], 'lr': optimization_config.rotations_lr, "name": "rotations"},
         ]
+
+        opacity_params = {'params': [self.gaussians["opacities"]], 'lr': optimization_config.opacities_lr, "name": "opacities"}
+        if self.config.optimization.opacity_optimizer is not None:
+            opacity_optimizer = self.config.optimization.opacity_optimizer.instantiate(
+                params=[opacity_params],
+                lr=0.,
+                eps=1e-15,
+            )
+            print("opacity optimizer: {}".format(opacity_optimizer.__class__.__name__))
+            optimizer_list.append(opacity_optimizer)
+        else:
+            l.append(opacity_params)
+
         constant_lr_optimizer = optimizer_factory.instantiate(l, lr=0.0, eps=1e-15)
+        optimizer_list.append(constant_lr_optimizer)
         self._add_optimizer_after_backward_hook_if_available(constant_lr_optimizer, module)
 
         print("spatial_lr_scale={}, learning_rates=".format(spatial_lr_scale))
@@ -288,7 +307,7 @@ class VanillaGaussianModel(
         for i in l:
             print("  {}={}".format(i["name"], i["lr"]))
 
-        return [means_optimizer, constant_lr_optimizer], [means_scheduler]
+        return optimizer_list, [means_scheduler]
 
     def get_property_names(self) -> Tuple[str, ...]:
         return self._names
