@@ -1,0 +1,3 @@
+model:
+  plugins+:
+    - class_path: internal.plugins.freeze_bilagrid.FreezeBilagrid
