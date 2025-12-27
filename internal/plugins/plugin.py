@@ -13,4 +13,4 @@ class PluginModule(torch.nn.Module):
         self.config = config
 
     def setup(self, pl_module):
-        raise NotImplementedError()
+        return
