@@ -106,4 +106,5 @@
 !gns.yaml
 !depth_regularization/da3_inverse.yaml
 !grad_acc.yaml
-!plugins/freeze_bilagrid.yaml
+!plugins
+!glossy.yaml

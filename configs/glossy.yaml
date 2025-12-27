@@ -1,0 +1,13 @@
+# Glossy-Gaussian: Adaptive Anisotropic Gaussians for View-Dependent Appearances
+# https://gwen233666.github.io/Glossy-gaussian/
+
+model:
+  gaussian: internal.models.glossy_gaussian.GlossyGaussian
+  renderer:
+    class_path: internal.renderers.glossy_renderer.GlossyRenderer
+    init_args:
+      separate_sh: true
+      tile_based_culling: true
+  density:
+    opacity_reset_interval: 9999999
+    cull_by_max_opacity: true

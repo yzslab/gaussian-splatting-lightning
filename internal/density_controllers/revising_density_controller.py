@@ -40,7 +40,7 @@ class RevisingDensityControllerModule(VanillaDensityControllerImpl):
         # NEW: Opacity correction
         current_opacity = gaussian_model.get_opacities()[selected_pts_mask]
         alpha_hat = 1. - torch.sqrt(1. - current_opacity)
-        raw_alpha_hat = inverse_sigmoid(alpha_hat)
+        raw_alpha_hat = gaussian_model.opacity_inverse_activation(alpha_hat)
         gaussian_model.properties["opacities"][selected_pts_mask] = raw_alpha_hat
         new_properties["opacities"] = raw_alpha_hat
 

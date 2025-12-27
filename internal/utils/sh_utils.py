@@ -112,6 +112,65 @@ def eval_sh(deg, sh, dirs):
     return result
 
 
+def eval_sh_decomposed(deg, shs_dc, shs_rest, dirs):
+    """
+    Evaluate spherical harmonics at unit directions
+    using hardcoded SH polynomials.
+    Works with torch/np/jnp.
+    ... Can be 0 or more batch dimensions.
+    Args:
+        deg: int SH deg. Currently, 0-3 supported
+        shs_dc: [..., 1, C]
+        shs_rest: [..., (deg + 1) ** 2 - 1, C]
+        dirs: jnp.ndarray unit directions [..., 3]
+    Returns:
+        [..., C]
+    """
+    assert deg <= 4 and deg >= 0
+    # coeff = (deg + 1) ** 2
+    # assert (shs_dc.shape[-2] + shs_rest.shape[-2]) >= coeff
+
+    result = C0 * shs_dc[..., 0, :]
+    if deg > 0:
+        x, y, z = dirs[..., 0:1], dirs[..., 1:2], dirs[..., 2:3]
+        result = (result -
+                  C1 * y * shs_rest[..., 0, :] +
+                  C1 * z * shs_rest[..., 1, :] -
+                  C1 * x * shs_rest[..., 2, :])
+
+        if deg > 1:
+            xx, yy, zz = x * x, y * y, z * z
+            xy, yz, xz = x * y, y * z, x * z
+            result = (result +
+                      C2[0] * xy * shs_rest[..., 3, :] +
+                      C2[1] * yz * shs_rest[..., 4, :] +
+                      C2[2] * (2.0 * zz - xx - yy) * shs_rest[..., 5, :] +
+                      C2[3] * xz * shs_rest[..., 6, :] +
+                      C2[4] * (xx - yy) * shs_rest[..., 7, :])
+
+            if deg > 2:
+                result = (result +
+                          C3[0] * y * (3 * xx - yy) * shs_rest[..., 8, :] +
+                          C3[1] * xy * z * shs_rest[..., 9, :] +
+                          C3[2] * y * (4 * zz - xx - yy) * shs_rest[..., 10, :] +
+                          C3[3] * z * (2 * zz - 3 * xx - 3 * yy) * shs_rest[..., 11, :] +
+                          C3[4] * x * (4 * zz - xx - yy) * shs_rest[..., 12, :] +
+                          C3[5] * z * (xx - yy) * shs_rest[..., 13, :] +
+                          C3[6] * x * (xx - 3 * yy) * shs_rest[..., 14, :])
+
+                if deg > 3:
+                    result = (result + C4[0] * xy * (xx - yy) * shs_rest[..., 15, :] +
+                              C4[1] * yz * (3 * xx - yy) * shs_rest[..., 16, :] +
+                              C4[2] * xy * (7 * zz - 1) * shs_rest[..., 17, :] +
+                              C4[3] * yz * (7 * zz - 3) * shs_rest[..., 18, :] +
+                              C4[4] * (zz * (35 * zz - 30) + 3) * shs_rest[..., 19, :] +
+                              C4[5] * xz * (7 * zz - 3) * shs_rest[..., 20, :] +
+                              C4[6] * (xx - yy) * (7 * zz - 1) * shs_rest[..., 21, :] +
+                              C4[7] * xz * (xx - 3 * yy) * shs_rest[..., 22, :] +
+                              C4[8] * (xx * (xx - 3 * yy) - yy * (3 * xx - yy)) * shs_rest[..., 23, :])
+    return result
+
+
 def eval_gaussian_model_sh(viewpoint_camera, pc):
     shs_view = pc.get_features.transpose(1, 2).view(-1, 3, (pc.max_sh_degree + 1) ** 2)
     # view directions

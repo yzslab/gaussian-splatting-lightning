@@ -37,6 +37,8 @@ class ForegroundFirstDensityController(DensityController):
     cull_opacity_threshold: float = 0.005
     """threshold of opacity for culling gaussians."""
 
+    cull_by_max_opacity: bool = False
+
     cull_big_scale: bool = True
 
     opacity_correction: bool = False
@@ -138,6 +140,9 @@ class ForegroundFirstDensityControllerModule(DensityControllerImpl):
         if global_step >= self.config.densify_until_iter:
             return
 
+        if self.config.cull_by_max_opacity:
+            gaussian_model.update_opacity_max(outputs["opacities"])
+
         outputs["viewspace_points"].retain_grad()
 
     def after_backward(self, outputs: dict, batch, gaussian_model: VanillaGaussianModel, optimizers: List, global_step: int, pl_module: LightningModule) -> None:
@@ -215,7 +220,16 @@ class ForegroundFirstDensityControllerModule(DensityControllerImpl):
         self._densify_and_split(grads, gaussian_model, optimizers)
 
         # prune
-        prune_mask = (gaussian_model.get_opacities() < min_opacity).squeeze()
+        if self.config.cull_by_max_opacity:
+            # TODO: re-implement as a new density controller
+            prune_mask = torch.logical_and(
+                gaussian_model.get_opacity_max() >= 0.,
+                gaussian_model.get_opacity_max() < min_opacity,
+            )
+            gaussian_model.reset_opacity_max()
+        else:
+            prune_mask = (gaussian_model.get_opacities() < min_opacity).squeeze()
+
         self.log_metric("min_opacity_count", prune_mask.sum())
 
         if max_screen_size:
@@ -262,7 +276,7 @@ class ForegroundFirstDensityControllerModule(DensityControllerImpl):
             # NEW: Opacity correction
             current_opacity = gaussian_model.get_opacities()[selected_pts_mask]
             alpha_hat = 1. - torch.sqrt(1. - current_opacity)
-            raw_alpha_hat = inverse_sigmoid(alpha_hat)
+            raw_alpha_hat = gaussian_model.opacity_inverse_activation(alpha_hat)
             gaussian_model.properties["opacities"][selected_pts_mask] = raw_alpha_hat
             new_properties["opacities"] = raw_alpha_hat
 
