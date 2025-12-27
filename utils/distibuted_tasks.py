@@ -7,13 +7,13 @@ def clear_slurm_env():
     del os.environ["SLURM_LOCALID"]
 
 
-def get_task_list(n_processors: int, current_processor_id: int, all_tasks: list, ignore_slurm: bool = False, clear_slurm_env: bool = True):
+def get_task_list(n_processors: int, current_processor_id: int, all_tasks: list, ignore_slurm: bool = False, retain_slurm_env: bool = False):
     if not ignore_slurm and "IGNORE_SLURM" not in os.environ and "SLURM_NTASKS" in os.environ:
         n_processors = int(os.environ["SLURM_NTASKS"])
         current_processor_id = int(os.environ["SLURM_PROCID"]) + 1
         os.environ["CUDA_VISIBLE_DEVICES"] = os.environ["SLURM_LOCALID"]
 
-        if clear_slurm_env:
+        if not retain_slurm_env:
             # avoid activating other programs' SLURM mode
             clear_slurm_env()
 
@@ -43,13 +43,13 @@ def configure_arg_parser_v2(parser):
     parser.add_argument("--ignore-slurm", action="store_true")
 
 
-def get_task_list_with_args(args, all_tasks: list, clear_slurm_env: bool = True):
+def get_task_list_with_args(args, all_tasks: list, retain_slurm_env: bool = False):
     return get_task_list(
         n_processors=args.total_tasks,
         current_processor_id=args.current_task_id,
         all_tasks=all_tasks,
         ignore_slurm=args.ignore_slurm,
-        clear_slurm_env=clear_slurm_env,
+        retain_slurm_env=retain_slurm_env,
     )
 
 

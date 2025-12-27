@@ -43,7 +43,7 @@ for idx in image_id_list:
 n_assigned_images = 0
 image_id_list_slice_group_by_camera_id = {}
 for camera_id, camera_image_id_list in image_id_list_group_by_camera_id.items():
-    image_id_list_slice_group_by_camera_id[camera_id] = get_task_list_with_args(args, all_tasks=camera_image_id_list, clear_slurm_env=False)
+    image_id_list_slice_group_by_camera_id[camera_id] = get_task_list_with_args(args, all_tasks=camera_image_id_list, retain_slurm_env=True)
     n_assigned_images += len(image_id_list_slice_group_by_camera_id[camera_id])
 try:
     clear_slurm_env()
