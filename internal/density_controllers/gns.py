@@ -267,7 +267,7 @@ class GNSModule(LoggerMixin, VanillaDensityControllerImpl):
         n_expected = selected_pts_mask.sum()
         step_budget = self.get_budget_by_step(self.avoid_state_dict["pl"].global_step)
         budget = min(step_budget, n_current + n_expected)
-        n_addable = budget - n_current
+        n_addable = max(budget - n_current, 0)
         self.log_metric("n_expected", n_expected)
         self.log_metric("step_budget", step_budget)
         self.log_metric("n_addable", n_addable)
