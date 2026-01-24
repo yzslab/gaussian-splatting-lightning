@@ -114,7 +114,7 @@ def dir_mode(args, is_keyframe):
     # save image list
     name_suffix = ""
     if n_found != n_assigned:
-        name_suffix = "-{:02d}".format(int(os.environ.get("CURRENT_PROCESSOR_ID", None)))
+        name_suffix = "-{:02d}".format(int(os.environ["CURRENT_PROCESSOR_ID"]))
     abs_image_dir = os.path.abspath(args.input).rstrip(os.path.sep)
     redundant_list_path = "{}-redundant_frames{}.txt".format(abs_image_dir, name_suffix)
     with open(redundant_list_path, "w") as f:
@@ -168,7 +168,7 @@ def video_mode(args, is_keyframe):
                 if self.read_fps > 0:
                     read_fps_arg = [
                         '-vf',
-                        "fps=10",
+                        "fps={}".format(self.read_fps),
                     ]
 
                 command = [
@@ -248,7 +248,7 @@ def video_mode(args, is_keyframe):
                 save_keyframe(n_keyframes, frame)
                 previous_frame_keypoints = keypoints
                 n_keyframes += 1
-                t.set_description("{} keyframes extracted".format(n_keyframes, reader.num_images))
+                t.set_description("{} keyframes extracted".format(n_keyframes))
     finally:
         image_saver.stop()
 
