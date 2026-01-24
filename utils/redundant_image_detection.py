@@ -12,8 +12,10 @@ from utils.distibuted_tasks import configure_arg_parser_v2, get_task_list_with_a
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("image_dir")
-    parser.add_argument("--dist", "-d", type=float, default=0.15,
+    parser.add_argument("--dist", "-d", type=float, default=0.1,
                         help="Image size ratio. Images with content motion distance below this ratio will be treated as redundant.")
+    parser.add_argument("--ratio", "-r", type=float, default=0.3,
+                        help="Images when a ratio of keypoints whose motion exceeds the threshold below this will be treated as redundant")
     parser.add_argument("--max-size", type=int, default=1024)
     configure_arg_parser_v2(parser)
     return parser.parse_args()
@@ -50,6 +52,7 @@ def dump_image_list(f, image_list):
         f.write("\n")
 
 
+@torch.no_grad()
 def main():
     args = get_args()
 
@@ -79,7 +82,9 @@ def main():
             keypoints = extract_keypoints_simplified(image_name)
             xy0, xy1, _ = xfeat.match_lighterglue(previous_frame_keypoints, keypoints)
             normalized_dist = np.linalg.norm(xy0 / np.asarray(previous_frame_keypoints["image_size"]) - xy1 / np.asarray(keypoints["image_size"]), axis=-1)
-            if xy0.shape[0] == 0 or normalized_dist.mean() > args.dist:
+            over_threshold_mask = normalized_dist > args.dist
+            over_threshold_ratio = over_threshold_mask.sum() / (over_threshold_mask.shape[0] + 1)
+            if xy0.shape[0] < 32 or over_threshold_ratio > args.ratio:
                 tqdm.write(image_name)
                 keyframes.append(image_name)
                 previous_frame_keypoints = keypoints
@@ -88,10 +93,9 @@ def main():
                 redundant_frames.append(image_name)
 
     # save
-    cur_id = os.environ.get("CURRENT_PROCESSOR_ID", None)
     name_suffix = ""
-    if cur_id is not None:
-        name_suffix = "-{:02d}".format(int(cur_id))
+    if n_found != n_assigned:
+        name_suffix = "-{:02d}".format(int(os.environ.get("CURRENT_PROCESSOR_ID", None)))
     abs_image_dir = os.path.abspath(args.image_dir).rstrip(os.path.sep)
     redundant_list_path = "{}-redundant_frames{}.txt".format(abs_image_dir, name_suffix)
     with open(redundant_list_path, "w") as f:
