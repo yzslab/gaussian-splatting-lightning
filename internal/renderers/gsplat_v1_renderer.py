@@ -321,6 +321,7 @@ class GSplatV1RendererModule(Renderer):
                 colors=depths[0].unsqueeze(-1),
                 background=torch.zeros((1,), dtype=torch.float, device=bg_color.device),
                 tile_size=self.config.block_size,
+                absgrad=False,
             )
             hard_depth_im = hard_depth_im.permute(2, 0, 1)
             outputs["hard_depth"] = hard_depth_im
@@ -336,6 +337,7 @@ class GSplatV1RendererModule(Renderer):
                 colors=inverse_depth,
                 background=torch.zeros((1,), dtype=torch.float, device=bg_color.device),
                 tile_size=self.config.block_size,
+                absgrad=False,
             )
 
             hard_inverse_depth_im = hard_inverse_depth_im.permute(2, 0, 1)
