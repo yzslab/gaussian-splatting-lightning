@@ -1,0 +1,7 @@
+model:
+  plugins+:
+    - class_path: internal.plugins.background_removal.BackgroundRemoval
+  renderer_output_types:
+    - rgb
+    - hard_inverse_depth
+  random_background: true
