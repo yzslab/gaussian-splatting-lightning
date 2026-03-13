@@ -84,6 +84,7 @@ class GNSModule(LoggerMixin, VanillaDensityControllerImpl):
         self.n_views = 0
 
     def get_edges(self, gaussian_model, pl_module):
+        # TODO: apply masks to edge maps
         train_set = pl_module.trainer.train_dataloader.cached
         all_edges = []
         for item in tqdm(train_set, leave=False, desc="Getting edges..."):
